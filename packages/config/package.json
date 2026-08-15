@@ -1,0 +1,15 @@
+{
+  "name": "@repo/config",
+  "version": "0.0.0",
+  "private": true,
+  "files": ["tsconfig.base.json", "eslint.config.mjs"],
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./eslint": "./eslint.config.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "typescript-eslint": "^8.18.0",
+    "eslint": "^9.17.0"
+  }
+}
