@@ -761,7 +761,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-`apps/web/app/page.tsx` (temporary — replaced in Task 18):
+`apps/web/app/page.tsx` (temporary — replaced in Task 17):
 
 ```tsx
 export default function HomePage() {
@@ -1585,6 +1585,7 @@ This occupies the exact position M2's WebGL canvas will take. Its props and DOM 
 
 **Files:**
 - Create: `apps/web/lib/use-active-section.ts`, `apps/web/components/three/PosterLayer.tsx`
+- Modify: `apps/web/app/layout.tsx` (Step 5 mounts the layer — Task 10 and Task 17 amend this file again later)
 - Test: `apps/web/tests/unit/poster-layer.test.tsx`
 
 **Interfaces:**
@@ -3989,7 +3990,12 @@ test.describe('home page', () => {
     await expect(page.getByRole('link', { name: /skip to content/i })).toBeFocused()
   })
 
-  test('nav anchors move the viewport to the target section', async ({ page }) => {
+  // The primary nav is `hidden lg:flex`, so this only applies at >= 1024px.
+  // Below that the bottom sheet carries navigation and is covered by its own test.
+  test('nav anchors move the viewport to the target section', async ({ page }, testInfo) => {
+    const width = testInfo.project.use.viewport?.width ?? 0
+    test.skip(width < 1024, 'primary nav is hidden below the lg breakpoint')
+
     await page.goto('/')
     await page.locator('nav[aria-label="Primary"] a[href="#work"]').click()
     await expect(page).toHaveURL(/#work$/)
@@ -4094,6 +4100,10 @@ import { expect, test } from '@playwright/test'
 
 const WIDTHS = [390, 834, 1440, 2560] as const
 
+// This file sets its own viewport per test, so running it under all five Playwright
+// projects would produce 20 near-identical baselines. One engine is enough.
+test.skip(({ browserName }) => browserName !== 'chromium', 'visual baselines are chromium-only')
+
 for (const width of WIDTHS) {
   test(`home page layout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 })
@@ -4176,7 +4186,7 @@ pnpm --filter web add -D size-limit @size-limit/file @lhci/cli
       "startServerCommand": "pnpm start",
       "url": ["http://localhost:3000/"],
       "numberOfRuns": 3,
-      "settings": { "preset": "desktop" }
+      "settings": { "preset": "mobile" }
     },
     "assert": {
       "assertions": {
