@@ -28,4 +28,4 @@ Signature: a persistent, scroll-driven WebGL layer ("The Assembly") behind an ac
 M0 ships before a single shader or endpoint exists, so both the 3D work and the backend are additive risk rather than blocking risk.
 
 ## Next step
-Implementation plan for M0.
+Execute [`docs/superpowers/plans/2026-08-15-m0-foundations.md`](docs/superpowers/plans/2026-08-15-m0-foundations.md) — 19 TDD tasks delivering M0.
