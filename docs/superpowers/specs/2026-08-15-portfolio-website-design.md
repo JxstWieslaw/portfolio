@@ -5,7 +5,8 @@
 | **Owner** | Wieslaw Samushonga — Tech Lead @ Data Age · Senior Software Engineer @ Rapidev Labs |
 | **Date** | 2026-08-15 |
 | **Status** | Approved design, pre-implementation |
-| **Companion docs** | [`docs/claude-design-brief.md`](../../claude-design-brief.md) (paste into Claude Design) · [`docs/3d-asset-sourcing.md`](../../3d-asset-sourcing.md) |
+| **Companion docs** | [`2026-08-15-api-service-design.md`](2026-08-15-api-service-design.md) (the backend service) · [`docs/claude-design-brief.md`](../../claude-design-brief.md) (paste into Claude Design) · [`docs/3d-asset-sourcing.md`](../../3d-asset-sourcing.md) |
+| **Revised** | 2026-08-15 — frontend and backend separated into two deployables (see §4.1, §4.2, §4.10, §8, §11) |
 | **Repo location** | `JxstWieslaw/portfolio/` (greenfield) |
 
 ---
@@ -15,6 +16,20 @@
 A single-page-first portfolio with deep pages, built in the stack it advertises (TypeScript · Next.js · React Three Fiber), whose signature is a **persistent, scroll-driven WebGL layer** — "The Assembly" — one instanced-mesh system that morphs between section-specific formations as the visitor scrolls. The page remains a normal, indexable, accessible HTML document; the 3D is a layer behind it, never a gate in front of it.
 
 The site's job is to make Wieslaw **marketable to three audiences at once** — hiring managers/CTOs skimming on a phone, clients evaluating a consultant, and engineers judging craft — by leading with **leadership + delivery** (named production platforms across eight domains, architecture decisions, how he runs a team) and using **real-time 3D/AR as the differentiating proof of craft**. The site itself is that proof: it must hold 60 fps on a mid-range phone.
+
+**The system is two independently deployed applications**, not one: `apps/web` (Next.js on
+Vercel) and `apps/api` (NestJS on Google Cloud Run, with Neon Postgres), joined by a shared
+typed contract in a Turborepo. The backend is not decorative — it owns a lead pipeline,
+first-party cookieless analytics, a 3D asset transcoding pipeline, and a writing cache, and it
+publishes its own OpenAPI documentation at `api.<domain>/docs` as a portfolio artifact in its
+own right. Its full design is a companion document,
+[`2026-08-15-api-service-design.md`](2026-08-15-api-service-design.md).
+
+The rule that makes the split safe rather than costly: **content stays git-first, so a cold
+visitor's page render never touches the API.** That single constraint preserves every
+performance budget in §6 while letting Cloud Run idle at zero instances and zero cost, and it
+means the site remains fully functional with the backend entirely offline — a property enforced
+by a CI suite that runs the whole E2E pass with the API blackholed.
 
 Three non-negotiables from the brief, translated:
 
@@ -48,10 +63,13 @@ Three non-negotiables from the brief, translated:
 - Zero content slots empty at any breakpoint, WebGL on or off, reduced motion on or off (verified by Playwright visual snapshots).
 - Every route has correct title/description/OG image; JSON-LD validates.
 - Keyboard-only navigation reaches every interactive element; axe reports 0 serious/critical.
+- **With the API origin blackholed, every route still renders, the contact form falls back to `mailto:`, and no unhandled rejection reaches the console** (Playwright, every CI run).
+- `apps/api` and `apps/web` each deploy independently without touching the other; a breaking contract change fails CI at typecheck rather than at runtime.
+- The public OpenAPI document at `api.<domain>/docs` is complete enough to be usable by a third party without reading source.
 
 ### 1.4 Non-goals (v1)
 - Light theme (tokens are structured for it; not shipped).
-- CMS / admin UI (content is typed MDX/JSON in the repo).
+- **Content CMS** — content stays typed MDX/JSON in the repo and ships through pull requests. The admin surface (M4) manages *leads, analytics and 3D assets*, not case-study copy.
 - Blog engine (writing links out to Medium; RSS-fed cards only).
 - Modelled/commissioned 3D assets (procedural v1; modelled artefact is an optional v2 — see §5.8).
 - Fully immersive "walk-through" 3D world (explicitly rejected during design).
@@ -87,9 +105,13 @@ Three non-negotiables from the brief, translated:
 /lab                   3D & AR experiments (where the AR work is demonstrated)
 /about                 Long-form narrative, timeline, values, how I work
 /resume                Print-optimised CV + PDF download
+/admin                 Leads inbox, analytics, asset manager (Firebase Auth, noindex, M4)
 /opengraph-image       Default OG (route-level generators for /work/[slug])
 /sitemap.xml, /robots.txt
 ```
+
+`/admin` is the only authenticated surface in the system and is excluded from the sitemap,
+`robots.txt` and all OG generation. Everything else is public and static.
 
 ### 3.1 `/` sections (in order, each with `id`, its Assembly formation, and its content)
 
@@ -116,7 +138,7 @@ The persistent canvas remains the **single GL context** for the whole app; on `/
 1. **Assembly sandbox** — the formation system with a control panel (Leva, prod-visible on this page only).
 2. **Physics playground** — Rapier rigid bodies, flick/throw, mobile joystick (nod to *gabar*).
 3. **Shader study** — the monolith's noise/transmission material isolated with sliders.
-4. **AR: place the artefact** — WebXR (`@react-three/xr`) on Android Chrome; iOS fallback via USDZ Quick Look (`<a rel="ar">`) using a converted GLB (see asset guide). Non-capable devices see a poster + "How AR works here" note.
+4. **AR: place the artefact** — WebXR (`@react-three/xr`) on Android Chrome; iOS fallback via USDZ Quick Look (`<a rel="ar">`). Both the GLB and the USDZ come from the same source upload via the transcoder service (§5.8), so the two AR paths can never drift apart. Non-capable devices see a poster + "How AR works here" note.
 5. Placeholder cards ("Next experiment") — designed, not empty.
 
 ### 3.4 `/about`, `/resume`
@@ -129,7 +151,23 @@ Sticky top bar that condenses on scroll: monogram → section links (desktop) �
 
 ## 4. Technical architecture
 
-### 4.1 Stack (decision: Approach A)
+### 4.1 Stack (decision: Approach A, split into two deployables)
+
+The system is **two independently deployed applications in one Turborepo**, joined by a shared
+typed contract:
+
+| App | Runs on | Owns |
+|---|---|---|
+| `apps/web` | **Vercel** (SSG/ISR) | Rendering, routing, SEO/OG, the 3D layer, content presentation |
+| `apps/api` | **Google Cloud Run** (Docker, NestJS) | Leads, first-party analytics, 3D asset registry/transcoding, writing cache, admin |
+
+The full backend design is its own document:
+[`2026-08-15-api-service-design.md`](2026-08-15-api-service-design.md). The load-bearing rule
+that governs the boundary is stated in §4.10: **a cold visitor's page render never touches the
+API.**
+
+**Frontend stack (`apps/web`):**
+
 | Concern | Choice | Why |
 |---|---|---|
 | Framework | **Next.js (App Router), TypeScript strict** | Persistent canvas in root layout; MDX/ISR case studies; `next/og`; the advertised stack |
@@ -138,52 +176,102 @@ Sticky top bar that condenses on scroll: monogram → section links (desktop) �
 | State | **Zustand** — one `scrollStore` is the single source of truth for DOM and WebGL | Avoids DOM/GL drift |
 | DOM motion | **Motion** (`motion/react`) — one animation library only | Scroll-linked reveals; no GSAP duplication |
 | Smooth scroll | **Lenis** (pointer devices only; native on touch; off under reduced motion) | Coupled camera feel without hijacking scroll |
-| Content | **Velite** (MDX + JSON → typed, Zod-validated) | Maintained; build-time schema |
-| Forms | Server Action + Zod + honeypot + rate limit + **Resend** | No client secrets; `mailto:` fallback |
-| Hosting | **Vercel** — Analytics, Speed Insights, Firewall rate-limit rule, OG image route | Owner's platform |
-| Observability | **Sentry** (browser+server, `tracesSampleRate 0.1`, replay off) | Owner already uses Sentry |
+| Content | **Velite** (MDX + JSON → typed, Zod-validated) reading `content/` from the repo root | Maintained; build-time schema; **no network in the render path** |
+| API client | Typed `fetch` wrapper generated from `packages/contracts` | One schema definition shared by both apps |
+| Forms | Client submit → `POST /v1/contact` on the API (Zod, honeypot, idempotency key) | Leads are persisted and workable, not just emailed; `mailto:` fallback if the API is unreachable |
+| Hosting | **Vercel** — Speed Insights, OG image route | Owner's platform |
+| Observability | **Sentry** (browser + server, `tracesSampleRate 0.1`, replay off) with `traceparent` propagated into the API | One trace spans both deployables |
 | Testing | Vitest · React Testing Library · **Playwright** (e2e + visual) · **Lighthouse CI** · `size-limit` | Budgets enforced in CI |
-| Tooling | ESLint, Prettier, Husky + conventional commits, GitHub Actions | Owner's practice |
+| Tooling | Turborepo · pnpm workspaces · ESLint · Prettier · Husky + conventional commits · GitHub Actions | Owner's practice |
 
-Alternatives rejected: **Astro + islands** (persistent canvas across routes fights view transitions; not the advertised stack) · **Vite SPA** (weak SEO/OG for case studies).
+**Backend stack (`apps/api`)** — summarised here, specified in the companion doc:
+**NestJS** (modules/DI/guards; `@nestjs/swagger` publishes a public OpenAPI surface at
+`api.<domain>/docs`, which is itself a portfolio artifact) · **Drizzle** + **Neon Postgres**
+(scale-to-zero, branch-per-PR) · **Google Cloud Run** (two services: API and an asset
+transcoder) · **GCS** + **Cloud Tasks** + **Cloud Scheduler** + **Secret Manager** ·
+**Firebase Auth** for the single admin identity · **Pino** structured logs into Cloud Logging.
 
-### 4.2 Repository layout
+**Shared:** `packages/contracts` — Zod schemas, inferred types, and the generated OpenAPI
+document. `apps/api` derives its DTOs from it via `nestjs-zod`; `apps/web` derives its client
+types from it. A breaking API change therefore fails the *frontend* typecheck in CI.
+
+Alternatives rejected: **Astro + islands** (persistent canvas across routes fights view
+transitions; not the advertised stack) · **Vite SPA** (weak SEO/OG for case studies) ·
+**Next.js API routes / Server Actions as the backend** (no separation; nothing to show) ·
+**Fastify / Hono** (leaner, but weaker architecture signal and no free Swagger artifact) ·
+**Two separate repositories** (type sharing would require publishing a package on every
+contract change — real friction for a solo operator).
+
+### 4.2 Repository layout (Turborepo monorepo, two deployables)
 ```
 portfolio/
-  app/
-    layout.tsx                # fonts, tokens, <PersistentCanvas/>, <Nav/>, <Footer/>
-    page.tsx                  # / — sections
-    work/page.tsx             # /work index
-    work/[slug]/page.tsx      # case study (MDX)
-    work/[slug]/opengraph-image.tsx
-    lab/page.tsx
-    about/page.tsx
-    resume/page.tsx
-    opengraph-image.tsx
-    sitemap.ts  robots.ts
-    actions/contact.ts        # server action
-  components/
-    layout/   Nav, Footer, Section, Container, SkipLink, BottomSheet
-    sections/ Hero, ProofStrip, SelectedWork, HowILead, Craft, Stack, Timeline, Writing, Contact
-    ui/       Button, Chip, Badge, Card, KpiTile, Pillar, TimelineItem, Toc, PrevNext, Form*, Skeleton, Poster
-    three/
-      PersistentCanvas.tsx    # fixed, aria-hidden, tiering, frameloop control
-      assembly/  Assembly.tsx, assemblyMaterial.ts (shader), useFormation.ts
-      formations/ monolith.ts, stream.ts, lattice.ts, orbit.ts, scatter.ts, grid.ts, ring.ts, badge.ts, index.ts
-      rig/       CameraRig.ts, keyframes.ts
-      physics/   PhysicsSubset.tsx (lazy)
-      post/      Effects.tsx (tier 3 only)
-      fallbacks/ PosterLayer.tsx, ContextLostBoundary.tsx
-      lab/       View-based experiment components
-  content/
-    profile.json  experience.json  skills.json  domains.json  lab.json  writing.json
-    projects/*.mdx
-  lib/
-    scroll-store.ts  gpu-tier.ts  dom-to-world.ts  seo.ts  placeholders.ts  formations/generators.ts
-  public/  posters/  models/  fonts/  resume.pdf
-  tests/   unit/  e2e/  visual/
-  docs/    (this spec, claude-design-brief.md, 3d-asset-sourcing.md)
+  apps/
+    web/                         # ──► Vercel
+      app/
+        layout.tsx               # fonts, tokens, <PersistentCanvas/>, <Nav/>, <Footer/>
+        page.tsx                 # / — sections
+        work/page.tsx            # /work index
+        work/[slug]/page.tsx     # case study (MDX)
+        work/[slug]/opengraph-image.tsx
+        lab/  about/  resume/
+        admin/                   # leads inbox + analytics (Firebase Auth, noindex)
+        opengraph-image.tsx  sitemap.ts  robots.ts
+      components/
+        layout/    Nav, Footer, Section, Container, SkipLink, BottomSheet
+        sections/  Hero, ProofStrip, SelectedWork, HowILead, Craft, Stack, Timeline, Writing, Contact
+        ui/        Button, Chip, Badge, Card, KpiTile, Pillar, TimelineItem, Toc, PrevNext, Form*, Skeleton, Poster
+        admin/     LeadsTable, LeadDetail, AnalyticsPanel, AssetManager
+        three/
+          PersistentCanvas.tsx   # fixed, aria-hidden, tiering, frameloop control
+          assembly/   Assembly.tsx, assemblyMaterial.ts (shader), useFormation.ts
+          formations/ monolith.ts, stream.ts, lattice.ts, orbit.ts, scatter.ts, grid.ts, ring.ts, badge.ts, index.ts
+          rig/        CameraRig.ts, keyframes.ts
+          physics/    PhysicsSubset.tsx (lazy)
+          post/       Effects.tsx (tier 3 only)
+          fallbacks/  PosterLayer.tsx, ContextLostBoundary.tsx
+          lab/        View-based experiment components
+      lib/
+        scroll-store.ts  gpu-tier.ts  dom-to-world.ts  seo.ts  placeholders.ts
+        api-client.ts            # typed, generated from packages/contracts
+        formations/generators.ts
+      public/  posters/  fonts/  resume.pdf  default-asset-manifest.json
+
+    api/                         # ──► Google Cloud Run
+      src/
+        main.ts  app.module.ts
+        modules/   content/ leads/ analytics/ assets/ writing/ admin/ health/
+        common/    guards/ filters/ interceptors/ decorators/ pipes/
+        db/        schema/ migrations/ seed/ migrate-cli.ts
+        integrations/ resend/ gcs/ tasks/ firebase/
+      test/        unit/ integration/ e2e/
+      Dockerfile
+
+    transcoder/                  # ──► Google Cloud Run (internal ingress only)
+      src/  (gltf-transform, toktx, USDZ, poster render)
+      Dockerfile
+
+  packages/
+    contracts/                   # Zod schemas → types → OpenAPI. Imported by BOTH apps.
+    config/                      # eslint, tsconfig, tailwind presets
+
+  content/                       # SOURCE OF TRUTH for content, read by web at build,
+    profile.json  experience.json  skills.json  domains.json  lab.json
+    projects/*.mdx               # and seeded into Postgres by CI
+
+  infra/
+    cloudrun/  api.yaml  transcoder.yaml
+    github/    deploy-web.yml  deploy-api.yml  seed-content.yml   (Workload Identity Federation)
+    docker-compose.dev.yml      # local Postgres + GCS emulator
+
+  tests/e2e-cross/               # web ↔ api integration (contact, events, manifest)
+  docs/                          # specs, design brief, asset guide
+  turbo.json  pnpm-workspace.yaml
 ```
+
+**Why a monorepo rather than two repos:** `packages/contracts` is imported by both apps, so a
+breaking API change fails `apps/web`'s typecheck in CI *before* it can ship. Two repos would
+require publishing a package on every contract change — real friction for a solo operator, and
+it buys a boundary that `turbo`'s task graph already enforces.
 
 ### 4.3 Runtime data flow
 ```
@@ -223,11 +311,19 @@ Lenis / native scroll ──► scrollStore { y, velocity, sectionId, sectionPro
 | Image missing (avatar, project media) | Gradient + monogram/initials tile generated in CSS |
 | Data missing (metrics, quotes, earlier roles) | Content marked `placeholder: true` renders realistic copy; `pnpm lint:content` lists all placeholders; testimonials block is the one exception — it hides unless at least one real quote exists |
 | Slow network | Skeletons match final layout dimensions (zero CLS); canvas fades in when ready, DOM never waits |
-| Medium RSS unavailable at build | Three designed "writing" cards linking to the Medium profile |
+| Medium RSS unavailable | The API serves the last-good `writing_cache` rows; if the API is also unreachable, three designed "writing" cards link to the Medium profile |
+| **API unreachable** | Nothing visible changes. Content is static, so every page renders in full; the contact form swaps its submit button for a copyable `mailto:` link; the analytics beacon fails silently; the asset manifest falls back to the committed `default-asset-manifest.json`; public view counts are omitted rather than shown as zero |
 
 Posters are produced by a build script (`scripts/render-posters.ts`, Playwright headless → screenshots of each formation at 1600×1000 and 800×1200) and committed to `public/posters/`. They are also the OG image backgrounds.
 
 ### 4.6 Content model (Velite + Zod)
+
+These schemas live in `packages/contracts` and are the **single definition** used three ways:
+`apps/web` validates and types `content/` through Velite at build time; `apps/api` derives its
+DTOs and OpenAPI document from the same schemas via `nestjs-zod`; and the CI seed job validates
+against them before writing to Postgres. A field added in one place cannot silently diverge in
+the others.
+
 ```ts
 Profile     { name, headline, sub, roles: {org,title,url}[], location, email, links: {label,url,kind}[], availability, kpis: {label,value,placeholder?}[] }
 Project     { slug, name, domain: DomainId, role, period: {from,to?}, summary, problem, approach, architecture (mdx), decisions: {decision,why,tradeoff}[], outcome: {label,value,placeholder?}[], stack: string[], visibility: 'public'|'private'|'client', links?: {label,url}[], media?: {src,alt,kind}[], featured: boolean, order: number, formation: 'badge'|FormationId, placeholder?: boolean }
@@ -239,14 +335,66 @@ Writing     { title, url, date, source: 'medium'|'other', placeholder?: boolean 
 ```
 KPIs such as "Domains shipped" are **derived** (count of distinct domains across non-placeholder projects) so numbers never drift from content.
 
-### 4.7 Contact pipeline
-Client form (name, email, message, honeypot `company_website`) → Server Action `sendMessage` → Zod validation → honeypot check → rate limit (Vercel Firewall rule: 5/10 min per IP; fallback in-memory limiter for local) → Resend to the owner's public address (`content/profile.json → email`) → success state with a copyable `mailto:` fallback on any failure. No PII persisted. Sentry captures failures with the message body redacted.
+### 4.7 Contact pipeline (now a lead pipeline, owned by the API)
+Client form (name, email, message, honeypot `company_website`) → `POST /v1/contact` on the API
+with an `Idempotency-Key` → Zod validation from the shared contract → honeypot and
+submission-timing check → spam score → rate limit (5 per 10 min per IP hash) → **persisted to
+`leads`** → Resend to the owner's public address → success state.
+
+Two properties this buys over the previous Server Action design: the enquiry is **durable and
+workable** (an inbox with status, notes and an audit trail, rather than an email that can be
+lost), and if Resend is down the visitor still sees success — because the message genuinely was
+received. Delivery retries in the background.
+
+Failure handling: any API failure falls back to a copyable `mailto:` link, so the contact path
+never dead-ends. Sentry captures failures with the message body redacted. The visitor's IP is
+hashed for rate limiting and never stored.
 
 ### 4.8 SEO & sharing
 Metadata API on every route; `generateMetadata` for case studies; OG images via `ImageResponse` composited on formation posters; JSON-LD `Person` (name, jobTitle[], worksFor[], sameAs[] for LinkedIn/GitHub/X/Medium) on `/`, `CreativeWork` per case study; `sitemap.ts`, `robots.ts`; canonical URLs; `lang="en"`.
 
 ### 4.9 Security & privacy
-Strict CSP (self + Vercel Analytics + Sentry ingest), no third-party trackers, cookieless analytics, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` allowing `xr-spatial-tracking` and `gyroscope` on self only. Secrets (Resend, Sentry DSN) server-side / Vercel env.
+Strict CSP — `connect-src` allows exactly the API origin, Sentry ingest and Firebase Auth, and
+nothing else. No third-party trackers; analytics are first-party and cookieless, so there is no
+consent banner to design. `Referrer-Policy: strict-origin-when-cross-origin`;
+`Permissions-Policy` allowing `xr-spatial-tracking` and `gyroscope` on self only.
+
+Across the boundary: the API enforces a strict CORS origin allowlist (production origin, preview
+deploys by regex, localhost in dev) with credentials off. The web app holds **no** API secrets —
+every public endpoint is unauthenticated by design, and the admin surface authenticates with a
+Firebase ID token obtained in the browser. Backend secrets live in Secret Manager; CI
+authenticates to GCP by Workload Identity Federation, so no service-account key exists to leak.
+
+### 4.10 The frontend ↔ backend contract
+
+**The load-bearing rule: a cold visitor's page render never touches the API.** Everything a
+first-time visitor sees is statically generated from `content/` at build time. This is what
+keeps LCP ≤ 2.0 s while the API runs at `min-instances=0` — a cold Cloud Run container is never
+in front of a human being.
+
+| Call | When | If it fails |
+|---|---|---|
+| `POST /v1/contact` | User submits the form | Falls back to a copyable `mailto:` link |
+| `POST /v1/events` | Analytics beacon, batched, `sendBeacon`/`keepalive` | Fails silently; never awaited |
+| `GET /v1/assets/manifest` | Once, after hydration, before loading any GLB | Uses the committed `default-asset-manifest.json` |
+| `GET /v1/projects/:slug/stats` | Optional view count on case studies | Element is omitted |
+| Admin endpoints | `/admin` only, behind Firebase Auth | Error state in the admin UI |
+
+**Type safety.** `packages/contracts` holds Zod schemas as the single definition. `apps/api`
+generates its DTOs and OpenAPI document from them via `nestjs-zod`; `apps/web` generates its
+typed client from the same schemas. A breaking change fails `apps/web`'s typecheck in CI, and
+the committed OpenAPI snapshot makes the break visible as a diff in the PR.
+
+**Content flow.** `content/` in git is the source of truth. `apps/web` reads it directly at
+build (no network). CI separately seeds it into Postgres (`--dry-run` then `--apply`) so the
+API can serve it as a public, documented, ETagged read API for the admin UI and third parties.
+Content therefore ships through pull requests and code review — which is both safer and a
+better story than a CMS.
+
+**Independent deployability.** `apps/web` and `apps/api` deploy on separate pipelines to
+separate platforms. Either can ship without the other. The web app is designed to be fully
+functional with the API completely offline — verified by a Playwright suite that runs with the
+API origin blackholed.
 
 ---
 
@@ -278,6 +426,11 @@ Canvas `aria-hidden="true"` with a one-time visually-hidden note ("Decorative 3D
 ### 5.4 Interaction inventory (v1)
 Hover/focus a project card → nearby instances drift toward it (≤ 8 attractors) · Craft "Enable physics" / "Reset" · "View in AR" (feature-detected) · Perf HUD toggle (`?debug=1` or footer link) · Domain filter on `/work` (URL-synced) · Copy-email button · Bottom-sheet nav · Gyro opt-in button (touch) · Command palette (v1.5).
 
+**Silent interactions** (no UI, never block anything): a batched analytics beacon fires on
+section reach, case-study scroll depth and outbound link clicks, via `sendBeacon`/`keepalive` so
+it survives page unload. It is never awaited, never shows a spinner, and its failure is
+invisible. `navigator.doNotTrack` suppresses it entirely.
+
 ### 5.5 Copy deck v1 (real facts from the public profile; placeholders flagged)
 - **Eyebrow:** Tech Lead @ Data Age · Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe
 - **H1:** I lead teams that ship production software — and I make the web move.
@@ -307,7 +460,17 @@ Hover/focus a project card → nearby instances drift toward it (≤ 8 attractor
 Placeholders are **realistic, on-voice copy** (never "lorem ipsum", never blank) carrying `placeholder: true`. `pnpm lint:content` prints them; CI warns (does not fail) so the site is always shippable. The only hidden-when-missing block is testimonials (fabricated quotes are not acceptable on a resume site).
 
 ### 5.8 3D assets
-v1 needs **no external 3D assets**. Optional v2: a modelled hero artefact (GLB ≤ 50 k tris, ≤ 2 textures at 2048, Draco/Meshopt via `gltf-transform`, KTX2 textures) that replaces or sits inside the monolith formation, and a USDZ for iOS AR. Sourcing, licensing and pipeline rules are in `docs/3d-asset-sourcing.md`.
+v1 needs **no external 3D assets** — the Assembly is procedural. Optional: a modelled hero
+artefact (GLB ≤ 50 k tris, ≤ 2 textures at 2048) that replaces or sits inside the monolith
+formation, and a USDZ for iOS AR.
+
+From **M4 this stops being a manual step**: the owner uploads a raw GLB through the admin
+surface, and the transcoder service produces the Meshopt-compressed GLB, per-tier LODs, KTX2
+textures, the USDZ and a render poster automatically. `GET /v1/assets/manifest` then serves each
+visitor exactly the variant their GPU tier and codec support call for. Before M4, the same
+transformations run by hand with the commands in `docs/3d-asset-sourcing.md` — that document
+also covers sourcing and licensing, which the pipeline does not automate (licence is a required
+field at upload and feeds the site colophon).
 
 ---
 
@@ -328,6 +491,11 @@ v1 needs **no external 3D assets**. Optional v2: a modelled hero artefact (GLB �
 
 Enforcement: `size-limit` on chunks, Lighthouse CI on every preview deploy with the budgets above, `next/bundle-analyzer` report artefact in CI.
 
+**These budgets are unchanged by the backend split, and that is the point.** No API call sits in
+the render path, so nothing here depends on Cloud Run's latency or cold-start behaviour. The
+API carries its own budgets (p95 ≤ 80 ms cached GET, ≤ 400 ms `POST /v1/contact`, cold start
+≤ 2 s, ≤ $10/month) in the [API service spec §11](2026-08-15-api-service-design.md).
+
 ---
 
 ## 7. Testing strategy
@@ -337,19 +505,27 @@ Enforcement: `size-limit` on chunks, Lighthouse CI on every preview deploy with 
 - **Visual regression:** Playwright `toHaveScreenshot` for DOM at 390 / 834 / 1440 / 2560 with the canvas masked; posters snapshot separately.
 - **Perf:** Lighthouse CI budgets; a manual device pass on a mid-range Android before launch.
 - **A11y:** `@axe-core/playwright` on every route; keyboard walkthrough checklist.
+- **API-offline suite (cross-cutting):** the full E2E run repeated with the API origin blackholed — every route must render, the contact form must fall back to `mailto:`, the asset manifest must fall back to the committed default, and no unhandled rejection may reach the console. This is the test that keeps the separation honest.
+- **Contract:** the OpenAPI document generated from `packages/contracts` is snapshot-committed, so a breaking change shows up as a reviewable diff; both apps typecheck against the same schemas in one `turbo run typecheck`.
+- **Backend testing** (unit, integration on a real Neon branch, E2E, load, security) is specified in the [API service spec §10](2026-08-15-api-service-design.md).
 
 ---
 
 ## 8. Delivery plan (milestones for the implementation plan)
 | Milestone | Outcome | Ship-able? |
 |---|---|---|
-| **M0 Foundations** | Scaffold, tokens, fonts, content schema + v1 content, layout, nav, footer, all `/` sections in DOM with **posters** (no WebGL yet), a11y baseline, CI with budgets | **Yes** — a complete 2D site with 3D posters |
-| **M1 The Assembly** | Instanced system, 7 formations, worker generation, scroll store, camera rig, tiering, fallback ladder, context-loss handling | Yes |
-| **M2 Depth** | `/work` + case-study template + MDX content, `/lab` (View-based), `/about`, `/resume`, contact pipeline, OG/SEO/JSON-LD | Yes |
-| **M3 Polish** | Card attractors, physics opt-in, AR in lab, post at T3, perf tuning on devices, visual regression, a11y audit | Yes |
-| **M4 Launch** | Domain, analytics, Search Console, poster regeneration, colophon numbers, README | Launch |
+| **M0 Foundations** | Turborepo + pnpm workspaces, `packages/contracts` and `packages/config`, tokens, fonts, content schema + v1 content, layout, nav, footer, all `/` sections in DOM with **posters** (no WebGL, no API yet), a11y baseline, CI with budgets | **Yes** — a complete 2D site with 3D posters |
+| **M1 API service** | NestJS scaffold, Neon, Drizzle + reversible migration CLI (dry-run/apply/rollback), content seed from git, public read endpoints, OpenAPI + Swagger published, Cloud Run deploy via Workload Identity Federation, health/readiness | Yes — web unchanged; the API is purely additive |
+| **M2 The Assembly** | Instanced system, 7 formations, worker generation, scroll store, camera rig, tiering, fallback ladder, context-loss handling | Yes |
+| **M3 Depth & dynamic** | `/work` + case-study template + MDX content, `/lab` (View-based), `/about`, `/resume`, OG/SEO/JSON-LD, **lead pipeline wired to the API**, analytics beacon + ingestion, writing cache | Yes |
+| **M4 Admin & assets** | Firebase Auth admin, leads inbox, analytics dashboard, GCS signed uploads, Cloud Tasks transcoder (LODs, KTX2, USDZ, posters), asset manifest negotiation, AR in the lab | Yes |
+| **M5 Polish & launch** | Card attractors, physics opt-in, post at T3, device perf pass, visual regression, a11y audit, API-offline suite, domains (`<domain>` + `api.<domain>`), Search Console, colophon numbers | Launch |
 
-M0 first is deliberate: the site is publishable before a single shader is written, so the 3D work is additive risk, not blocking risk.
+Two properties of this ordering are deliberate. **M0 ships before a single shader or endpoint
+exists**, so both the 3D work and the backend are additive risk rather than blocking risk. And
+**M1 lands the API before anything depends on it** — the service is deployed, documented and
+observable while the site is still entirely static, so the first thing that depends on it (M3's
+lead pipeline) is talking to something already proven in production.
 
 ---
 
@@ -361,8 +537,13 @@ M0 first is deliberate: the site is publishable before a single shader is writte
 | Lenis vs. native anchors / a11y | Lenis on pointer devices only; hash routing via `scrollTo`; off under reduced motion |
 | Font FOUT / CLS | `next/font`, `size-adjust` fallbacks; canvas is out-of-flow (fixed) so CLS = 0 |
 | Scope creep in 3D | Procedural v1; modelled artefact only as v2; each formation is a pure function so adding/removing one is local |
-| Placeholder copy leaking to production as fact | `lint:content` report in CI; placeholders visually identical but listed; owner sign-off gate at M4 |
+| Placeholder copy leaking to production as fact | `lint:content` report in CI; placeholders visually identical but listed; owner sign-off gate at M5 |
 | Public GitHub stats mis-representing seniority | Stats not shown on `/`; footer colophon uses build-time numbers from content, not GitHub API |
+| **Splitting the stack adds a second failure domain** | The web app is designed to work with the API entirely offline; the API-offline Playwright suite enforces it on every CI run |
+| **Cloud Run cold start in front of a user** | Content is git-first, so no page render waits on the API; the only callers are a form submit (pending state), a fire-and-forget beacon, and a post-hydration manifest. `min-instances=1` is a ~$6/month switch if the admin feels slow |
+| **Two deployables drift out of contract** | `packages/contracts` is imported by both; a break fails the web typecheck in CI, and the committed OpenAPI snapshot surfaces it as a PR diff |
+| **The separation reads as over-engineering** | The API owns four real jobs (leads, analytics, asset pipeline, writing cache) and publishes its own OpenAPI docs; the decision log states plainly what was rejected and why. Endpoint count stays deliberately lean |
+| **GCP cost creep** | Scale-to-zero on both Cloud Run services, Neon launch tier, GCS lifecycle rules, and a billing budget alert; target ≤ $10/month |
 
 ---
 
@@ -378,6 +559,10 @@ M0 first is deliberate: the site is publishable before a single shader is writte
 | Public contact email for the site | The address on the GitHub README |
 | `resume.pdf` | Print stylesheet + `window.print()` |
 | Optional GLB hero artefact / USDZ | Procedural monolith |
+| **GCP project** (or approval for me to create one) + billing account | Blocks M1 deploy only; the API runs locally against Docker Postgres until then |
+| **Neon project** — I have Neon tooling in-session and can provision on request | Local Postgres via `docker-compose.dev.yml` |
+| **Firebase project** for admin auth | Blocks M4 admin only; M0–M3 need no auth |
+| Admin email address for the Firebase account | The public contact address |
 
 ---
 
@@ -394,3 +579,11 @@ M0 first is deliberate: the site is publishable before a single shader is writte
 | Theme | Dark-first, tokens light-ready | Dual theme in v1 | Brand is dark; light is a token swap later |
 | Testimonials | Hidden unless real | Placeholder quotes | Fabricated praise is unacceptable on a resume site |
 | Loader | None (DOM-first, canvas fades in) | Splash with progress | LCP and honesty |
+| **System topology** | Two deployables: `apps/web` on Vercel, `apps/api` on Cloud Run | Single Next.js app with Server Actions | The backend owns four real jobs and publishes its own OpenAPI docs — a separation worth showing rather than a cosmetic one |
+| **Backend scope** | Dynamic state only; content stays git-first | Content in Postgres, web as pure presentation | Keeps the API out of the render path so LCP ≤ 2.0 s survives; content ships through code review |
+| **Repo topology** | Turborepo monorepo | Two repositories | Shared Zod contracts fail the web typecheck on a break, in CI, before shipping |
+| **Backend framework** | NestJS | Fastify+Zod · Hono · Express | Modules/DI/guards read as deliberate architecture; `@nestjs/swagger` turns the API into a publishable artifact |
+| **API host** | Google Cloud Run + Neon Postgres | Vercel Functions · Render · Fly · Railway · Cloud SQL | A genuinely separate platform makes the separation real; scale-to-zero costs nothing idle; Neon adds branch-per-PR |
+| **Admin auth** | Firebase Auth + `admins` table | Hand-rolled JWT with refresh rotation | Choosing managed identity is the better engineering call *and* the better signal than rolling auth |
+| **Firestore** | Not used | Firestore alongside Postgres | Two databases for one small service is indecision, not architecture |
+| **Analytics** | First-party, cookieless, no IP stored | GA4 / third-party | Privacy is a values signal on a site selling judgement — and no consent banner to design |

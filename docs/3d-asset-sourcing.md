@@ -69,6 +69,16 @@ For the **USDZ** (iOS AR): same model, exported via Blender's USD exporter or co
 
 ## 5. Integration pipeline (what happens to whatever you send)
 
+> **From milestone M4 this is automated.** You upload a raw GLB through the admin surface and
+> the transcoder service (Cloud Run) runs every step below, producing per-tier LODs, KTX2
+> textures, the USDZ for iOS AR and a render poster — then `GET /v1/assets/manifest` serves each
+> visitor the right variant for their GPU tier and codec support. The commands below are what
+> that service runs, and what you run by hand before M4. See the
+> [API service spec §7](superpowers/specs/2026-08-15-api-service-design.md).
+>
+> Sourcing and licensing are **not** automated: licence is a required field at upload and feeds
+> the site colophon. §6 below still applies.
+
 ```bash
 # 1. Inspect
 npx @gltf-transform/cli inspect artefact.glb

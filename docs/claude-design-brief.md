@@ -129,11 +129,26 @@ Header (domain tag, name, role, period, visibility badge, stack chips, compact 3
 
 ### 5.6 `/resume` — print-first layout (A4/Letter), "Download PDF" button; on-screen version uses the same tokens.
 
+### 5.7 `/admin` — private operator surface (design at 390 and 1440)
+Authenticated (Firebase), `noindex`, never linked from public navigation. This is a **working
+tool, not a showpiece** — favour density and legibility over atmosphere: no 3D layer, no glass,
+flat `--bg-1` surfaces, tighter spacing scale, mono for all numerics. It should feel like the
+calm back-office of the public site, obviously the same design system, obviously a different job.
+
+Three screens:
+1. **Leads inbox** — table (received, name, email, first line of message, status, spam score) with status filter chips (New / Read / Replied / Spam / Archived), row selection, and a detail pane showing the full message, source page, referrer, and a notes thread. Actions: mark replied, archive, mark spam. Needs empty, loading and error states.
+2. **Analytics** — date-range picker, KPI row (visits, unique sessions, contact conversions), a per-case-study table ranked by reads with average scroll depth, a referrer breakdown, and a device/GPU-tier split. Charts are line and bar only, using the violet→cyan accents; no pie charts.
+3. **Asset manager** — grid of 3D assets with thumbnail, name, licence, and per-variant status chips (GLB / KTX2 / USDZ / poster, each pending / ready / failed). Upload flow with progress, a transcode-job panel showing retries and errors, and a licence field that is required on upload.
+
+Also design: a minimal **sign-in screen** (email, password, TOTP code) and a "not authorised" state for a valid Firebase user whose UID is not on the admin list.
+
 ---
 
 ## 6. Component inventory (design each with states)
 
-Nav (default / condensed / mobile sheet) · Button (primary gradient-hover, secondary outline, ghost, icon; hover/focus/active/disabled/loading) · Chip (domain-accent, stack core/working/familiar, filter selected) · Badge (Public / Client codebase / Placeholder-in-dev) · KPI tile · Project card (featured / standard; hover / focus / no-image fallback) · Pillar card · Process step strip · Timeline item · Article card (+ fallback when RSS unavailable) · Contact form (idle / validating / error / sending / success / rate-limited) · Toast · TOC (sticky, active state) · Prev/Next · Callout (private codebase) · Decision table · Metric tile (+ placeholder styling) · Diagram placeholder · Lab card (+ unsupported state) · Poster layer (how a static poster looks behind content when WebGL is off) · Skeletons (must match final dimensions) · Skip link & focus ring · Bottom sheet · Command palette (v1.5) · Perf HUD (tiny mono panel).
+Nav (default / condensed / mobile sheet) · Button (primary gradient-hover, secondary outline, ghost, icon; hover/focus/active/disabled/loading) · Chip (domain-accent, stack core/working/familiar, filter selected) · Badge (Public / Client codebase / Placeholder-in-dev) · KPI tile · Project card (featured / standard; hover / focus / no-image fallback) · Pillar card · Process step strip · Timeline item · Article card (+ fallback when RSS unavailable) · Contact form (idle / validating / error / sending / success / rate-limited / **offline — falls back to a mailto: link**) · Toast · TOC (sticky, active state) · Prev/Next · Callout (private codebase) · Decision table · Metric tile (+ placeholder styling) · Diagram placeholder · Lab card (+ unsupported state) · Poster layer (how a static poster looks behind content when WebGL is off) · Skeletons (must match final dimensions) · Skip link & focus ring · Bottom sheet · Command palette (v1.5) · Perf HUD (tiny mono panel).
+
+**Admin-only components:** data table (sortable header, row hover, selected row, empty, loading, error) · status pill (New / Read / Replied / Spam / Archived) · detail pane · notes thread · date-range picker · chart frame (line, bar) · asset tile with per-variant status chips · upload dropzone (idle / uploading with progress / complete / failed) · job row (queued / running / retrying / failed with error) · sign-in form · not-authorised state.
 
 **Every image slot** needs a designed fallback (gradient + monogram/initials). **Every data slot** needs a placeholder style that looks finished but is subtly identifiable in dev (e.g., a dotted underline that is removed in production).
 
@@ -147,7 +162,7 @@ AA contrast for all text over dark and over glass; visible focus rings (cyan 2 p
 ## 8. Deliverables requested from Claude Design
 1. **Moodboard + one type pairing** (with rationale) — 1 page.
 2. **High-fidelity mockups of `/`** at 390 / 834 / 1440 / 2560, showing the Assembly as posters behind content.
-3. **Case study, `/work` index, `/lab`, `/about`, `/resume`** at 390 and 1440.
+3. **Case study, `/work` index, `/lab`, `/about`, `/resume`** at 390 and 1440, plus the three **`/admin`** screens (§5.7) at 390 and 1440.
 4. **Component sheet** with all states listed in §6.
 5. **Poster art direction**: how each of the seven formations should look as a still (framing, exposure, bloom, background gradient) — 7 stills.
 6. **Motion notes**: reveal choreography per section, nav condensing, card hover, form states — as annotated frames.
