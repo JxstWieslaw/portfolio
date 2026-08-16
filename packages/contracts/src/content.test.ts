@@ -34,21 +34,25 @@ describe('projectSchema', () => {
   })
 })
 
+const validProfile = {
+  name: 'Wieslaw Samushonga',
+  headline: 'x',
+  sub: 'y',
+  location: 'Harare, Zimbabwe',
+  email: 'a@b.com',
+  availability: 'Open to consulting & collaboration',
+  roles: [{ org: 'Data Age', title: 'Tech Lead' }],
+  links: [{ label: 'GitHub', url: 'https://github.com/JxstWieslaw', kind: 'primary' }],
+  kpis: [{ label: 'Domains shipped', value: '4' }],
+}
+
 describe('profileSchema', () => {
-  it('requires at least one role and one KPI', () => {
-    expect(() =>
-      profileSchema.parse({
-        name: 'Wieslaw Samushonga',
-        headline: 'x',
-        sub: 'y',
-        location: 'Harare, Zimbabwe',
-        email: 'a@b.com',
-        availability: 'Open to consulting & collaboration',
-        roles: [],
-        links: [],
-        kpis: [],
-      })
-    ).toThrow()
+  it('rejects a profile with no roles', () => {
+    expect(() => profileSchema.parse({ ...validProfile, roles: [] })).toThrow()
+  })
+
+  it('rejects a profile with no KPIs', () => {
+    expect(() => profileSchema.parse({ ...validProfile, kpis: [] })).toThrow()
   })
 })
 
