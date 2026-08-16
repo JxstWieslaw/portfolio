@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,300..800&family=Geist:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#0D1117; }
+  * { box-sizing:border-box; }
+  a { color:#67E8F9; text-decoration:none; }
+  a:hover { color:#C4B5FD; }
+  ::selection { background:#7C3AED; color:#F0F6FC; }
+</style>
+</helmet>
+
+<div ref="{{ rootRef }}" style="background:#0D1117; color:#C9D1D9; font-family:Geist, system-ui, sans-serif; font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased; padding:0 clamp(1rem, 4vw, 4rem) 128px;">
+
+  <header style="max-width:1440px; margin:0 auto; padding:96px 0 64px; border-bottom:1px solid #1F2937;">
+    <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Wieslaw Samushonga · Portfolio · Deliverable 01 / 05 / 07</div>
+    <h1 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95, 'opsz' 96; font-weight:600; font-size:clamp(2.75rem, 1.5rem + 5vw, 6.5rem); line-height:1.0; letter-spacing:-0.02em; color:#F0F6FC; margin:0 0 24px; max-width:16ch;">Foundations</h1>
+    <p style="font-size:1.125rem; line-height:1.6; color:#C9D1D9; max-width:68ch; margin:0; text-wrap:pretty;">Type pairing, colour semantics, glass surfaces over the Assembly, poster art direction for all seven formations, motion rules, and the token export. Everything below is the substrate the rest of the site is drawn on.</p>
+  </header>
+
+  <section style="max-width:1440px; margin:0 auto; padding:96px 0 0;">
+    <div style="display:flex; align-items:baseline; gap:16px; margin-bottom:8px;">
+      <span style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#A78BFA;">01</span>
+      <h2 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95; font-weight:600; font-size:clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem); line-height:1.15; letter-spacing:-0.015em; color:#F0F6FC; margin:0;">Type pairing</h2>
+    </div>
+    <p style="color:#8B949E; max-width:70ch; margin:0 0 48px; text-wrap:pretty;">Bricolage Grotesque · Geist · JetBrains Mono. Bricolage carries a width axis, so display text can be set narrow and tall to echo the Monolith without a second family; it has the slightly engineered, un-neutral character the brief asks for and stays legible at 24px on mobile. Geist is a quiet, tall-x-height body face built for screens — it disappears under the display type instead of competing with it. JetBrains Mono handles labels, dates and numerics, which is where the brief already speaks in mono.</p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:24px; margin-bottom:48px;">
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Display · Bricolage Grotesque</div>
+        <div style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 88, 'opsz' 96; font-weight:600; font-size:4.5rem; line-height:1.0; letter-spacing:-0.02em; color:#F0F6FC;">Aa</div>
+        <div style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 92; font-weight:500; font-size:1.25rem; line-height:1.3; color:#C9D1D9; margin-top:16px;">ABCDEFGHIJKLM<br>abcdefghijklm 0123456789</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; margin-top:24px; line-height:1.8;">wght 300–800 · wdth 75–100 · opsz 12–96<br>display-1 &amp; display-2 at wdth 88, h2 at wdth 95</div>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Body · Geist</div>
+        <div style="font-family:Geist, sans-serif; font-weight:400; font-size:4.5rem; line-height:1.0; letter-spacing:-0.02em; color:#F0F6FC;">Aa</div>
+        <div style="font-size:1.25rem; line-height:1.3; color:#C9D1D9; margin-top:16px;">ABCDEFGHIJKLM<br>abcdefghijklm 0123456789</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; margin-top:24px; line-height:1.8;">wght 300–700 · measure 65–75ch<br>body 1rem/1.65 · body-lg 1.125rem/1.6</div>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Mono · JetBrains Mono</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-weight:500; font-size:4.5rem; line-height:1.0; color:#F0F6FC;">Aa</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:1.125rem; line-height:1.35; color:#C9D1D9; margin-top:16px;">ABCDEFGHIJKLM<br>abcdefghijkl 0123456789</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; margin-top:24px; line-height:1.8;">labels · dates · KPI values · stack chips<br>0.75rem, uppercase, tracking 0.12em</div>
+      </div>
+    </div>
+
+    <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:48px; display:grid; gap:32px;">
+      <div style="display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:baseline; border-bottom:1px solid #1F2937; padding-bottom:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">display-1<br><span style="color:#30363D;">clamp(2.75, 5vw, 6.5rem)</span></div>
+        <div style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 88, 'opsz' 96; font-weight:600; font-size:clamp(2.75rem, 1.5rem + 5vw, 6.5rem); line-height:1.0; letter-spacing:-0.02em; color:#F0F6FC; text-wrap:balance;">I lead teams that ship production software</div>
+      </div>
+      <div style="display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:baseline; border-bottom:1px solid #1F2937; padding-bottom:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">display-2<br><span style="color:#30363D;">clamp(2, 3vw, 4rem)</span></div>
+        <div style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 90; font-weight:600; font-size:clamp(2rem, 1.2rem + 3vw, 4rem); line-height:1.05; letter-spacing:-0.015em; color:#F0F6FC;">and I make the web move.</div>
+      </div>
+      <div style="display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:baseline; border-bottom:1px solid #1F2937; padding-bottom:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">h2<br><span style="color:#30363D;">clamp(1.75, 1.6vw, 2.75rem)</span></div>
+        <div style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95; font-weight:600; font-size:clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem); line-height:1.15; color:#F0F6FC;">Selected work</div>
+      </div>
+      <div style="display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:baseline; border-bottom:1px solid #1F2937; padding-bottom:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">h3<br><span style="color:#30363D;">1.375rem / 1.25</span></div>
+        <div style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC;">Technical direction</div>
+      </div>
+      <div style="display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:baseline; border-bottom:1px solid #1F2937; padding-bottom:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">body-lg<br><span style="color:#30363D;">1.125rem / 1.6</span></div>
+        <div style="font-size:1.125rem; line-height:1.6; color:#C9D1D9; max-width:70ch; text-wrap:pretty;">Hospital operations, learning platforms, creator-discovery tooling, procurement systems. Technical direction, code review and mentorship by day; real-time 3D on the web that holds frame rate on a mid-range phone.</div>
+      </div>
+      <div style="display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:baseline; border-bottom:1px solid #1F2937; padding-bottom:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">body<br><span style="color:#30363D;">1rem / 1.65</span></div>
+        <div style="color:#C9D1D9; max-width:72ch; text-wrap:pretty;">Creator-discovery platform with automated enrichment pipelines and reversible data migrations — dry-run, apply, rollback. Ships behind staged builds with enforced security rules.</div>
+      </div>
+      <div style="display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:baseline;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">label<br><span style="color:#30363D;">0.75rem mono</span></div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E;">Tech Lead @ Data Age · Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1440px; margin:0 auto; padding:96px 0 0;">
+    <div style="display:flex; align-items:baseline; gap:16px; margin-bottom:8px;">
+      <span style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#A78BFA;">02</span>
+      <h2 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95; font-weight:600; font-size:clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem); line-height:1.15; letter-spacing:-0.015em; color:#F0F6FC; margin:0;">Colour &amp; semantics</h2>
+    </div>
+    <p style="color:#8B949E; max-width:70ch; margin:0 0 48px; text-wrap:pretty;">Violet is leadership and architecture. Cyan is craft and motion. The gradient appears in exactly three places — the Assembly, an optional clip on hero display text, and primary CTA hover — so it never becomes decoration.</p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:24px;">
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#0D1117; border-bottom:1px solid #1F2937;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--bg-0</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#0D1117 · page</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#11161D; border-bottom:1px solid #1F2937;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--bg-1</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#11161D · raised</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#161B22; border-bottom:1px solid #1F2937;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--bg-2</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#161B22 · surface</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#1F2937; border-bottom:1px solid #1F2937;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--line-1</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#1F2937 · subtle</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#30363D; border-bottom:1px solid #1F2937;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--line-2</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#30363D · strong</div></div></div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:24px;">
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#F0F6FC;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--fg-0</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#F0F6FC · headings</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#C9D1D9;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--fg-1</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#C9D1D9 · body</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#8B949E;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--fg-2</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#8B949E · muted</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:#6E7681;"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--fg-3</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">#6E7681 · dates</div></div></div>
+      <div style="border:1px solid #1F2937; border-radius:12px; overflow:hidden;"><div style="height:88px; background:linear-gradient(90deg,#7C3AED 0%,#22D3EE 100%);"></div><div style="padding:12px;"><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#C9D1D9;">--gradient</div><div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E;">90deg violet→cyan</div></div></div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:24px;">
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px; border-top:1px solid rgba(167,139,250,0.35);">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#A78BFA; margin-bottom:16px;">Violet · leadership</div>
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <div style="flex:1; height:56px; border-radius:6px; background:#7C3AED;"></div>
+          <div style="flex:1; height:56px; border-radius:6px; background:#A78BFA;"></div>
+          <div style="flex:1; height:56px; border-radius:6px; background:#C4B5FD;"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; line-height:1.8;">500 #7C3AED · 400 #A78BFA · 300 #C4B5FD</div>
+        <p style="color:#8B949E; font-size:0.875rem; line-height:1.5; margin:16px 0 0;">How I Lead, pillar cards, process strip, timeline markers, architecture diagrams. 400 and 300 only for text on dark.</p>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px; border-top:1px solid rgba(34,211,238,0.35);">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#22D3EE; margin-bottom:16px;">Cyan · craft</div>
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <div style="flex:1; height:56px; border-radius:6px; background:#22D3EE;"></div>
+          <div style="flex:1; height:56px; border-radius:6px; background:#67E8F9;"></div>
+          <div style="flex:1; height:56px; border-radius:6px; background:rgba(34,211,238,0.16);"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; line-height:1.8;">400 #22D3EE · 300 #67E8F9 · 400/16% wash</div>
+        <p style="color:#8B949E; font-size:0.875rem; line-height:1.5; margin:16px 0 0;">Craft, Lab, perf HUD, focus rings, links. Cyan is also the only focus colour — so it is never spent on decoration near an interactive element.</p>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:16px;">Status</div>
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <div style="flex:1; height:56px; border-radius:6px; background:#3FB950;"></div>
+          <div style="flex:1; height:56px; border-radius:6px; background:#D29922;"></div>
+          <div style="flex:1; height:56px; border-radius:6px; background:#F85149;"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; line-height:1.8;">success · warning · danger</div>
+        <p style="color:#8B949E; font-size:0.875rem; line-height:1.5; margin:16px 0 0;">Form states, admin status pills, transcode jobs. Never used on the public marketing surfaces.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1440px; margin:0 auto; padding:96px 0 0;">
+    <div style="display:flex; align-items:baseline; gap:16px; margin-bottom:8px;">
+      <span style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#A78BFA;">03</span>
+      <h2 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95; font-weight:600; font-size:clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem); line-height:1.15; letter-spacing:-0.015em; color:#F0F6FC; margin:0;">Content over the Assembly</h2>
+    </div>
+    <p style="color:#8B949E; max-width:70ch; margin:0 0 48px; text-wrap:pretty;">The recommendation: no full-width scrim. Text sits on a glass panel with a hard left edge and an open right side, so the formation reads past it instead of behind a fog. A radial vignette anchored to the panel does the contrast work locally; the object stays bright where it is not competing with words.</p>
+
+    <div style="position:relative; border:1px solid #1F2937; border-radius:20px; overflow:hidden; min-height:520px; display:flex; align-items:center;">
+      <canvas data-f="monolith-hero" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
+      <div style="position:absolute; inset:0; background:radial-gradient(85% 110% at 0% 50%, rgba(13,17,23,0.94) 0%, rgba(13,17,23,0.62) 45%, rgba(13,17,23,0) 78%);"></div>
+      <div style="position:relative; margin:48px; width:min(52%, 560px); min-width:min(100%, 320px); background:rgba(17,22,29,0.72); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border:1px solid #1F2937; border-top:1px solid rgba(255,255,255,0.06); border-radius:20px; padding:48px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Tech Lead @ Data Age · Harare, Zimbabwe</div>
+        <div style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 88, 'opsz' 96; font-weight:600; font-size:clamp(2rem, 1.2rem + 3vw, 3.5rem); line-height:1.0; letter-spacing:-0.02em; color:#F0F6FC; margin-bottom:24px; text-wrap:balance;">I lead teams that ship production software — and I make the web move.</div>
+        <p style="font-size:1.125rem; line-height:1.6; color:#C9D1D9; margin:0 0 32px; max-width:52ch; text-wrap:pretty;">Technical direction, code review and mentorship by day; real-time 3D on the web that holds frame rate on a mid-range phone.</p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <a href="#work" style="display:inline-flex; align-items:center; white-space:nowrap; min-height:44px; padding:0 24px; border-radius:999px; background:#F0F6FC; color:#0D1117; font-weight:500; font-size:0.9375rem;" style-hover="background:linear-gradient(90deg,#7C3AED 0%,#22D3EE 100%); color:#F0F6FC;">See the work</a>
+          <a href="#contact" style="display:inline-flex; align-items:center; white-space:nowrap; min-height:44px; padding:0 24px; border-radius:999px; border:1px solid #30363D; color:#C9D1D9; font-weight:500; font-size:0.9375rem;" style-hover="border-color:#22D3EE; color:#F0F6FC;">Let's talk</a>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:24px; margin-top:24px;">
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:12px; padding:24px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:12px;">Glass recipe</div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.8125rem; color:#C9D1D9; line-height:1.9;">bg rgba(17,22,29,0.72)<br>backdrop-filter: blur(12px)<br>border 1px #1F2937<br>border-top 1px rgba(255,255,255,0.06)</div>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:12px; padding:24px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:12px;">Elevation</div>
+        <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">No drop shadows on dark. Rest state is border only; hover and focus add an accent glow at 10–20% over 24px blur, plus a border colour shift. Nothing moves more than 2px.</p>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:12px; padding:24px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:12px;">Contrast floor</div>
+        <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">Body text only ever sits on glass or on <span style="font-family:'JetBrains Mono', monospace; color:#C9D1D9;">--bg-0/1/2</span> — never directly on the formation. The vignette guarantees ≥ 4.5:1 even at the object's brightest frame.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1600px; margin:0 auto; padding:96px 0 0;">
+    <div style="display:flex; align-items:baseline; gap:16px; margin-bottom:8px;">
+      <span style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#22D3EE;">04</span>
+      <h2 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95; font-weight:600; font-size:clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem); line-height:1.15; letter-spacing:-0.015em; color:#F0F6FC; margin:0;">Poster art direction</h2>
+    </div>
+    <p style="color:#8B949E; max-width:70ch; margin:0 0 48px; text-wrap:pretty;">Seven stills — what the visitor sees with WebGL off, on a low-tier GPU, or with reduced motion. Common rules: the formation never touches the frame edge; exposure is set so the brightest cube is ~85% white, not blown; background is a single soft radial in the section's accent at 6–10% over <span style="font-family:'JetBrains Mono', monospace; color:#C9D1D9;">--bg-0</span>; bloom is a wide, low-alpha halo rather than a hot core. Colour runs violet at the base to cyan at the leading edge.</p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:24px;">
+      <figure style="margin:0; background:#11161D; border:1px solid #1F2937; border-radius:20px; overflow:hidden;">
+        <div style="position:relative; aspect-ratio:16/10; background:#0D1117;"><canvas data-f="monolith" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas><div style="position:absolute; left:16px; top:16px; font-family:'JetBrains Mono', monospace; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; background:rgba(13,17,23,0.6); backdrop-filter:blur(8px); padding:6px 10px; border-radius:6px;">01 · Hero</div></div>
+        <figcaption style="padding:24px;">
+          <h3 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC; margin:0 0 8px;">Monolith</h3>
+          <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">Three-quarter view, object right of centre, base cropped by the lower edge so it reads as taller than frame. Warm violet floor light, cyan rim on the leading facet. Deepest bloom of the set — this is the one image that has to carry the page alone.</p>
+        </figcaption>
+      </figure>
+
+      <figure style="margin:0; background:#11161D; border:1px solid #1F2937; border-radius:20px; overflow:hidden;">
+        <div style="position:relative; aspect-ratio:16/10; background:#0D1117;"><canvas data-f="stream" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas><div style="position:absolute; left:16px; top:16px; font-family:'JetBrains Mono', monospace; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; background:rgba(13,17,23,0.6); backdrop-filter:blur(8px); padding:6px 10px; border-radius:6px;">02 · Proof strip</div></div>
+        <figcaption style="padding:24px;">
+          <h3 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC; margin:0 0 8px;">Stream</h3>
+          <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">Near-flat camera, band held to the middle third and bleeding off both sides. Low exposure — this poster sits under chips and must not compete. Violet at the left entry, cyan at the right exit.</p>
+        </figcaption>
+      </figure>
+
+      <figure style="margin:0; background:#11161D; border:1px solid #1F2937; border-radius:20px; overflow:hidden;">
+        <div style="position:relative; aspect-ratio:16/10; background:#0D1117;"><canvas data-f="lattice" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas><div style="position:absolute; left:16px; top:16px; font-family:'JetBrains Mono', monospace; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; background:rgba(13,17,23,0.6); backdrop-filter:blur(8px); padding:6px 10px; border-radius:6px;">03 · Selected work</div></div>
+        <figcaption style="padding:24px;">
+          <h3 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC; margin:0 0 8px;">Lattice</h3>
+          <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">Shallow perspective on a drifting plane, horizon high so the grid falls away beneath the bento. Even exposure, minimal bloom — the cards are the subject here and the lattice is a floor.</p>
+        </figcaption>
+      </figure>
+
+      <figure style="margin:0; background:#11161D; border:1px solid #1F2937; border-radius:20px; overflow:hidden;">
+        <div style="position:relative; aspect-ratio:16/10; background:#0D1117;"><canvas data-f="orbit" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas><div style="position:absolute; left:16px; top:16px; font-family:'JetBrains Mono', monospace; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; background:rgba(13,17,23,0.6); backdrop-filter:blur(8px); padding:6px 10px; border-radius:6px;">04 · How I lead</div></div>
+        <figcaption style="padding:24px;">
+          <h3 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC; margin:0 0 8px;">Orbit</h3>
+          <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">Centred and symmetrical — the only symmetrical poster in the set, which is the point. Violet-led: the core is violet-500, the rings fade toward cyan only at their far arcs. Rings tilted so none is edge-on.</p>
+        </figcaption>
+      </figure>
+
+      <figure style="margin:0; background:#11161D; border:1px solid #1F2937; border-radius:20px; overflow:hidden;">
+        <div style="position:relative; aspect-ratio:16/10; background:#0D1117;"><canvas data-f="scatter" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas><div style="position:absolute; left:16px; top:16px; font-family:'JetBrains Mono', monospace; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; background:rgba(13,17,23,0.6); backdrop-filter:blur(8px); padding:6px 10px; border-radius:6px;">05 · Craft</div></div>
+        <figcaption style="padding:24px;">
+          <h3 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC; margin:0 0 8px;">Scatter</h3>
+          <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">Caught mid-settle, not at rest: a low pile with a few cubes still in the air. Brightest exposure of the set and the only one with a visible contact shadow on the ground plane. Cyan-led.</p>
+        </figcaption>
+      </figure>
+
+      <figure style="margin:0; background:#11161D; border:1px solid #1F2937; border-radius:20px; overflow:hidden;">
+        <div style="position:relative; aspect-ratio:16/10; background:#0D1117;"><canvas data-f="grid" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas><div style="position:absolute; left:16px; top:16px; font-family:'JetBrains Mono', monospace; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; background:rgba(13,17,23,0.6); backdrop-filter:blur(8px); padding:6px 10px; border-radius:6px;">06 · Stack</div></div>
+        <figcaption style="padding:24px;">
+          <h3 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC; margin:0 0 8px;">Grid</h3>
+          <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">A cubic lattice rotated a few degrees off axis so the rows never align with the chip rows in front of it. Flattest lighting, no bloom, gradient mapped to depth — order, read literally.</p>
+        </figcaption>
+      </figure>
+
+      <figure style="margin:0; background:#11161D; border:1px solid #1F2937; border-radius:20px; overflow:hidden;">
+        <div style="position:relative; aspect-ratio:16/10; background:#0D1117;"><canvas data-f="ring" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas><div style="position:absolute; left:16px; top:16px; font-family:'JetBrains Mono', monospace; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; background:rgba(13,17,23,0.6); backdrop-filter:blur(8px); padding:6px 10px; border-radius:6px;">07 · Contact</div></div>
+        <figcaption style="padding:24px;">
+          <h3 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 100; font-weight:600; font-size:1.375rem; line-height:1.25; color:#F0F6FC; margin:0 0 8px;">Ring</h3>
+          <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:0;">A torus seen from slightly above, low in frame, the form's opening left clear for the contact panel. Softest and dimmest of the seven — the page exhales here. Full violet→cyan sweep around the circumference.</p>
+        </figcaption>
+      </figure>
+
+      <div style="background:#11161D; border:1px dashed #30363D; border-radius:20px; padding:32px; display:flex; flex-direction:column; justify-content:center;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:16px;">Fallback ladder</div>
+        <ol style="margin:0; padding-left:20px; color:#8B949E; font-size:0.875rem; line-height:1.9;">
+          <li><span style="color:#C9D1D9;">WebGL + high tier</span> — live Assembly, full formation morphs.</li>
+          <li><span style="color:#C9D1D9;">WebGL + low tier</span> — reduced instance count, morphs kept, physics off.</li>
+          <li><span style="color:#C9D1D9;">Reduced motion</span> — the poster for the current section, cross-faded on scroll at 200ms opacity only.</li>
+          <li><span style="color:#C9D1D9;">No WebGL</span> — static poster, no cross-fade.</li>
+          <li><span style="color:#C9D1D9;">No images</span> — the section's radial accent wash alone. Layout never shifts; posters are sized to the same box in every rung.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1440px; margin:0 auto; padding:96px 0 0;">
+    <div style="display:flex; align-items:baseline; gap:16px; margin-bottom:8px;">
+      <span style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#A78BFA;">05</span>
+      <h2 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95; font-weight:600; font-size:clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem); line-height:1.15; letter-spacing:-0.015em; color:#F0F6FC; margin:0;">Motion &amp; spacing rules</h2>
+    </div>
+    <p style="color:#8B949E; max-width:70ch; margin:0 0 48px; text-wrap:pretty;">Four durations, one easing curve, and a hard rule: the only thing that moves without the visitor is the Assembly's idle breathing.</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:24px;">
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Durations</div>
+        <div style="display:grid; gap:12px; font-family:'JetBrains Mono', monospace; font-size:0.8125rem; color:#C9D1D9;">
+          <div style="display:flex; justify-content:space-between; gap:16px;"><span>120ms</span><span style="color:#8B949E;">colour, border, chip</span></div>
+          <div style="display:flex; justify-content:space-between; gap:16px;"><span>200ms</span><span style="color:#8B949E;">hover, focus, glow</span></div>
+          <div style="display:flex; justify-content:space-between; gap:16px;"><span>320ms</span><span style="color:#8B949E;">reveals, nav condense</span></div>
+          <div style="display:flex; justify-content:space-between; gap:16px;"><span>560ms</span><span style="color:#8B949E;">sheet, formation cross-fade</span></div>
+          <div style="display:flex; justify-content:space-between; gap:16px; padding-top:12px; border-top:1px solid #1F2937;"><span style="color:#67E8F9;">ease-out</span><span style="color:#8B949E;">cubic-bezier(.2,.8,.2,1)</span></div>
+        </div>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Spacing scale</div>
+        <div style="display:flex; align-items:flex-end; gap:6px; height:120px;">
+          <div style="width:24px; height:4px; background:#30363D; border-radius:2px;"></div>
+          <div style="width:24px; height:8px; background:#30363D; border-radius:2px;"></div>
+          <div style="width:24px; height:12px; background:#30363D; border-radius:2px;"></div>
+          <div style="width:24px; height:16px; background:#3d4657; border-radius:2px;"></div>
+          <div style="width:24px; height:24px; background:#3d4657; border-radius:2px;"></div>
+          <div style="width:24px; height:32px; background:#4b5570; border-radius:2px;"></div>
+          <div style="width:24px; height:48px; background:#4b5570; border-radius:2px;"></div>
+          <div style="width:24px; height:64px; background:#6b5aa8; border-radius:2px;"></div>
+          <div style="width:24px; height:96px; background:#7C3AED; border-radius:2px;"></div>
+          <div style="width:24px; height:120px; background:#22D3EE; border-radius:2px;"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; margin-top:16px; line-height:1.8;">4 · 8 · 12 · 16 · 24 · 32 · 48 · 64 · 96 · 128 · 192</div>
+      </div>
+      <div style="background:#11161D; border:1px solid #1F2937; border-radius:20px; padding:32px;">
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#8B949E; margin-bottom:24px;">Radii</div>
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:24px;">
+          <div style="width:56px; height:56px; border:1px solid #30363D; border-radius:6px;"></div>
+          <div style="width:56px; height:56px; border:1px solid #30363D; border-radius:12px;"></div>
+          <div style="width:56px; height:56px; border:1px solid #30363D; border-radius:20px;"></div>
+          <div style="width:88px; height:44px; border:1px solid #30363D; border-radius:999px;"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; color:#8B949E; line-height:1.9;">6 chips · 12 cards · 20 panels · full pills</div>
+        <p style="color:#8B949E; font-size:0.875rem; line-height:1.6; margin:16px 0 0;">Focus ring: 2px <span style="color:#22D3EE;">#22D3EE</span> at 2px offset, on every focusable element, never removed on mouse.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1440px; margin:0 auto; padding:96px 0 0;">
+    <div style="display:flex; align-items:baseline; gap:16px; margin-bottom:8px;">
+      <span style="font-family:'JetBrains Mono', monospace; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:#22D3EE;">06</span>
+      <h2 style="font-family:'Bricolage Grotesque', sans-serif; font-variation-settings:'wdth' 95; font-weight:600; font-size:clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem); line-height:1.15; letter-spacing:-0.015em; color:#F0F6FC; margin:0;">Token export</h2>
+    </div>
+    <p style="color:#8B949E; max-width:70ch; margin:0 0 48px;">Drop-in custom properties. Semantic names only — a light theme can be added later by overriding the same keys.</p>
+    <pre style="background:#0D1117; border:1px solid #1F2937; border-radius:20px; padding:32px; overflow-x:auto; font-family:'JetBrains Mono', monospace; font-size:0.8125rem; line-height:1.9; color:#C9D1D9; margin:0;">:root {
+  --bg-0:#0D1117; --bg-1:#11161D; --bg-2:#161B22;
+  --line-1:#1F2937; --line-2:#30363D;
+  --fg-0:#F0F6FC; --fg-1:#C9D1D9; --fg-2:#8B949E; --fg-3:#6E7681;
+  --violet-500:#7C3AED; --violet-400:#A78BFA; --violet-300:#C4B5FD;
+  --cyan-400:#22D3EE; --cyan-300:#67E8F9;
+  --gradient:linear-gradient(90deg,#7C3AED 0%,#22D3EE 100%);
+  --success:#3FB950; --warning:#D29922; --danger:#F85149;
+
+  --glass-bg:rgba(17,22,29,.72);
+  --glass-blur:12px;
+  --glass-highlight:rgba(255,255,255,.06);
+  --glow-violet:0 0 24px rgba(124,58,237,.20);
+  --glow-cyan:0 0 24px rgba(34,211,238,.20);
+
+  --font-display:'Bricolage Grotesque',sans-serif;
+  --font-body:Geist,system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,monospace;
+  --display-1:clamp(2.75rem,1.5rem + 5vw,6.5rem);
+  --display-2:clamp(2rem,1.2rem + 3vw,4rem);
+  --h2:clamp(1.75rem,1.3rem + 1.6vw,2.75rem);
+  --h3:1.375rem; --body-lg:1.125rem; --body:1rem; --small:.875rem;
+  --label:.75rem;
+
+  --s-1:4px;  --s-2:8px;   --s-3:12px;  --s-4:16px;  --s-5:24px;
+  --s-6:32px; --s-7:48px;  --s-8:64px;  --s-9:96px;  --s-10:128px; --s-11:192px;
+  --section-y:clamp(4rem,10vw,10rem);
+  --page-x:clamp(1rem,4vw,4rem);
+  --max-content:1440px; --max-bento:1600px; --gutter:24px;
+
+  --r-chip:6px; --r-card:12px; --r-panel:20px; --r-pill:999px;
+  --d-1:120ms; --d-2:200ms; --d-3:320ms; --d-4:560ms;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --focus:0 0 0 2px var(--bg-0), 0 0 0 4px var(--cyan-400);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --d-1:1ms; --d-2:1ms; --d-3:1ms; --d-4:1ms; }
+}</pre>
+  </section>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+class Component extends DCLogic {
+  renderVals() {
+    return { rootRef: (el) => { this.root = el; if (el) requestAnimationFrame(() => this.drawAll()); } };
+  }
+  componentDidMount() {
+    this._onResize = () => { clearTimeout(this._t); this._t = setTimeout(() => this.drawAll(), 150); };
+    window.addEventListener('resize', this._onResize);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => this.drawAll());
+  }
+  componentDidUpdate() { this.drawAll(); }
+  componentWillUnmount() { window.removeEventListener('resize', this._onResize); clearTimeout(this._t); }
+
+  drawAll() {
+    if (!this.root) return;
+    this.root.querySelectorAll('canvas[data-f]').forEach((c) => this.paint(c, c.dataset.f));
+  }
+
+  rng(seed) { let s = seed; return () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; }
+
+  points(kind, n, r) {
+    const p = [];
+    const g = (a, b) => a + (b - a) * r();
+    if (kind === 'monolith') {
+      for (let i = 0; i < n; i++) {
+        const t = r();
+        const y = -1.35 + t * 2.9;
+        const taper = 0.40 - 0.17 * t;
+        const face = Math.floor(r() * 5);
+        let x, z;
+        const u = g(-1, 1);
+        if (face === 0) { x = -taper; z = u * taper; }
+        else if (face === 1) { x = taper; z = u * taper; }
+        else if (face === 2) { x = u * taper; z = -taper; }
+        else if (face === 3) { x = u * taper; z = taper; }
+        else { x = u * taper * 0.9; z = g(-1, 1) * taper * 0.9; }
+        const j = 0.055;
+        p.push([x + g(-j, j), y + g(-j, j), z + g(-j, j), t]);
+      }
+      // a few detached cubes still arriving
+      for (let i = 0; i < n * 0.06; i++) p.push([g(-2.4, 2.4), g(-1.2, 1.9), g(-1.6, 1.6), r()]);
+    } else if (kind === 'stream') {
+      for (let i = 0; i < n; i++) {
+        const t = r();
+        const x = -2.6 + t * 5.2;
+        const y = Math.sin(x * 1.15) * 0.20 + g(-0.14, 0.14);
+        const z = Math.cos(x * 0.75) * 0.32 + g(-0.28, 0.28);
+        p.push([x, y, z, t]);
+      }
+    } else if (kind === 'lattice') {
+      const cols = 26, rows = 15;
+      for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+        if (r() < 0.10) continue;
+        const x = (i / (cols - 1) - 0.5) * 4.6;
+        const z = (j / (rows - 1) - 0.5) * 3.4;
+        const y = Math.sin(x * 0.9 + z * 0.6) * 0.13 + g(-0.05, 0.05);
+        p.push([x, y, z, (i / cols) * 0.6 + (1 - j / rows) * 0.4]);
+      }
+    } else if (kind === 'orbit') {
+      const core = Math.floor(n * 0.22);
+      for (let i = 0; i < core; i++) {
+        const rr = Math.pow(r(), 0.75) * 0.55;
+        const th = r() * Math.PI * 2, ph = Math.acos(2 * r() - 1);
+        p.push([rr * Math.sin(ph) * Math.cos(th), rr * Math.cos(ph), rr * Math.sin(ph) * Math.sin(th), r() * 0.06]);
+      }
+      const tilts = [[0.28, 0.15], [-0.55, 0.9], [0.75, -0.6]];
+      const radii = [0.95, 1.25, 1.55];
+      for (let k = 0; k < 3; k++) {
+        const cnt = Math.floor(n * 0.19);
+        for (let i = 0; i < cnt; i++) {
+          const a = r() * Math.PI * 2, R = radii[k] + g(-0.05, 0.05);
+          let x = Math.cos(a) * R, z = Math.sin(a) * R, y = g(-0.035, 0.035);
+          const [tx, ty] = tilts[k];
+          let y2 = y * Math.cos(tx) - z * Math.sin(tx); let z2 = y * Math.sin(tx) + z * Math.cos(tx);
+          let x2 = x * Math.cos(ty) - z2 * Math.sin(ty); z2 = x * Math.sin(ty) + z2 * Math.cos(ty);
+          // far arc only reaches mid-ramp; rings stay violet-led
+          const far = (Math.cos(a) + 1) / 2;
+          p.push([x2, y2, z2, 0.05 + k * 0.07 + far * 0.34 + r() * 0.04]);
+        }
+      }
+    } else if (kind === 'scatter') {
+      for (let i = 0; i < n; i++) {
+        const air = r() < 0.14;
+        const x = g(-2.0, 2.0);
+        const pile = Math.max(0, 0.85 - Math.abs(x) * 0.42) ;
+        const y = air ? g(0.5, 1.9) : -0.95 + Math.pow(r(), 1.6) * (pile + 0.12);
+        const z = g(-1.1, 1.1) * (air ? 1 : 0.85);
+        p.push([x, y, z, air ? 0.35 : 0.58 + (y + 0.95) * 0.42]);
+      }
+    } else if (kind === 'grid') {
+      const s = 9;
+      for (let i = 0; i < s; i++) for (let j = 0; j < s; j++) for (let k = 0; k < s; k++) {
+        if (r() < 0.42) continue;
+        p.push([(i / (s - 1) - 0.5) * 2.5, (j / (s - 1) - 0.5) * 2.5, (k / (s - 1) - 0.5) * 2.5, k / (s - 1)]);
+      }
+    } else if (kind === 'ring') {
+      for (let i = 0; i < n; i++) {
+        const a = r() * Math.PI * 2, b = r() * Math.PI * 2;
+        const R = 1.25, t2 = 0.30 + g(-0.05, 0.05);
+        const x = (R + t2 * Math.cos(b)) * Math.cos(a);
+        const z = (R + t2 * Math.cos(b)) * Math.sin(a);
+        const y = t2 * Math.sin(b);
+        p.push([x, y, z, (a / (Math.PI * 2))]);
+      }
+    }
+    return p;
+  }
+
+  paint(canvas, kind) {
+    const box = canvas.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = Math.round(box.width), H = Math.round(box.height);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const cfg = {
+      monolith: { n: 2200, rot: 0.55, tilt: 0.10, scale: 0.36, cx: 0.63, cy: 0.86, bloom: 1.0, wash: '#7C3AED', washA: 0.10, size: 3.1 },
+      'monolith-hero': { n: 2600, rot: 0.55, tilt: 0.10, scale: 0.40, cx: 0.79, cy: 0.90, bloom: 1.25, wash: '#7C3AED', washA: 0.13, size: 3.3, vignette: 0.35 },
+      stream:   { n: 1500, rot: 0.35, tilt: 0.06, scale: 0.24, cx: 0.50, cy: 0.50, bloom: 0.45, wash: '#22D3EE', washA: 0.06, size: 2.4 },
+      lattice:  { n: 400,  rot: 0.42, tilt: 0.52, scale: 0.26, cx: 0.50, cy: 0.42, bloom: 0.35, wash: '#7C3AED', washA: 0.07, size: 2.8 },
+      orbit:    { n: 2200, rot: 0.30, tilt: 0.30, scale: 0.30, cx: 0.50, cy: 0.50, bloom: 0.85, wash: '#7C3AED', washA: 0.11, size: 2.6 },
+      scatter:  { n: 1700, rot: 0.22, tilt: 0.18, scale: 0.32, cx: 0.50, cy: 0.44, bloom: 1.15, wash: '#22D3EE', washA: 0.10, size: 3.2 },
+      grid:     { n: 1,    rot: 0.62, tilt: 0.34, scale: 0.30, cx: 0.50, cy: 0.50, bloom: 0.18, wash: '#7C3AED', washA: 0.05, size: 2.6 },
+      ring:     { n: 2000, rot: 0.20, tilt: 0.62, scale: 0.30, cx: 0.50, cy: 0.56, bloom: 0.55, wash: '#22D3EE', washA: 0.07, size: 2.5 }
+    }[kind];
+    if (!cfg) return;
+
+    // background: bg-0 + soft accent radial
+    ctx.fillStyle = '#0D1117'; ctx.fillRect(0, 0, W, H);
+    const gr = ctx.createRadialGradient(W * cfg.cx, H * cfg.cy, 0, W * cfg.cx, H * cfg.cy, Math.max(W, H) * 0.72);
+    const wr = parseInt(cfg.wash.slice(1, 3), 16), wg = parseInt(cfg.wash.slice(3, 5), 16), wb = parseInt(cfg.wash.slice(5, 7), 16);
+    gr.addColorStop(0, 'rgba(' + wr + ',' + wg + ',' + wb + ',' + cfg.washA + ')');
+    gr.addColorStop(1, 'rgba(13,17,23,0)');
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+
+    const r = this.rng(kind.length * 7919 + 12345);
+    const pts = this.points(kind.split('-')[0], cfg.n, r);
+
+    const cy = Math.cos(cfg.tilt), sy = Math.sin(cfg.tilt);
+    const cr = Math.cos(cfg.rot), sr = Math.sin(cfg.rot);
+    const S = Math.min(W, H) * cfg.scale * (W / Math.max(H, 1) > 1.75 ? 1.05 : 1);
+
+    const proj = pts.map((p) => {
+      let x = p[0], y = p[1], z = p[2];
+      let x1 = x * cr - z * sr, z1 = x * sr + z * cr;
+      let y1 = y * cy - z1 * sy, z2 = y * sy + z1 * cy;
+      const d = 1 / (1 + z2 * 0.16);
+      return { x: W * cfg.cx + x1 * S * d, y: H * cfg.cy - y1 * S * d, z: z2, d, t: p[3] };
+    }).sort((a, b) => b.z - a.z);
+
+    // ground contact shadow for scatter
+    if (kind === 'scatter') {
+      const sg = ctx.createRadialGradient(W * 0.5, H * 0.78, 0, W * 0.5, H * 0.78, W * 0.42);
+      sg.addColorStop(0, 'rgba(0,0,0,0.55)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+    }
+
+    const shade = (q) => {
+      const t = Math.max(0, Math.min(1, q.t));
+      return [Math.round(124 + (34 - 124) * t), Math.round(58 + (211 - 58) * t), Math.round(237 + (238 - 237) * t)];
+    };
+    if (cfg.bloom > 0.2) {
+      ctx.globalCompositeOperation = 'lighter';
+      for (const q of proj) {
+        const [R, G, B] = shade(q);
+        const depth = Math.max(0.18, Math.min(1, 0.55 + q.d * 0.55));
+        const s = cfg.size * q.d;
+        ctx.fillStyle = 'rgba(' + R + ',' + G + ',' + B + ',' + (0.032 * cfg.bloom * depth).toFixed(3) + ')';
+        ctx.fillRect(q.x - s * 2.2, q.y - s * 2.2, s * 4.4, s * 4.4);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    for (const q of proj) {
+      const [R, G, B] = shade(q);
+      const depth = Math.max(0.18, Math.min(1, 0.55 + q.d * 0.55));
+      const s = cfg.size * q.d;
+      ctx.fillStyle = 'rgba(' + R + ',' + G + ',' + B + ',' + (0.88 * depth).toFixed(3) + ')';
+      ctx.fillRect(q.x - s / 2, q.y - s / 2, s, s);
+      ctx.fillStyle = 'rgba(240,246,252,' + (0.20 * depth).toFixed(3) + ')';
+      ctx.fillRect(q.x - s / 2, q.y - s / 2, s, Math.max(0.6, s * 0.3));
+    }
+
+    // edge falloff so the formation never touches the frame
+    const vg = ctx.createRadialGradient(W * 0.5, H * 0.5, Math.min(W, H) * 0.28, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
+    vg.addColorStop(0, 'rgba(13,17,23,0)');
+    vg.addColorStop(1, 'rgba(13,17,23,' + (cfg.vignette != null ? cfg.vignette : 0.85) + ')');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
+}
+</script>
+</body>
+</html>
