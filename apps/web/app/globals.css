@@ -1,0 +1,1064 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+ * DESIGN TOKENS
+ *
+ * Source of truth: docs/design-extraction/design-foundations.md
+ *   § 6 "Token export — VERBATIM AND COMPLETE"
+ * Corrections applied: docs/superpowers/specs/2026-08-16-design-system-
+ *   reconciliation.md § 2 (tokens), § 3.1 (breakpoints), § 8 (focus ring).
+ *
+ * Every value below is measured, not chosen. Change the reconciliation spec
+ * before you change a number here.
+ * ========================================================================== */
+@theme static inline {
+  /* --- Surfaces ---------------------------------------------------------- */
+  --bg-0: #0D1117;              /* page */
+  --bg-1: #11161D;              /* raised */
+  --bg-2: #161B22;              /* surface — reconciliation §2: now used, it is
+                                   the Writing section's opaque card ground */
+  --line-1: #1F2937;            /* subtle */
+  --line-2: #30363D;            /* strong */
+
+  /* --- Foreground -------------------------------------------------------- */
+  --fg-0: #F0F6FC;              /* headings */
+  --fg-1: #C9D1D9;              /* body */
+  --fg-2: #8B949E;              /* muted */
+  --fg-3: #6E7681;              /* dates */
+
+  /* --- Accents ----------------------------------------------------------- */
+  /* Violet is leadership and architecture. Cyan is craft and motion. */
+  --violet-500: #7C3AED;
+  --violet-400: #A78BFA;
+  --violet-300: #C4B5FD;
+  --cyan-400: #22D3EE;
+  --cyan-300: #67E8F9;
+  /* reconciliation §2: promoted from the canvas shade ramp, which is a
+     three-stop violet -> fuchsia -> cyan. Load-bearing, not decorative. */
+  --fuchsia-400: #E879F9;
+
+  /* The gradient appears in exactly three places — the Assembly/canvas, an
+     optional clip on hero display text, and primary-CTA hover. A fourth use
+     is a bug. */
+  --gradient: linear-gradient(90deg, #7C3AED 0%, #22D3EE 100%);
+
+  /* --- Domain tints (reconciliation §2) ---------------------------------- */
+  /* Identity tints for domain chips, stack headings and timeline dots only.
+     They never signal section leaning; violet/cyan keep that job. */
+  --accent-emerald: #6EE7B7;
+  --accent-amber: #FCD34D;
+  --accent-fuchsia: #F0ABFC;
+  --accent-iris: #C4B5FD;
+  --accent-cyan: #67E8F9;
+  --accent-violet: #A78BFA;
+
+  /* --- Status ------------------------------------------------------------ */
+  --success: #3FB950;
+  --warning: #D29922;
+  --danger: #F85149;
+
+  /* --- Glass surfaces ---------------------------------------------------- */
+  --glass-bg: rgba(17, 22, 29, .72);
+  --glass-blur: 12px;
+  --glass-highlight: rgba(255, 255, 255, .06);
+  --glow-violet: 0 0 24px rgba(124, 58, 237, .20);
+  --glow-cyan: 0 0 24px rgba(34, 211, 238, .20);
+
+  /* --- Type scale -------------------------------------------------------- */
+  /* reconciliation §2: the hero H1 is deliberately smaller than --display-1
+     because it sits inside a glass panel. Promoted from an inline clamp. */
+  --display-hero: clamp(2.75rem, 1.5rem + 3.6vw, 4.75rem);
+  --display-1: clamp(2.75rem, 1.5rem + 5vw, 6.5rem);
+  --display-2: clamp(2rem, 1.2rem + 3vw, 4rem);
+  --h2: clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem);
+  --h3: 1.375rem;
+  --body-lg: 1.125rem;
+  --body: 1rem;
+  --small: .875rem;
+  --label: .75rem;
+
+  /* --- Spacing ----------------------------------------------------------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --s-9: 96px;
+  --s-10: 128px;
+  --s-11: 192px;
+  --section-y: clamp(4rem, 10vw, 10rem);
+  --page-x: clamp(1rem, 4vw, 4rem);
+  --max-content: 1440px;
+  --max-bento: 1600px;
+  /* reconciliation §2: 16px below 768, 24px at and above. The 24px half of
+     that rule is declared exactly once, in the breakpoint layer below. */
+  --gutter: 16px;
+
+  /* --- Radii ------------------------------------------------------------- */
+  --r-chip: 6px;
+  --r-card: 12px;
+  --r-panel: 20px;
+  --r-pill: 999px;
+
+  /* --- Motion ------------------------------------------------------------ */
+  --d-1: 120ms;                 /* colour, border, chip */
+  --d-2: 200ms;                 /* hover, focus, glow */
+  --d-3: 320ms;                 /* reveals, nav condense */
+  --d-4: 560ms;                 /* sheet, formation cross-fade */
+  /* reconciliation §2: kept OUT of the reduced-motion override below. Every
+     other --d-* collapses to 1ms there; an opacity-only cross-fade is safe
+     under reduced motion and rung 3 of the poster fallback ladder needs it. */
+  --d-crossfade: 200ms;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+
+  /* --- Focus ------------------------------------------------------------- */
+  --focus: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--cyan-400);
+
+  /* --- Breakpoints (reconciliation §3.1) --------------------------------- */
+  /* Design targets are 390 / 834 / 1440 / 2560; the other five must not break. */
+  --bp-xs: 360px;               /* floor — never below */
+  --bp-sm: 640px;
+  --bp-md: 768px;               /* tablet */
+  --bp-lg: 1024px;              /* desktop nav appears */
+  --bp-xl: 1280px;
+  --bp-2xl: 1536px;
+  --bp-3xl: 1920px;
+  --bp-4xl: 2560px;             /* ultrawide 21:9 / 32:9 */
+
+  /* Tailwind variant bridges. sm/md/lg/xl/2xl already equal §3.1 by default,
+     so only the three extra stops are declared. Literals, not var() — a
+     media query cannot resolve a custom property. */
+  --breakpoint-xs: 360px;
+  --breakpoint-3xl: 1920px;
+  --breakpoint-4xl: 2560px;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+
+    /* Font stacks from design-foundations §6. `app/fonts.ts` redeclares these
+       three on <html> with the self-hosted next/font faces; that rule is
+       unlayered, so it always beats this layered fallback. */
+    --font-display: 'Bricolage Grotesque', sans-serif;
+    --font-body: Geist, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Document base — design-foundations §0. */
+  body {
+    background-color: var(--bg-0);
+    color: var(--fg-1);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Links rest cyan and cross over to violet on hover. */
+  a {
+    color: var(--cyan-300);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--violet-300);
+  }
+
+  ::selection {
+    background: var(--violet-500);
+    color: var(--fg-0);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 0;
+    color: var(--fg-0);
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  p,
+  li,
+  dd,
+  blockquote,
+  figcaption {
+    text-wrap: pretty;
+  }
+
+  /* reconciliation §2 / §8.1: `border-radius: inherit`, never a fixed 6px.
+     The export's fixed radius mismatches every 12px, 20px and 999px component
+     the ring lands on. Cyan is the only focus colour and is never removed. */
+  :focus-visible {
+    outline: 2px solid var(--cyan-400);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+
+  /* --gutter is the only token with a breakpoint. Declared once, here — never
+     per-component. (reconciliation §2) */
+  @media (width >= 768px) {
+    :root {
+      --gutter: 24px;
+    }
+  }
+
+  /* --d-crossfade is deliberately absent from the block below; see the token
+     comment above. Only movement collapses under reduced motion. */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --d-1: 1ms;
+      --d-2: 1ms;
+      --d-3: 1ms;
+      --d-4: 1ms;
+    }
+
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer components {
+  /* Skip link — off-canvas until focused, then pinned 24px in from the top
+     left. Must stay reachable by keyboard on every page. */
+  .skip-link {
+    position: fixed;
+    top: 24px;
+    left: -9999px;
+    z-index: 100;
+    padding: 12px 20px;
+    background: var(--bg-2);
+    border: 1px solid var(--cyan-400);
+    border-radius: var(--r-chip);
+    color: var(--fg-0);
+    font-family: var(--font-body);
+    font-size: var(--small);
+    line-height: 1;
+  }
+
+  .skip-link:focus {
+    left: 24px;
+  }
+}
+
+/* ==========================================================================
+ * DISPLAY TYPOGRAPHY — reconciliation §4
+ *
+ * Bricolage Grotesque's `wdth` axis is load-bearing: display text is set
+ * narrow and tall to echo the Monolith. `opsz` is only ever 96, and only on
+ * display-1-class text. Every level is weight 600.
+ * ========================================================================== */
+
+/* wdth 88, opsz 96 — the widest-impact setting, used at full display size. */
+@utility type-display-1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 88, 'opsz' 96;
+  font-size: var(--display-1);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* Same axes as display-1 at the smaller in-panel hero size. */
+@utility type-display-hero {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 88, 'opsz' 96;
+  font-size: var(--display-hero);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* wdth 90 — the rendered value wins over the specimen note's "88". */
+@utility type-display-2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 90;
+  font-size: var(--display-2);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* wdth 92 — large bento card h3. */
+@utility type-bento-large {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 92;
+  font-size: var(--h3);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+/* wdth 95 — every section h2. */
+@utility type-h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 95;
+  font-size: var(--h2);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* wdth 96 — standard bento card h3. */
+@utility type-bento-standard {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 96;
+  font-size: var(--h3);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+/* wdth 98 — Writing card h3. */
+@utility type-writing-h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 98;
+  font-size: var(--h3);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+/* wdth 100 — the neutral h3. */
+@utility type-h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 100;
+  font-size: var(--h3);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+/* wdth 90 — the monogram. An outlined box, never a gradient tile. */
+@utility type-monogram {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: 'wdth' 90;
+  font-size: var(--h3);
+  line-height: 1;
+}
+
+/* ==========================================================================
+ * COMPONENT UTILITIES — layout primitives + UI library
+ *
+ * Plan tasks 6 and 8. Specification: reconciliation § 6. Measurements:
+ * docs/design-extraction/design-home.md § 2–15 and design-foundations.md § 3.
+ *
+ * APPEND-ONLY SECTION — everything above this banner is the token layer.
+ *
+ * Why CSS rather than long Tailwind class strings: every value below is
+ * measured, and several are unreachable from utility classes — the primary
+ * CTA's gradient hover, backdrop-filter, dashed placeholder chrome, the
+ * hairline `gap:1px` divider trick. Variants are driven by `data-*`
+ * attributes so a component's state is legible in the DOM and assertable in
+ * a test rather than encoded in class-name soup.
+ *
+ * Responsive rule (reconciliation § 3.2): fluid clamp() lives here; the only
+ * media queries are Tailwind variants written in the components, and they
+ * change track counts, padding steps and anchoring — never a clamp.
+ * ========================================================================== */
+
+/* --- Layout primitives --------------------------------------------------- */
+
+/* Container. `--page-x` is the clamp(1rem,4vw,4rem) page gutter; the cap is
+   1440px everywhere except the bento, which is the only 1600px block. */
+@utility shell-content {
+  width: 100%;
+  max-width: var(--max-content);
+  margin-inline: auto;
+  padding-inline: var(--page-x);
+}
+
+@utility shell-bento {
+  width: 100%;
+  max-width: var(--max-bento);
+  margin-inline: auto;
+  padding-inline: var(--page-x);
+}
+
+/* The <section> element itself: positioning context for the backdrop layer,
+   plus the hairline that separates most sections from the one above. */
+@utility section-shell {
+  position: relative;
+
+  &[data-divider='true'] {
+    border-top: 1px solid var(--line-1);
+  }
+
+  &[data-background='bg-0'] {
+    background: var(--bg-0);
+  }
+
+  &[data-background='bg-1'] {
+    background: var(--bg-1);
+  }
+}
+
+/* Reconciliation § 6 note: section padding and max-width are ONE wrapper, not
+   a Section wrapping a Container. `position:relative` lifts content above the
+   absolutely-positioned backdrop slot. */
+@utility section-inner {
+  position: relative;
+  width: 100%;
+  max-width: var(--max-content);
+  margin-inline: auto;
+  padding-block: var(--section-y);
+  padding-inline: var(--page-x);
+
+  &[data-width='bento'] {
+    max-width: var(--max-bento);
+  }
+
+  /* The proof strip is the one section that does not use --section-y. */
+  &[data-pad='compact'] {
+    padding-block: 48px;
+  }
+
+  &[data-pad='none'] {
+    padding-block: 0;
+  }
+}
+
+/* --- Button (reconciliation § 6.1) --------------------------------------- */
+
+/* Pills at 999px, never 6px. Sizes are 48px (hero CTA, 0 26px) and 44px
+   (nav, 0 22px); `min-height` restates the 44px tap-target floor so no future
+   size can drop under it. */
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background var(--d-2) var(--ease),
+    color var(--d-2) var(--ease),
+    border-color var(--d-2) var(--ease),
+    box-shadow var(--d-2) var(--ease);
+
+  &[data-size='lg'] {
+    height: 48px;
+    padding: 0 26px;
+  }
+
+  &[data-size='md'] {
+    height: 44px;
+    padding: 0 22px;
+  }
+
+  /* Primary — solid heading-white, inverting to the sanctioned gradient on
+     hover. This is one of only three places --gradient may appear. */
+  &[data-variant='primary'] {
+    background: var(--fg-0);
+    color: var(--bg-0);
+  }
+
+  &[data-variant='primary']:not(:disabled):not([aria-disabled='true']):hover,
+  &[data-variant='primary']:not(:disabled):not([aria-disabled='true']):focus-visible {
+    background: var(--gradient);
+    color: var(--fg-0);
+  }
+
+  /* Secondary — outline pill, cyan border + cyan glow on hover. */
+  &[data-variant='secondary'] {
+    border-color: var(--line-2);
+    color: var(--fg-1);
+  }
+
+  &[data-variant='secondary']:not(:disabled):not([aria-disabled='true']):hover,
+  &[data-variant='secondary']:not(:disabled):not([aria-disabled='true']):focus-visible {
+    border-color: var(--cyan-400);
+    color: var(--fg-0);
+    box-shadow: var(--glow-cyan);
+  }
+
+  /* Ghost — the nav pill. */
+  &[data-variant='ghost'] {
+    color: var(--fg-2);
+  }
+
+  &[data-variant='ghost']:not(:disabled):not([aria-disabled='true']):hover,
+  &[data-variant='ghost']:not(:disabled):not([aria-disabled='true']):focus-visible {
+    color: var(--fg-0);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  /* Icon — square 44px outline, violet on hover (the menu button). */
+  &[data-variant='icon'] {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-color: var(--line-2);
+    color: var(--fg-1);
+  }
+
+  &[data-variant='icon']:not(:disabled):not([aria-disabled='true']):hover,
+  &[data-variant='icon']:not(:disabled):not([aria-disabled='true']):focus-visible {
+    border-color: var(--violet-400);
+    color: var(--fg-0);
+  }
+
+  /* Unsupported — a DESIGNED permanent state (reconciliation § 8), not a bug.
+     Stays in the tab order: aria-disabled, never the disabled attribute. */
+  &[data-variant='unsupported'] {
+    border-style: dashed;
+    border-color: var(--line-2);
+    color: var(--fg-2);
+    cursor: not-allowed;
+  }
+
+  /* Rest of the elevation rule: nothing moves more than 2px. */
+  &:not(:disabled):not([aria-disabled='true']):active {
+    transform: translateY(1px);
+  }
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
+  &[data-variant='primary']:disabled {
+    background: var(--line-2);
+    color: var(--fg-2);
+  }
+
+  &[data-variant='secondary']:disabled,
+  &[data-variant='ghost']:disabled,
+  &[data-variant='icon']:disabled {
+    border-color: var(--line-1);
+    color: var(--fg-3);
+    box-shadow: none;
+  }
+
+  &[data-loading='true'] {
+    cursor: wait;
+  }
+}
+
+@utility btn-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: var(--r-pill);
+  animation: ws-spin 700ms linear infinite;
+}
+
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Chip (reconciliation § 6.2) ----------------------------------------- */
+
+/* Every chip is JetBrains Mono on a tinted ground at 8–10% alpha, 6px radius.
+   `--chip-tint` is set inline from lib/accent.ts; color-mix reproduces the
+   extraction's rgba() alphas from the tint token without a second hex. */
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  font-size: var(--label);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  transition:
+    background var(--d-1) var(--ease),
+    border-color var(--d-1) var(--ease),
+    color var(--d-1) var(--ease),
+    box-shadow var(--d-1) var(--ease);
+
+  /* sm — the in-card domain badge; lg — the proof-strip domain row. */
+  &[data-size='sm'] {
+    padding: 5px 10px;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  &[data-size='lg'] {
+    padding: 7px 12px;
+  }
+
+  &[data-variant='domain'] {
+    background: color-mix(in srgb, var(--chip-tint, var(--fg-2)) 8%, transparent);
+    border-color: color-mix(in srgb, var(--chip-tint, var(--fg-2)) 40%, transparent);
+    color: var(--chip-tint, var(--fg-1));
+  }
+
+  &[data-tier='core'] {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--line-2);
+    color: var(--fg-0);
+  }
+
+  &[data-tier='working'] {
+    border-color: var(--line-2);
+    color: var(--fg-1);
+  }
+
+  &[data-tier='familiar'] {
+    border-color: var(--line-1);
+    color: var(--fg-2);
+  }
+
+  /* The cyan-highlight tier, used only by "3D & creative". */
+  &[data-highlight='true'] {
+    background: color-mix(in srgb, var(--cyan-400) 10%, transparent);
+    border-color: color-mix(in srgb, var(--cyan-400) 35%, transparent);
+    color: var(--fg-0);
+  }
+
+  /* Filter chips are the only interactive chips, so they alone carry the
+     44px tap target. */
+  &[data-variant='filter'] {
+    min-height: 44px;
+    padding-inline: 14px;
+    cursor: pointer;
+  }
+
+  &[data-variant='filter']:hover,
+  &[data-variant='filter']:focus-visible {
+    border-color: var(--line-2);
+    color: var(--fg-0);
+  }
+
+  &[data-selected='true'] {
+    background: color-mix(in srgb, var(--cyan-400) 12%, transparent);
+    border-color: color-mix(in srgb, var(--cyan-400) 50%, transparent);
+    color: var(--fg-0);
+    box-shadow: var(--glow-cyan);
+  }
+}
+
+/* --- Badge (reconciliation § 6.11) --------------------------------------- */
+
+@utility badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+
+  /* The fourth state. Amber, for work that is announced but not shipped. */
+  &[data-status='in-preparation'] {
+    background: color-mix(in srgb, var(--warning) 8%, transparent);
+    border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+    color: var(--warning);
+  }
+}
+
+/* --- KpiTile (reconciliation § 6.4) -------------------------------------- */
+
+/* Two variants, NEITHER with the plan's left border. Hero is a <dl> cell
+   above a hairline; proof is a cell inside the hairline grid and paints its
+   own ground. */
+@utility kpi {
+  & > dt {
+    margin: 0 0 8px;
+    color: var(--fg-2);
+    font-family: var(--font-mono);
+    font-size: var(--label);
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  & > dd {
+    margin: 0;
+    color: var(--fg-0);
+    font-family: var(--font-display);
+    font-variation-settings: 'wdth' 92;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  /* 1.375rem at 390 and 1.75rem from 1440 up — the § 3.3 matrix endpoints,
+     joined by a clamp rather than a breakpoint step. */
+  &[data-variant='hero'] > dd {
+    font-size: clamp(1.375rem, 1.05rem + 0.85vw, 1.75rem);
+  }
+
+  &[data-variant='proof'] {
+    padding: 24px;
+    background: rgba(17, 22, 29, 0.86);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+
+  &[data-variant='proof'] > dt {
+    margin-bottom: 12px;
+  }
+
+  &[data-variant='proof'] > dd {
+    font-size: 2.25rem;
+    line-height: 1;
+  }
+}
+
+@utility kpi-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(12px, 2vw, 24px);
+  margin: 0;
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line-1);
+}
+
+/* --- Monogram (reconciliation § 6.3) ------------------------------------- */
+
+/* An OUTLINED BOX. A gradient here would be a fourth gradient placement,
+   which § 2 forbids. */
+@utility monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  color: var(--fg-0);
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 90;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition:
+    border-color var(--d-2) var(--ease),
+    color var(--d-2) var(--ease);
+
+  &[data-size='footer'] {
+    width: 40px;
+    height: 40px;
+  }
+
+  &[data-interactive='true']:hover,
+  &[data-interactive='true']:focus-visible {
+    border-color: var(--violet-400);
+  }
+}
+
+/* --- GlassCard (design-foundations § 3.1) -------------------------------- */
+
+/* The recipe, including the signature lit top edge that overrides the
+   four-sided --line-1 border. */
+@utility glass {
+  position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--line-1);
+  border-top: 1px solid var(--glass-highlight);
+  border-radius: var(--r-panel);
+  transition:
+    border-color var(--d-2) var(--ease),
+    box-shadow var(--d-2) var(--ease);
+
+  &[data-variant='work-large'],
+  &[data-variant='work-standard'] {
+    display: flex;
+    flex-direction: column;
+    background: rgba(22, 27, 34, 0.78);
+  }
+
+  &[data-variant='pillar'] {
+    background: rgba(22, 27, 34, 0.8);
+  }
+
+  /* The Stack aside is the one glass card WITHOUT the lit top edge. */
+  &[data-variant='aside'] {
+    background: rgba(22, 27, 34, 0.8);
+    border-top-color: var(--line-1);
+  }
+
+  &[data-variant='craft'] {
+    background: rgba(17, 22, 29, 0.76);
+  }
+
+  &[data-variant='form'] {
+    background: rgba(17, 22, 29, 0.78);
+  }
+
+  /* Optional accent-tinted top border (pillars, craft panel). Declared after
+     the variants so it wins, and never applied to the aside. */
+  &[data-tone] {
+    border-top-color: color-mix(in srgb, var(--glass-tone) 30%, transparent);
+  }
+
+  /* Hover is border-colour + glow only. No transform, no scale (§ 6.9).
+     :focus-visible carries the same shift so the hover has a keyboard peer. */
+  &[data-glow='cyan']:hover,
+  &[data-glow='cyan']:focus-visible {
+    border-color: var(--cyan-400);
+    box-shadow: var(--glow-cyan);
+  }
+
+  &[data-glow='violet']:hover,
+  &[data-glow='violet']:focus-visible {
+    border-color: var(--violet-400);
+    box-shadow: var(--glow-violet);
+  }
+}
+
+/* --- HairlineGrid (reconciliation § 6.5) --------------------------------- */
+
+/* gap:1px over a --line-1 ground with overflow:hidden produces the dividers.
+   Cells carry ZERO borders. Used three times: proof tiles, process rail,
+   contact channels. */
+@utility hairline {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--line-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+
+@utility hairline-cell {
+  position: relative;
+  padding: 24px;
+  background: rgba(17, 22, 29, 0.86);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  transition: background var(--d-2) var(--ease);
+
+  /* The process rail measures 0.88 where the proof strip measures 0.86. */
+  &[data-tone='rail'] {
+    background: rgba(17, 22, 29, 0.88);
+  }
+
+  &[data-interactive='true']:hover,
+  &[data-interactive='true']:focus-within {
+    background: rgba(22, 27, 34, 0.95);
+  }
+}
+
+/* --- Placeholder convention (§ 6.10, design-home § 5) -------------------- */
+
+/* 1px dashed container + 1px dotted underline on unresolved strings + muted
+   text. The one pattern every unresolved slot on the page uses. */
+@utility placeholder-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: rgba(17, 22, 29, 0.62);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-panel);
+  color: var(--fg-2);
+}
+
+@utility placeholder-text {
+  color: var(--fg-2);
+  border-bottom: 1px dotted var(--line-2);
+  align-self: flex-start;
+}
+
+@utility placeholder-ghost {
+  display: block;
+  height: 26px;
+  border: 1px dashed var(--line-1);
+  border-radius: var(--r-chip);
+}
+
+/* --- TechTag ------------------------------------------------------------- */
+
+@utility tech-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-chip);
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* `margin: auto 0 24px` — the `auto` is the flex spacer that pins tag rows to
+   a common baseline across cards of different heights (§ 6.9). Do not remove. */
+@utility tech-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: auto 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+/* --- Eyebrow / SectionHeader --------------------------------------------- */
+
+@utility eyebrow {
+  display: block;
+  margin: 0;
+  color: var(--eyebrow-tint, var(--fg-2));
+  font-family: var(--font-mono);
+  font-size: var(--label);
+  font-weight: 400;
+  line-height: 1.8;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+
+  &[data-size='sm'] {
+    font-size: 0.6875rem;
+    line-height: 1.4;
+  }
+}
+
+@utility section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: clamp(24px, 4vw, 48px);
+  margin-bottom: 48px;
+}
+
+@utility section-head-title {
+  max-width: 60ch;
+}
+
+@utility section-head-lede {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--fg-2);
+  text-wrap: pretty;
+}
+
+/* --- BulletList ---------------------------------------------------------- */
+
+/* Hanging indent without list-style: a 14px glyph column and a 1fr text
+   column. `▸` in an accent for the pillars, `—` in --line-2 for the timeline. */
+@utility bullets {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  &[data-variant='timeline'] {
+    gap: 8px;
+    max-width: 70ch;
+  }
+}
+
+@utility bullets-item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 12px;
+  color: var(--fg-1);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+@utility bullets-glyph {
+  color: var(--bullet-tint, var(--line-2));
+  line-height: 1.6;
+}
+
+/* --- StackLegend --------------------------------------------------------- */
+
+@utility stack-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-1);
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+@utility stack-legend-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@utility stack-legend-swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+
+  &[data-level='core'] {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  &[data-level='familiar'] {
+    border-color: var(--line-1);
+  }
+}
+
+/* --- Reveal (reconciliation § 7) ----------------------------------------- */
+
+/* Deliberately no rules. The hidden state is applied by JavaScript and never
+   by this stylesheet: the markup ships visible, so a failed observer, a thrown
+   error or a crawler without JS can never leave the page blank. See
+   components/ui/Reveal.tsx.
+ */
+
+/* The spinner is the one looping animation in this layer. */
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner {
+    animation: none;
+  }
+}
