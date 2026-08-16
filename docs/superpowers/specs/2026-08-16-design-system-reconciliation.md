@@ -80,7 +80,7 @@ It is the single source. Notes on the gaps that extraction identified:
 | `display-2` renders at `wdth 90` but the specimen note claims 88 | Use **`wdth 90`**. The rendered value wins over the prose. |
 | `--bg-2` defined, never used | Now used — it is the Writing section's opaque card ground (§6.8). |
 | `#E879F9` fuchsia used in the canvas ramp and Habit bullets but absent from the token export | Promote to `--fuchsia-400: #E879F9`. It is load-bearing: the canvas shade ramp is three-stop violet→fuchsia→cyan. |
-| Six domain-tint hues used but untokenised | `--accent-emerald #6EE7B7`, `--accent-amber #FCD34D`, `--accent-fuchsia #F0ABFC`, `--accent-iris #C4B5FD`, `--accent-cyan #67E8F9`, `--accent-violet #A78BFA` |
+| Six domain-tint hues used but untokenised | `--accent-emerald #6EE7B7`, `--accent-amber #FCD34D`, `--accent-fuchsia #F0ABFC`, `--accent-iris #C4B5FD`, `--accent-cyan #67E8F9`, `--accent-violet #A78BFA`. **These live only in the web app.** The shared contract keeps `accent: 'violet' \| 'cyan'` — the semantic pair — and `apps/web/lib/accent.ts` maps `domain.id` → brand tint for display. Brand hex must not enter a contract the API and third parties consume. |
 | Focus ring radius fixed at 6px against 12/20/999px components | `:focus-visible` sets `border-radius: inherit`. The global 6px is a defect in the export; do not reproduce it. |
 
 **The gradient rule is FIXED and load-bearing.** `--gradient` appears in exactly three places:
@@ -189,11 +189,16 @@ Per-level axis values (`opsz` is only ever 96, and only on display-1-class text)
 | writing card h3 | 98 | — | 600 |
 | h3 / monogram | 100 / 90 | — | 600 |
 
-**Fonts are self-hosted, not fetched from Google.** `docs/design-extraction/fonts-raw/` holds 13
-woff2 files recovered from the bundle with the axis ranges intact
-(`font-weight: 300 800; font-stretch: 75% 100%`). Subset to latin, serve from `public/fonts/`,
-`display: swap`, with `size-adjust` fallbacks. This is what keeps the ≤90 KB font budget
-reachable and removes a third-party origin from the CSP.
+**Fonts are self-hosted, never fetched from a third-party origin at runtime.** The export links
+`fonts.googleapis.com`; the build must not. Use `next/font/google`, which downloads, subsets and
+self-hosts at build time — same result as hand-rolled `@font-face`, without the maintenance, and
+it keeps `font-src` in the CSP limited to `self`.
+
+If `next/font/google` cannot supply a family or preserve an axis, fall back to hand-rolled
+`@font-face` over the 13 woff2 files recovered from the export bundle
+(`docs/design-extraction/fonts-raw/`), which carry the axis ranges intact
+(`font-weight: 300 800; font-stretch: 75% 100%`). Either path must reach `display: swap`, latin
+subset, and `size-adjust` fallback metrics so the ≤90 KB budget and CLS = 0 both hold.
 
 ---
 
@@ -252,6 +257,34 @@ M0 plan:
 
 ---
 
+## 6a. Honesty constraints
+
+A mockup can show a state it cannot reach. A build cannot. The export was produced as a visual
+artifact, so several of its states are *depictions* of behaviour rather than behaviour — and
+shipping them literally would make the site assert things about itself that are untrue.
+
+**The rule: a designed state may only be shown once the condition it describes can genuinely
+occur.** Where it cannot yet, ship the same component with wording that is true now, and gate the
+export's original string on the real condition so a later milestone inherits it verbatim.
+
+This bites in four places, and matters more here than on most sites: the entire pitch is
+engineering judgement and measured performance. A visitor who catches the site lying about its
+own frame rate has learned something decisive.
+
+| Component | What the export depicts | Why it is false in M0 | What ships |
+|---|---|---|---|
+| **Contact form** | 1200 ms of latency, then a `Sent` banner | No API exists. Nothing leaves the browser. Telling a visitor their message arrived when it did not is the worst failure on the page — it loses real enquiries silently | Full §6.12 state machine markup, but `success`/`error`/`limited`/`sending` are unreachable. Submit composes a `mailto:` and says so: *"Nothing was sent from this page."* M3 sets `state` from a response and touches no markup |
+| **`offline` status** | Copy asserting the visitor is offline | The M0 `mailto:` hand-off happens whether or not they are | Export wording gated on `navigator.onLine === false`; M0 wording otherwise |
+| **Perf HUD** | `fps 60.0 · frame 14.2 ms · draw calls 1 · instances 12 000 · gpu tier 2`, fps in `--success` green | Hardcoded numbers presented as telemetry. Green reads as "budget met" and M0 measures nothing about the 3D budget | `fps`/`frame` sampled from a real `requestAnimationFrame` loop, running only while the panel is open. Renderer counters render `—` with prose explaining why. No green |
+| **RSS-failure card** | *"The Medium feed didn't respond."* | No fetch is attempted, so no fetch failed | *"Live posts land here once the Medium feed is connected."* Export string gated on `feedAttempted` |
+| **Physics toggle** | An enabled control | No engine until M2/M5 | Flips `aria-pressed` and nothing else, with a visible note that the engine ships later |
+
+The same principle governs content: two proof-strip KPIs carry `placeholder: true` (§1.1) rather
+than being presented as measured, and links without real URLs are dropped rather than rendered as
+`href="#"` dead affordances.
+
+---
+
 ## 7. Reveal system
 
 New in the export, absent from the plan, and buildable in M0 with plain CSS + IntersectionObserver
@@ -297,6 +330,15 @@ They render as disabled with a `Coming soon` affordance rather than as 404 traps
 
 ## 10. Open decisions
 
-Tracked live in `.superpowers/coordination.md`. At time of writing: **OD-2** (widen the domain
-accent enum — session-A), **OD-5** (which contact email — owner), **OD-6** (content authoring
-ownership — session-A).
+Tracked live in `.superpowers/coordination.md`. At time of writing: **OD-5** (which contact
+email — owner) and **OD-6** (content authoring ownership — session-A).
+
+Resolved since drafting: **OD-1** (positioning — spec wins), **OD-2** (domain accents stay
+`violet|cyan` in the contract; brand tints move to `apps/web/lib/accent.ts`), **OD-3** (section
+id is `#timeline`), **OD-4** (Task 1 committed as `3eb6910`).
+
+One correction to §5 arising from OD-2's resolution: `formationIdSchema` on the contracts branch
+still carries `badge` as its default for `project.formation`. Since no `badge` formation ships,
+the default is inert rather than wrong — projects simply never render a formation in M0. Leave it
+alone for now and drop it when the case-study template lands, so the contract does not churn
+twice.
