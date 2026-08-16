@@ -1,0 +1,32 @@
+{
+  "name": "Wieslaw Samushonga",
+  "headline": "I lead teams that ship production software — and I make the web move.",
+  "sub": "Hospital operations, learning platforms, creator-discovery tooling, procurement systems. Technical direction, code review and mentorship by day; real-time 3D on the web that holds frame rate on a mid-range phone.",
+  "location": "Harare, Zimbabwe",
+  "email": "wieslaw@rapidevlabs.com",
+  "emailPlaceholder": true,
+  "availability": "Open to consulting & collaboration",
+  "roles": [
+    { "org": "Data Age", "title": "Tech Lead" },
+    { "org": "Rapidev Labs", "title": "Senior Software Engineer", "url": "https://rapidevlabs.com" }
+  ],
+  "links": [
+    { "label": "Email", "url": "mailto:wieslaw@rapidevlabs.com", "kind": "primary" },
+    { "label": "LinkedIn", "url": "https://linkedin.com/in/wieslaw-samushonga-3b3913154", "kind": "primary" },
+    { "label": "GitHub", "url": "https://github.com/JxstWieslaw", "kind": "primary" },
+    { "label": "X", "url": "https://x.com/wiesysams1", "kind": "primary" },
+    { "label": "Medium", "url": "https://medium.com/@youngswiesysams", "kind": "primary" },
+    { "label": "Rapidev Labs", "url": "https://rapidevlabs.com", "kind": "secondary" },
+    { "label": "Instagram", "url": "https://instagram.com/jxstwieslaw_", "kind": "elsewhere" },
+    { "label": "Reddit", "url": "https://reddit.com/user/jxstWieslaw", "kind": "elsewhere" }
+  ],
+  "kpis": [
+    { "label": "Years shipping", "value": "5+", "group": "hero" },
+    { "label": "Domains shipped", "value": "7", "derived": "domainsShipped", "group": "hero" },
+    { "label": "Specialism", "value": "WebGL / real-time 3D", "group": "hero" },
+    { "label": "Production platforms led/shipped", "value": "10", "placeholder": true, "group": "proof" },
+    { "label": "Domains shipped", "value": "7", "derived": "domainsShipped", "group": "proof" },
+    { "label": "Roles", "value": "Tech Lead + Senior SWE", "group": "proof" },
+    { "label": "Concurrent production systems monitored", "value": "6", "placeholder": true, "group": "proof" }
+  ]
+}

@@ -1,0 +1,78 @@
+[
+  {
+    "id": "languages",
+    "label": "Languages",
+    "items": [
+      { "name": "TypeScript", "level": "core" },
+      { "name": "JavaScript", "level": "core" },
+      { "name": "SQL", "level": "core" },
+      { "name": "Python", "level": "working" },
+      { "name": "GLSL", "level": "familiar" }
+    ]
+  },
+  {
+    "id": "frontend",
+    "label": "Frontend",
+    "items": [
+      { "name": "React", "level": "core" },
+      { "name": "Next.js", "level": "core" },
+      { "name": "Tailwind CSS", "level": "core" },
+      { "name": "TanStack Query", "level": "working" },
+      { "name": "Zustand", "level": "working" },
+      { "name": "TipTap", "level": "working" },
+      { "name": "dnd-kit", "level": "familiar" }
+    ]
+  },
+  {
+    "id": "backend",
+    "label": "Backend & Data",
+    "items": [
+      { "name": "Node.js", "level": "core" },
+      { "name": "Express", "level": "core" },
+      { "name": "Firebase", "level": "core" },
+      { "name": "PostgreSQL", "level": "core" },
+      { "name": "Zod", "level": "core" },
+      { "name": "Supabase", "level": "working" },
+      { "name": "NestJS", "level": "working" },
+      { "name": "Apify", "level": "working" }
+    ]
+  },
+  {
+    "id": "cloud",
+    "label": "Cloud & DevOps",
+    "items": [
+      { "name": "Vercel", "level": "core" },
+      { "name": "Docker", "level": "core" },
+      { "name": "GitHub Actions", "level": "working" },
+      { "name": "Google Cloud", "level": "working" },
+      { "name": "Sentry", "level": "working" }
+    ]
+  },
+  {
+    "id": "three-d",
+    "label": "3D & Creative",
+    "items": [
+      { "name": "Three.js", "level": "core" },
+      { "name": "React Three Fiber", "level": "core" },
+      { "name": "WebGL", "level": "core" },
+      { "name": "drei", "level": "working" },
+      { "name": "Rapier", "level": "working" },
+      { "name": "Howler", "level": "working" },
+      { "name": "WebXR", "level": "familiar" },
+      { "name": "Blender", "level": "familiar" }
+    ]
+  },
+  {
+    "id": "practice",
+    "label": "Tooling & Practice",
+    "items": [
+      { "name": "Git", "level": "core" },
+      { "name": "ESLint", "level": "core" },
+      { "name": "Conventional commits", "level": "core" },
+      { "name": "Playwright", "level": "working" },
+      { "name": "Vitest", "level": "working" },
+      { "name": "Puppeteer", "level": "working" },
+      { "name": "Linear", "level": "working" }
+    ]
+  }
+]

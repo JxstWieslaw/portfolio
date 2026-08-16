@@ -1,0 +1,50 @@
+[
+  {
+    "id": "healthcare",
+    "label": "Healthcare",
+    "blurb": "Hospital operations platforms.",
+    "accent": "violet"
+  },
+  {
+    "id": "education",
+    "label": "Education",
+    "blurb": "Learning management and authoring.",
+    "accent": "violet"
+  },
+  {
+    "id": "creator-economy",
+    "label": "Creator economy",
+    "blurb": "Discovery and enrichment pipelines.",
+    "accent": "violet"
+  },
+  {
+    "id": "procurement-erp",
+    "label": "Procurement / ERP",
+    "blurb": "Approval chains and generated documentation.",
+    "accent": "violet"
+  },
+  {
+    "id": "social-services",
+    "label": "Social services",
+    "blurb": "Assistance platforms on typed backends.",
+    "accent": "violet"
+  },
+  {
+    "id": "developer-tooling",
+    "label": "Developer tooling",
+    "blurb": "Review-signal and delivery tooling.",
+    "accent": "cyan"
+  },
+  {
+    "id": "interactive-3d",
+    "label": "Interactive 3D",
+    "blurb": "Real-time WebGL experiences.",
+    "accent": "cyan"
+  },
+  {
+    "id": "ar-xr",
+    "label": "AR / XR",
+    "blurb": "Augmented reality product work.",
+    "accent": "cyan"
+  }
+]

@@ -1,0 +1,34 @@
+[
+  {
+    "org": "Data Age",
+    "title": "Tech Lead",
+    "period": { "from": "2025-01" },
+    "location": "Harare, Zimbabwe",
+    "highlights": [
+      "Set technical direction and architecture standards across the engineering team.",
+      "Run code review as the main channel for standards and mentorship, not a defect net.",
+      "Accountable for how the work gets built, not only that it shipped."
+    ]
+  },
+  {
+    "org": "Rapidev Labs",
+    "title": "Senior Software Engineer",
+    "period": { "from": "2024-01" },
+    "location": "Harare, Zimbabwe",
+    "highlights": [
+      "Design and ship full-stack features end to end — data modelling through deployment.",
+      "Own API design, typed backends and the pipelines behind production releases.",
+      "Make migrations reversible: dry-run, apply, rollback, with honest error handling."
+    ]
+  },
+  {
+    "org": "Earlier engineering roles",
+    "title": "Software Engineer",
+    "period": { "from": "2020-01", "to": "2023-12" },
+    "highlights": [
+      "Built and maintained production web platforms across healthcare, education and procurement.",
+      "Moved from feature work to owning architecture and release process."
+    ],
+    "placeholder": true
+  }
+]
