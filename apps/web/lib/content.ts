@@ -1,15 +1,24 @@
 /**
  * Typed access to `content/*.json`.
  *
- * The shapes below MIRROR `@repo/contracts` (session-A, `packages/contracts/src/content.ts`).
- * They are declared locally only because the contracts package lives on a branch this one has
- * not merged yet. When the branches join, replace these declarations with
- * `import type { Profile, Project, … } from '@repo/contracts'` — nothing else in this file, and
- * nothing in any component, needs to change.
+ * Shapes come from `@repo/contracts` — the same Zod schemas the API derives its DTOs and
+ * OpenAPI document from. That is the point of the shared package: a breaking contract change
+ * fails this app's typecheck in CI rather than at runtime in production.
  *
  * Sections never import this module. They take their data as props, so they stay pure and
  * testable and this stays the single place that knows where content comes from.
  */
+
+import {
+  domainSchema,
+  experienceSchema,
+  profileSchema,
+  projectSchema,
+  skillGroupSchema,
+  writingSchema,
+} from '@repo/contracts'
+import type { Domain, Experience, Project, SkillGroup, Writing } from '@repo/contracts'
+import { z } from 'zod'
 
 import domainsJson from '../../../content/domains.json'
 import experienceJson from '../../../content/experience.json'
@@ -18,58 +27,11 @@ import projectsJson from '../../../content/projects.json'
 import skillsJson from '../../../content/skills.json'
 import writingJson from '../../../content/writing.json'
 
-export type Visibility = 'public' | 'private' | 'client'
-export type SkillLevel = 'core' | 'working' | 'familiar'
-export type SemanticAccent = 'violet' | 'cyan'
+export type { Domain, Experience, Project, SkillGroup, Writing }
+export type { SkillLevel, Visibility } from '@repo/contracts'
 
-export type Metric = { label: string; value: string; placeholder?: boolean }
-
-export type Domain = {
-  id: string
-  label: string
-  blurb: string
-  accent: SemanticAccent
-}
-
-export type Project = {
-  slug: string
-  name: string
-  domain: string
-  role: string
-  period: { from: string; to?: string }
-  summary: string
-  stack: string[]
-  visibility: Visibility
-  featured: boolean
-  order: number
-  outcome?: Metric[]
-  links?: { label: string; url: string }[]
-  placeholder?: boolean
-}
-
-export type Experience = {
-  org: string
-  title: string
-  period: { from: string; to?: string }
-  location?: string
-  highlights: string[]
-  placeholder?: boolean
-}
-
-export type SkillGroup = {
-  id: string
-  label: string
-  items: { name: string; level: SkillLevel }[]
-}
-
-export type Writing = {
-  title: string
-  url: string
-  date: string
-  source: 'medium' | 'other'
-  excerpt: string
-  placeholder?: boolean
-}
+/** The accent pair the contract carries. Brand tints live in `lib/accent.ts` — see OD-2. */
+export type SemanticAccent = Domain['accent']
 
 /**
  * `group` splits the single `kpis` array into the hero trio and the proof-strip tiles.
@@ -83,35 +45,53 @@ export type Writing = {
  * Deliberately NOT positional (`kpis[0..2]`): a positional split breaks silently the first time
  * anyone reorders the array, and content is edited by hand.
  */
-export type KpiGroupName = 'hero' | 'proof'
+const kpiGroupSchema = z.enum(['hero', 'proof'])
+export type KpiGroupName = z.infer<typeof kpiGroupSchema>
 
-export type Kpi = {
-  label: string
-  value: string
-  group: KpiGroupName
-  derived?: 'domainsShipped'
-  placeholder?: boolean
-}
+/**
+ * The contract's profile plus the two fields it does not yet declare (OD-7, OD-5).
+ *
+ * Extending the schema keeps them validated instead of merely asserted: a KPI missing its
+ * `group` fails the build rather than silently vanishing from both the hero and the proof strip.
+ */
+const localProfileSchema = profileSchema.extend({
+  emailPlaceholder: z.boolean().optional(),
+  kpis: z.array(profileSchema.shape.kpis.element.extend({ group: kpiGroupSchema })).min(1),
+})
 
-export type Profile = {
-  name: string
-  headline: string
-  sub: string
-  location: string
-  email: string
-  emailPlaceholder?: boolean
-  availability: string
-  roles: { org: string; title: string; url?: string }[]
-  links: { label: string; url: string; kind: 'primary' | 'secondary' | 'elsewhere' }[]
-  kpis: Kpi[]
-}
+export type Kpi = z.infer<typeof localProfileSchema>['kpis'][number]
 
-const profile = profileJson as Profile
-const domains = domainsJson as Domain[]
-const projects = projectsJson as Project[]
-const experience = experienceJson as Experience[]
-const skills = skillsJson as SkillGroup[]
-const writing = writingJson as Writing[]
+/**
+ * The contract's `Profile`, plus the two fields it does not yet declare.
+ *
+ * `group` is requested as OD-7 — spec section 5.5 defines two distinct KPI sets and the design
+ * renders them through two different components, so the flat array needs a discriminator.
+ * `emailPlaceholder` marks the address as provisional while OD-5 is open.
+ *
+ * They are declared by extending the contract's own schema rather than bolted on afterwards,
+ * so they are validated too. When the contract absorbs them, delete the extension — nothing
+ * else changes.
+ */
+export type Profile = z.infer<typeof localProfileSchema>
+
+/**
+ * Content is PARSED, not cast.
+ *
+ * A cast would only assert the shape; parsing enforces it. Every constraint the API will apply
+ * — `YYYY-MM` periods, a 280-character summary cap, real URLs and emails, kebab-case slugs,
+ * non-empty arrays — is checked here at build time. Malformed content therefore fails the
+ * build with a field path, instead of rendering `undefined` into the page or throwing in a
+ * visitor's browser.
+ *
+ * It also means the defaults in the schema (`placeholder: false`, `outcome: []`) are applied
+ * rather than assumed, which is why the raw JSON can omit them.
+ */
+const profile = localProfileSchema.parse(profileJson)
+const domains = z.array(domainSchema).parse(domainsJson)
+const projects = z.array(projectSchema).parse(projectsJson)
+const experience = z.array(experienceSchema).parse(experienceJson)
+const skills = z.array(skillGroupSchema).parse(skillsJson)
+const writing = z.array(writingSchema).parse(writingJson)
 
 export function getProfile(): Profile {
   return profile

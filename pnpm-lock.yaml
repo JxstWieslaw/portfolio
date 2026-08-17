@@ -20,6 +20,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@repo/contracts':
+        specifier: workspace:^
+        version: link:../../packages/contracts
       next:
         specifier: ^15.5.23
         version: 15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -29,6 +32,9 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.2.8(react@19.2.8)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       '@next/eslint-plugin-next':
         specifier: ^15.5.23
