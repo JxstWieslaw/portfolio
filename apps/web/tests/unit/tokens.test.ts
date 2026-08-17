@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -214,23 +214,63 @@ describe('globals.css — display typography (reconciliation §4)', () => {
 })
 
 describe('fonts.ts — variable-axis configuration', () => {
-  const bricolage = blockAfter(fonts, 'Bricolage_Grotesque(')
+  const bricolage = blockAfter(fonts, 'export const display = localFont(')
 
-  it('never pins a weight array on Bricolage Grotesque', () => {
-    // A `weight` key collapses the variable axes, and `wdth` is load-bearing.
-    expect(bricolage).not.toMatch(/\bweight\b/)
-  })
-
-  it('requests the opsz and wdth axes', () => {
-    expect(bricolage).toMatch(/axes:\s*\['opsz',\s*'wdth'\]/)
+  it('keeps Bricolage Grotesque wide enough for every wdth the design uses', () => {
+    // `wdth` is load-bearing — display text is set narrow and tall to echo the
+    // Monolith. The shipped file is instanced to a clamped `wdth` range, so the
+    // declared `font-stretch` must still span every value in DISPLAY_LEVELS.
+    const stretch = /font-stretch',\s*value:\s*'(\d+)%\s*(\d+)%'/.exec(bricolage)
+    expect(stretch).not.toBeNull()
+    const low = Number(stretch?.[1])
+    const high = Number(stretch?.[2])
+    for (const [, axes] of DISPLAY_LEVELS) {
+      const wdth = Number(/'wdth'\s*(\d+)/.exec(axes)?.[1])
+      expect(wdth).toBeGreaterThanOrEqual(low)
+      expect(wdth).toBeLessThanOrEqual(high)
+    }
   })
 
   it.each(['--font-display', '--font-body', '--font-mono'])('exposes %s', (variable) => {
     expect(fonts).toContain(`variable: '${variable}'`)
   })
 
-  it('self-hosts all three families through next/font', () => {
-    expect(fonts).toContain("from 'next/font/google'")
+  it('self-hosts all three families through next/font/local', () => {
+    expect(fonts).toContain("from 'next/font/local'")
     expect(fonts.match(/display: 'swap'/g) ?? []).toHaveLength(3)
+  })
+
+  it('generates size-adjust fallback metrics for all three families', () => {
+    // Without these the swap from the fallback to the real face shifts layout.
+    expect(fonts.match(/adjustFontFallback: 'Arial'/g) ?? []).toHaveLength(3)
+  })
+})
+
+describe('public/fonts — the ≤ 90 KB font budget (design spec §6)', () => {
+  const fontsDir = join(appDir, '..', 'public', 'fonts')
+  const files = [
+    'bricolage-grotesque-latin.woff2',
+    'geist-latin.woff2',
+    'jetbrains-mono-latin.woff2',
+  ]
+
+  it.each(files)('ships %s, and fonts.ts points at it', (file) => {
+    expect(statSync(join(fontsDir, file)).isFile()).toBe(true)
+    expect(fonts).toContain(`../public/fonts/${file}`)
+  })
+
+  it.each([
+    'bricolage-grotesque-OFL.txt',
+    'geist-OFL.txt',
+    'jetbrains-mono-OFL.txt',
+  ])('redistributes %s alongside the font it licenses', (licence) => {
+    expect(readFileSync(join(fontsDir, licence), 'utf8')).toContain(
+      'SIL Open Font License, Version 1.1',
+    )
+  })
+
+  it('keeps the total preloaded payload under 90 KB', () => {
+    const total = files.reduce((sum, file) => sum + statSync(join(fontsDir, file)).size, 0)
+    expect(total).toBeLessThanOrEqual(90 * 1024)
   })
 })

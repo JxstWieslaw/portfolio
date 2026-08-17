@@ -93,3 +93,36 @@ export function Chip({
   const Tag = as as 'span'
   return <Tag {...attributes}>{children}</Tag>
 }
+
+/**
+ * The row the eight domain chips sit in.
+ *
+ * Reconciliation § 3.4 — below 768 it is a horizontal scroll-snap row with
+ * masked edges, and from 768 up it wraps. Deliberately not the brief's
+ * marquee: a marquee autoplays, which contradicts "nothing autoplays except
+ * the Assembly's idle breathing", and it needs a separate static variant under
+ * reduced motion anyway. A swipeable, keyboard- and screen-reader-navigable
+ * scroller gives the same "there are more of these" affordance for no
+ * animation frames. The edge fade is a CSS mask, not motion.
+ */
+export function ChipScroller({
+  children,
+  className,
+  ...rest
+}: {
+  children: ReactNode
+  className?: string
+} & Omit<HTMLAttributes<HTMLUListElement>, 'children' | 'className'>) {
+  return (
+    <ul
+      {...rest}
+      className={cx(
+        'chip-scroller',
+        'md:flex-wrap md:overflow-visible md:pb-0 md:[mask-image:none]',
+        className
+      )}
+    >
+      {children}
+    </ul>
+  )
+}

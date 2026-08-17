@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { Badge } from '@/components/ui/Badge'
 import { BulletList } from '@/components/ui/BulletList'
 import { Button } from '@/components/ui/Button'
-import { Chip } from '@/components/ui/Chip'
+import { Chip, ChipScroller } from '@/components/ui/Chip'
 import { Eyebrow } from '@/components/ui/Eyebrow'
 import { GlassCard } from '@/components/ui/GlassCard'
 import { HairlineCell, HairlineGrid } from '@/components/ui/HairlineGrid'
@@ -162,6 +162,27 @@ describe('Chip', () => {
   it.each(['sm', 'md', 'lg'] as const)('renders the %s size', (size) => {
     render(<Chip size={size}>Label</Chip>)
     expect(screen.getByText('Label')).toHaveAttribute('data-size', size)
+  })
+
+  // Reconciliation § 3.4 — a scroll-snap row on mobile, not a marquee.
+  it('scrolls the domain row on mobile and wraps it from 768 up', () => {
+    const { container } = render(
+      <ChipScroller>
+        <Chip as="li" variant="domain" tone="emerald">
+          Healthcare
+        </Chip>
+      </ChipScroller>
+    )
+    const row = container.firstElementChild
+    expect(row?.tagName).toBe('UL')
+    expect(row).toHaveClass('chip-scroller')
+    expect(row).toHaveClass('md:flex-wrap')
+
+    const scroller = blockAfter(css, '@utility chip-scroller ')
+    expect(scroller).toContain('overflow-x: auto')
+    expect(scroller).toContain('scroll-snap-type: x proximity')
+    expect(scroller).toContain('mask-image')
+    expect(scroller).not.toContain('animation')
   })
 })
 
