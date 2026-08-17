@@ -90,3 +90,18 @@ export function personJsonLd(): Record<string, unknown> {
     ...(sameAs.length > 0 ? { sameAs } : {}),
   }
 }
+
+/**
+ * The JSON-LD payload, safe to place inside a `<script>` element.
+ *
+ * `JSON.stringify` escapes quotes but NOT `<`, so a string containing `</script>` would close
+ * the tag early and everything after it would be parsed as markup. Today this content is typed
+ * and comes from the repo, so that cannot happen — but the RSS-fed writing entries are already
+ * slated to become external data, and a guard that only works while the input stays trusted is
+ * not a guard. Escaping `<` costs nothing and stays correct when the assumption changes.
+ *
+ * `<` is valid inside a JSON string literal, so the parsed object is unchanged.
+ */
+export function personJsonLdScript(): string {
+  return JSON.stringify(personJsonLd()).replace(/</g, '\\u003c')
+}

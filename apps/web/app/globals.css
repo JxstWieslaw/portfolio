@@ -670,6 +670,39 @@
   }
 }
 
+/* The proof-strip domain row. Reconciliation § 3.4: a horizontal scroll-snap
+   row with masked edges below 768, wrapping from 768 up — deliberately NOT the
+   brief's marquee, which would autoplay against the motion principle and need
+   a separate reduced-motion variant. The mask is CSS, not motion.
+   Mobile-first: components add `md:flex-wrap md:overflow-visible
+   md:[mask-image:none]` to switch to the wrapped desktop composition. */
+@utility chip-scroller {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 4px;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    black 12px,
+    black calc(100% - 28px),
+    transparent 100%
+  );
+
+  & > * {
+    flex: none;
+    scroll-snap-align: start;
+  }
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* --- Badge (reconciliation § 6.11) --------------------------------------- */
 
 @utility badge {
