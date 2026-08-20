@@ -104,6 +104,23 @@ export function Chip({
  * reduced motion anyway. A swipeable, keyboard- and screen-reader-navigable
  * scroller gives the same "there are more of these" affordance for no
  * animation frames. The edge fade is a CSS mask, not motion.
+ *
+ * Below 768px this is a genuine `overflow-x: auto` scroll container, and its
+ * children (`Chip` in its non-`filter` variants) render as plain, inert
+ * `<li>`s — so with no fix, the row is reachable by touch or mouse-drag but
+ * has no keyboard path in or out (axe's `scrollable-region-focusable`, WCAG
+ * 2.1.1; caught by `apps/web/tests/e2e/a11y.spec.ts`). `tabIndex={0}` gives
+ * the scroller itself a stop in the tab order — from there, arrow keys pan
+ * the native scroll. The `<ul>`'s implicit `list` role is left alone
+ * (deliberately — a first attempt overrode it to `role="region"`, which
+ * "worked" for that one rule but orphaned every `<li>` child from a
+ * list-rooted ARIA tree, trading one axe violation for a second one,
+ * `listitem`'s required-parent check); `list` already correctly describes
+ * eight domain names, and every call site is already required to give it an
+ * accessible name via `aria-label`/`aria-labelledby` (`ProofStrip` passes
+ * `aria-label`), which is a fully valid combination on a `list`-rooted
+ * element. This does not remove or replace the horizontal scroll, which is a
+ * deliberate design decision, not the defect.
  */
 export function ChipScroller({
   children,
@@ -115,6 +132,7 @@ export function ChipScroller({
 } & Omit<HTMLAttributes<HTMLUListElement>, 'children' | 'className'>) {
   return (
     <ul
+      tabIndex={0}
       {...rest}
       className={cx(
         'chip-scroller',

@@ -70,6 +70,59 @@ test.describe('home page', () => {
     await expect(page.getByRole('link', { name: /skip to content/i })).toBeFocused()
   })
 
+  /**
+   * Engine-independent companion to the Tab-based test above. That test is
+   * the stronger check — it drives real keyboard input — but it only runs on
+   * Chromium engines, because WebKit does not tab to `<a>` elements under
+   * Playwright automation at all (verified: it reproduces for every anchor on
+   * the page, not just the skip link). Without a second, engine-independent
+   * assertion, a genuine skip-link focus-order regression would go uncaught
+   * on 2 of 5 projects. This test asserts the fact the Tab-based test can't
+   * reach on WebKit — that the skip link is first in DOM focus order — by
+   * reading the DOM directly instead of driving the keyboard, so it runs on
+   * every project.
+   */
+  test('the skip link is first in DOM focus order', async ({ page }) => {
+    await page.goto('/')
+
+    const first = await page.evaluate(() => {
+      const FOCUSABLE_SELECTOR = [
+        'a[href]',
+        'area[href]',
+        'button:not([disabled])',
+        'input:not([disabled])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        'iframe',
+        '[contenteditable="true"]',
+        '[tabindex]',
+      ].join(',')
+
+      // `querySelectorAll` returns elements in document (DOM tree) order, which
+      // is also tab order for every element here: none of them carry a
+      // positive `tabindex`, so there is no reordering to account for.
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+
+      const visible = candidates.filter((el) => {
+        if (el.tabIndex < 0) return false
+        const style = window.getComputedStyle(el)
+        // The skip link is intentionally off-canvas (`left: -9999px`) until
+        // focused — that is `display`/`visibility` unaffected, which is the
+        // whole point of the technique, so this check correctly keeps it.
+        return style.display !== 'none' && style.visibility !== 'hidden'
+      })
+
+      const el = visible[0]
+      return el
+        ? { tagName: el.tagName, className: el.className, text: (el.textContent ?? '').trim() }
+        : null
+    })
+
+    expect(first?.tagName).toBe('A')
+    expect(first?.className).toContain('skip-link')
+    expect(first?.text.toLowerCase()).toContain('skip to content')
+  })
+
   // The primary nav is `hidden lg:flex`, so this only applies at >= 1024px.
   // Below that the bottom sheet carries navigation and is covered by its own test.
   test('nav anchors move the viewport to the target section', async ({ page }, testInfo) => {

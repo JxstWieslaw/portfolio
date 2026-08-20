@@ -396,7 +396,17 @@ describe('ProofStrip — domain chips', () => {
   it('renders all eight as a scroll-snap row, tinted per lib/accent.ts', () => {
     const { container } = render(<ProofStrip domains={DOMAINS} kpis={PROOF_KPIS} />)
 
+    // `tabIndex={0}` is `ChipScroller`'s fix for axe's
+    // `scrollable-region-focusable`: below 768px this is a real
+    // `overflow-x: auto` container whose children are inert `<li>`s, so
+    // without a focusable stop of its own a keyboard user has no way to reach
+    // or scroll it. The role stays the `<ul>`'s implicit `list` (rather than
+    // overriding to `role="region"`, which orphans the `<li>` children from a
+    // list-rooted ARIA tree and trips axe's `listitem` rule instead) — `list`
+    // is already the correct, accessibly-named ("Domains shipped in" via
+    // `aria-label`) description of eight domain names. See `components/ui/Chip.tsx`.
     const list = screen.getByRole('list', { name: 'Domains shipped in' })
+    expect(list).toHaveAttribute('tabindex', '0')
     expect(list).toHaveClass('chip-scroller')
     // § 3.4 — a scroller below 768, wrapping from 768 up. Not a marquee.
     expect(list).toHaveClass('md:flex-wrap', 'md:overflow-visible')
