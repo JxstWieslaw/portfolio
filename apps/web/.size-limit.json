@@ -1,0 +1,15 @@
+[
+  {
+    "name": "initial JS (non-3D)",
+    "path": [
+      ".next/static/chunks/*.js",
+      ".next/static/chunks/app/page-*.js",
+      ".next/static/chunks/app/layout-*.js",
+      "!.next/static/chunks/framework-*.js",
+      "!.next/static/chunks/polyfills-*.js",
+      "!.next/static/chunks/main-!(app)*.js"
+    ],
+    "limit": "120 kB",
+    "gzip": true
+  }
+]
