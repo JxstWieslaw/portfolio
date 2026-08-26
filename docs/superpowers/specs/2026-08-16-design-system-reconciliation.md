@@ -47,7 +47,7 @@ Every row below is a deliberate reversal of the export. An implementer who copie
 | Timeline | Data Age · Ikarus 3D · Virtualize Technologies · Baeldung.com · Earlier roles | `Data Age — Tech Lead` · `Rapidev Labs — Senior Software Engineer` · `Earlier engineering roles (2020–)` `placeholder: true` |
 | Timeline section id | `#experience` | `#timeline`, heading `Experience` |
 | Stack | Java · Kotlin · Spring Boot · Hibernate/JPA · GraphQL · MongoDB · Azure · Nginx · JUnit · Mockito · Jira | The spec's TypeScript-first stack — see §6.6 |
-| Email | wieslawsamushonga01@gmail.com | `wieslaw@rapidevlabs.com`, `placeholder: true` (open decision OD-5) |
+| Email | wieslawsamushonga01@gmail.com | **OD-5 RESOLVED 2026-08-26** — the deck was right; `wieslawsamushonga01@gmail.com` is confirmed and `emailPlaceholder` is now unset |
 | Nav items | Work · How I work · Craft · Stack · Experience · Writing | Work · How I lead · Craft · Stack · Experience · Writing |
 
 **Kept from the export unchanged:** the Craft statement, the Contact lede, the colophon, all
@@ -330,12 +330,14 @@ They render as disabled with a `Coming soon` affordance rather than as 404 traps
 
 ## 10. Open decisions
 
-Tracked live in `.superpowers/coordination.md`. At time of writing: **OD-5** (which contact
-email — owner) and **OD-6** (content authoring ownership — session-A).
+Tracked live in `.superpowers/coordination.md`. At time of writing: **OD-6** (content authoring
+ownership — session-A).
 
-Resolved since drafting: **OD-1** (positioning — spec wins), **OD-2** (domain accents stay
-`violet|cyan` in the contract; brand tints move to `apps/web/lib/accent.ts`), **OD-3** (section
-id is `#timeline`), **OD-4** (Task 1 committed as `3eb6910`).
+Resolved since drafting: **OD-5** (contact email — the deck was right; the owner confirmed
+`wieslawsamushonga01@gmail.com` on 2026-08-26 and `emailPlaceholder` is now unset), **OD-1**
+(positioning — spec wins), **OD-2** (domain accents stay `violet|cyan` in the contract; brand
+tints move to `apps/web/lib/accent.ts`), **OD-3** (section id is `#timeline`), **OD-4** (Task 1
+committed as `3eb6910`).
 
 One correction to §5 arising from OD-2's resolution: `formationIdSchema` on the contracts branch
 still carries `badge` as its default for `project.formation`. Since no `badge` formation ships,

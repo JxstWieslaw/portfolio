@@ -10,7 +10,7 @@ import {
   SUBMIT_LABELS,
 } from '@/components/sections/ContactForm'
 
-const EMAIL = 'wieslaw@rapidevlabs.com'
+const EMAIL = 'wieslawsamushonga01@gmail.com'
 
 const CHANNELS: readonly ContactChannel[] = [
   {

@@ -30,22 +30,24 @@ fabricating a quote.
 
 ---
 
-## 2. The nine placeholders `lint:content` reports
+## 2. The eight placeholders `lint:content` reports
 
 These render as finished copy but are **not verified fact**. Replace before launch.
 
 | Source | Item |
 |---|---|
-| `profile.json` | **email** — `emailPlaceholder: true`; confirm `wieslaw@rapidevlabs.com` receives mail |
 | `profile.json` | KPI: Production platforms led/shipped (`10`) |
 | `profile.json` | KPI: Concurrent production systems monitored (`6`) |
 | `projects.json` | AR case study — name, platform, role, outcome all provisional |
-| `projects.json` | two further project entries |
+| `projects.json` | `youth-care` |
+| `projects.json` | `angelo-crown` |
 | `experience.json` | Earlier engineering roles (2020–) |
-| `writing.json` | three Medium articles (feed not yet wired) |
+| `writing.json` | two Medium articles (feed not yet wired) |
 
-The email matters most: it is also the `mailto:` target of the contact form and the `email` in
-the JSON-LD `Person`.
+**Resolved:** the contact address is now `wieslawsamushonga01@gmail.com` and confirmed, so
+`emailPlaceholder` is unset. It is the `mailto:` target of the contact form, the copy-email
+value, and the `email` in the JSON-LD `Person`. The `emailPlaceholder` mechanism stays in the
+schema for any future unverified address.
 
 ---
 

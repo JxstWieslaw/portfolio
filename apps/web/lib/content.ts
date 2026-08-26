@@ -66,7 +66,8 @@ export type Kpi = z.infer<typeof localProfileSchema>['kpis'][number]
  *
  * `group` is requested as OD-7 — spec section 5.5 defines two distinct KPI sets and the design
  * renders them through two different components, so the flat array needs a discriminator.
- * `emailPlaceholder` marks the address as provisional while OD-5 is open.
+ * `emailPlaceholder` marks an address as provisional. Currently unset — the contact address
+ * is confirmed — but kept as the mechanism for any future unverified address.
  *
  * They are declared by extending the contract's own schema rather than bolted on afterwards,
  * so they are validated too. When the contract absorbs them, delete the extension — nothing

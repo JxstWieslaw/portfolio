@@ -21,6 +21,11 @@ import { listPlaceholders } from '@/lib/content'
  * Keep this list in sync with `content/*.json` by hand. That hand-maintenance is the
  * point — it is what makes the test able to notice a reporting gap instead of mirroring
  * one.
+ *
+ * The contact address has since been confirmed real, so `profile.emailPlaceholder` is no
+ * longer set and the profile branch of `listPlaceholders()` is dormant. The branch stays:
+ * it is the mechanism, not a one-off, and it fires again the moment any address is marked
+ * provisional.
  */
 describe('listPlaceholders (the data lint:content reports)', () => {
   const reports = listPlaceholders()
@@ -34,7 +39,6 @@ describe('listPlaceholders (the data lint:content reports)', () => {
     { kind: 'experience', label: 'Earlier engineering roles' },
     { kind: 'writing', label: 'Reversible data migrations: dry-run, apply, rollback' },
     { kind: 'writing', label: 'One draw call: holding 60 fps on a mid-range phone' },
-    { kind: 'profile', label: 'email' },
   ] as const
 
   function sortedByKindAndLabel(items: readonly { kind: string; label: string }[]) {
@@ -43,10 +47,6 @@ describe('listPlaceholders (the data lint:content reports)', () => {
 
   it('reports exactly the flagged items, nothing more, nothing less', () => {
     expect(sortedByKindAndLabel(reports)).toEqual(sortedByKindAndLabel(expected))
-  })
-
-  it('reports the primary contact email as a profile placeholder', () => {
-    expect(reports).toContainEqual({ kind: 'profile', label: 'email' })
   })
 
   it('totals exactly the number of items enumerated above', () => {
