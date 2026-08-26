@@ -21,9 +21,15 @@ import { FOOTER_COLUMNS, type FooterColumn, type FooterLink } from '@/lib/nav-it
  * Greying them out alone would announce nothing.
  */
 
-/** Verbatim, design-home.md § 12. The claim the rest of the build must satisfy. */
+/**
+ * design-home.md § 12 describes the finished site's stack — React Three
+ * Fiber, Rapier, one draw call — and that milestone (M2) has not shipped.
+ * This M0 build has no renderer and no draw call: the backdrop is a 2D
+ * canvas (`FieldCanvas`). The colophon says what is actually running today
+ * and gets rewritten again when the WebGL milestone lands.
+ */
 export const COLOPHON =
-  'Built with Next.js, React Three Fiber and Rapier. One draw call. Holds 60 fps on a mid-range phone.'
+  'Built with Next.js. The backdrop is a 2D canvas, not a renderer — React Three Fiber and Rapier ship with the WebGL milestone.'
 
 /**
  * Fixed rather than `new Date().getFullYear()`. The export reads `© 2026`, a

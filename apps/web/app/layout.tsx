@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 
 import { Footer } from '@/components/layout/Footer'
 import { Nav } from '@/components/layout/Nav'
+import { SkipLink } from '@/components/layout/SkipLink'
 import { getProfile } from '@/lib/content'
 import { SITE_DESCRIPTION, SITE_TITLE, canonical, siteUrl } from '@/lib/seo'
 
@@ -57,9 +58,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={fontVariables}>
       <body className="bg-[var(--bg-0)] text-[var(--fg-1)]">
-        <a className="skip-link" href="#main">
-          Skip to content
-        </a>
+        <SkipLink />
 
         {/* Outside <main>, so the skip link genuinely skips it. */}
         <Nav socialLinks={profile.links} />

@@ -13,5 +13,13 @@ export default [
       ...nextPlugin.configs['core-web-vitals'].rules,
     },
   },
+  {
+    // `.cjs` config files (lighthouserc.cjs) are plain CommonJS regardless of this
+    // package's `"type": "module"`, so they use `module`/`require`, not ESM globals.
+    files: ['**/*.cjs'],
+    languageOptions: {
+      globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
+    },
+  },
   { ignores: ['.next/**', 'next-env.d.ts'] },
 ]

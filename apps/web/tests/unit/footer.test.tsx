@@ -38,11 +38,11 @@ describe('Footer — content', () => {
     renderFooter()
     expect(
       screen.getByText(
-        'Built with Next.js, React Three Fiber and Rapier. One draw call. Holds 60 fps on a mid-range phone.'
+        'Built with Next.js. The backdrop is a 2D canvas, not a renderer — React Three Fiber and Rapier ship with the WebGL milestone.'
       )
     ).toBeInTheDocument()
     expect(COLOPHON).toBe(
-      'Built with Next.js, React Three Fiber and Rapier. One draw call. Holds 60 fps on a mid-range phone.'
+      'Built with Next.js. The backdrop is a 2D canvas, not a renderer — React Three Fiber and Rapier ship with the WebGL milestone.'
     )
   })
 

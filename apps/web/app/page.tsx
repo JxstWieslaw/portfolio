@@ -23,9 +23,11 @@ import { personJsonLdScript } from '@/lib/seo'
 /**
  * The flagship scroll.
  *
- * This is the ONLY module that reads `lib/content.ts`. Every section takes its data as props,
- * which keeps them pure, testable in isolation, and unaffected when the shared contracts
- * package replaces the loader's locally-mirrored types.
+ * The only module that reads `lib/content.ts` for the page's own sections — `app/layout.tsx`
+ * separately calls `getProfile()` for the nav and footer, since both wrap every route, not just
+ * this one. Every section below takes its data as props, which keeps them pure, testable in
+ * isolation, and unaffected when the shared contracts package replaces the loader's
+ * locally-mirrored types.
  *
  * Section order is the narrative arc from spec section 2: who → breadth → delivery →
  * leadership → craft → tools → history → voice → action.

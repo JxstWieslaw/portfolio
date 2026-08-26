@@ -19,74 +19,41 @@ const HERO_FRAME_MS = 50
 const RESIZE_DEBOUNCE_MS = 150
 
 /**
- * Upper bound on how long the post-delay `requestIdleCallback` may withhold
- * the initial paint once `INITIAL_PAINT_DELAY_MS` has elapsed.
+ * Upper bound on how long `requestIdleCallback` may withhold the initial
+ * paint before it is forced to run anyway, on an otherwise-busy page.
  */
 const IDLE_TIMEOUT_MS = 300
 
 /**
- * Floor on how soon after mount the initial paint may run.
+ * Defers non-critical main-thread work to the next idle period.
  *
- * Task 20's trace showed why this exists, and why a bare `requestIdleCallback`
- * was not enough on its own. Seven `FieldCanvas` mounts each ran their first
- * `paintCanvas` synchronously inside the same passive-effect flush hydration
- * produces — 1.4s+ of `scriptEvaluation` sat directly in front of LCP. Moving
- * that work behind a plain `requestIdleCallback` measured *zero* improvement,
- * because on an otherwise-idle page the browser hands over an idle period
- * within a few milliseconds of the mount task ending — well before Lighthouse
- * records its (real, unthrottled) LCP mark, which this codebase's own traces
- * put at 328-460ms. Lighthouse's default `simulate` throttling only excludes a
- * CPU task from the LCP render-delay graph when that task's *observed* start
- * time is after the observed LCP timestamp
- * (`trace_engine/lantern/metrics/FirstContentfulPaint.js`,
- * `getRenderBlockingNodeData`: `node.startTime <= cutoffTimestamp`). An idle
- * callback that fires at, say, 40ms still starts well inside that window, so
- * it was still counted as render-blocking despite never touching the LCP
- * element and despite genuinely not blocking anything on a real device.
+ * Task 20 previously added a fixed floor here (`INITIAL_PAINT_DELAY_MS`,
+ * 1200ms) tuned to push this work past Lighthouse Lantern's LCP
+ * render-blocking cutoff (`trace_engine/lantern/metrics/FirstContentfulPaint.js`,
+ * `getRenderBlockingNodeData`). That floor was removed: a controlled
+ * experiment with canvas painting fully disabled produced the same LCP,
+ * meaning the deferred work here was never the bottleneck — the residual
+ * cost is page-wide hydration — and the floor was keying real behaviour to
+ * one tool's internal accounting rather than to anything a visitor
+ * experiences. Deferring past first paint via `requestIdleCallback` is still
+ * correct; a metric-tuned constant on top of it was not.
  *
- * A fixed floor sidesteps that: waiting past the observed LCP mark, with
- * margin for run-to-run noise, makes the CPU node's start time land after
- * `cutoffTimestamp`, which is what actually excludes it from the graph. The
- * canvas is `aria-hidden` and the CSS wash underneath is already the rung-5
- * fallback, so a ~1s hold before the decorative crossfade begins changes
- * nothing a visitor or the design can see — it is squarely inside the
- * fallback ladder's existing "canvas not ready yet" state.
- *
- * Exported so the test suite can wait exactly this long rather than
- * hardcoding a second copy of the number.
- */
-export const INITIAL_PAINT_DELAY_MS = 1200
-
-/**
- * Defers non-critical main-thread work past `INITIAL_PAINT_DELAY_MS`, then to
- * the next idle period within it.
- *
- * Falls back to a bare macrotask (`setTimeout`) for the idle half in engines
- * without `requestIdleCallback` — Safari, and jsdom in tests.
+ * Falls back to a bare macrotask (`setTimeout`) in engines without
+ * `requestIdleCallback` — Safari, and jsdom in tests.
  *
  * Returns a cancel function rather than a raw handle so cleanup does not need
- * to know which of the two timers is currently pending.
+ * to know which underlying API scheduled the callback.
  */
 function scheduleIdle(callback: () => void): () => void {
-  let cancelled = false
-  let idleHandle: number | undefined
-
-  const delayHandle = window.setTimeout(() => {
-    if (cancelled) return
-    if (typeof window.requestIdleCallback === 'function') {
-      idleHandle = window.requestIdleCallback(callback, { timeout: IDLE_TIMEOUT_MS })
-    } else {
-      callback()
-    }
-  }, INITIAL_PAINT_DELAY_MS)
-
-  return () => {
-    cancelled = true
-    window.clearTimeout(delayHandle)
-    if (idleHandle !== undefined && typeof window.cancelIdleCallback === 'function') {
-      window.cancelIdleCallback(idleHandle)
+  if (typeof window.requestIdleCallback === 'function') {
+    const idleHandle = window.requestIdleCallback(callback, { timeout: IDLE_TIMEOUT_MS })
+    return () => {
+      if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleHandle)
     }
   }
+
+  const timeoutHandle = window.setTimeout(callback, 0)
+  return () => window.clearTimeout(timeoutHandle)
 }
 
 export interface FieldCanvasProps {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getExperience, getProfile, getProjects, getWriting, listPlaceholders } from '@/lib/content'
+import { listPlaceholders } from '@/lib/content'
 
 /**
  * `scripts/lint-content.ts` is a thin formatter over `listPlaceholders()` — it groups the
@@ -8,38 +8,49 @@ import { getExperience, getProfile, getProjects, getWriting, listPlaceholders } 
  * `listPlaceholders()` itself: does it report every item the content actually flags, and
  * nothing it doesn't.
  *
- * The expected sets are derived from the same getters the app uses (`getProfile`,
- * `getProjects`, ...) rather than a hardcoded count, so this test tracks the real content
- * instead of a number someone assumed once.
+ * The expected list is enumerated literally rather than re-derived by re-running
+ * `.filter(x => x.placeholder)` over the same getters the implementation reads. That
+ * used to be this test's shape, and it was structurally blind to a fifth source: it
+ * verified the four sources `listPlaceholders()` already checks against themselves, so
+ * it could not fail when a real placeholder (`profile.emailPlaceholder`) was missing
+ * from the implementation entirely — there was no fifth entry in `expected` for it to
+ * disagree with. A literal list has no such blind spot: adding a new placeholder source
+ * to content without reporting it here changes nothing about `expected`, so the totals
+ * and membership assertions below fail immediately.
+ *
+ * Keep this list in sync with `content/*.json` by hand. That hand-maintenance is the
+ * point — it is what makes the test able to notice a reporting gap instead of mirroring
+ * one.
  */
 describe('listPlaceholders (the data lint:content reports)', () => {
   const reports = listPlaceholders()
 
-  const expected = {
-    kpi: getProfile().kpis.filter((k) => k.placeholder).map((k) => k.label),
-    project: getProjects().filter((p) => p.placeholder).map((p) => p.name),
-    experience: getExperience().filter((e) => e.placeholder).map((e) => e.org),
-    writing: getWriting().filter((w) => w.placeholder).map((w) => w.title),
-  } as const
+  const expected = [
+    { kind: 'kpi', label: 'Production platforms led/shipped' },
+    { kind: 'kpi', label: 'Concurrent production systems monitored' },
+    { kind: 'project', label: 'AR Product Visualiser' },
+    { kind: 'project', label: 'youth-care' },
+    { kind: 'project', label: 'angelo-crown' },
+    { kind: 'experience', label: 'Earlier engineering roles' },
+    { kind: 'writing', label: 'Reversible data migrations: dry-run, apply, rollback' },
+    { kind: 'writing', label: 'One draw call: holding 60 fps on a mid-range phone' },
+    { kind: 'profile', label: 'email' },
+  ] as const
 
-  it.each(Object.keys(expected) as (keyof typeof expected)[])(
-    'reports exactly the flagged %s items, nothing more, nothing less',
-    (kind) => {
-      const reported = reports
-        .filter((r) => r.kind === kind)
-        .map((r) => r.label)
-        .sort()
-      expect(reported).toEqual([...expected[kind]].sort())
-    },
-  )
+  function sortedByKindAndLabel(items: readonly { kind: string; label: string }[]) {
+    return [...items].sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label))
+  }
 
-  it('reports no items outside the four known content kinds', () => {
-    expect(new Set(reports.map((r) => r.kind))).toEqual(new Set(Object.keys(expected)))
+  it('reports exactly the flagged items, nothing more, nothing less', () => {
+    expect(sortedByKindAndLabel(reports)).toEqual(sortedByKindAndLabel(expected))
   })
 
-  it('totals exactly the sum of flagged items across every content source', () => {
-    const expectedTotal = Object.values(expected).reduce((sum, labels) => sum + labels.length, 0)
-    expect(reports).toHaveLength(expectedTotal)
+  it('reports the primary contact email as a profile placeholder', () => {
+    expect(reports).toContainEqual({ kind: 'profile', label: 'email' })
+  })
+
+  it('totals exactly the number of items enumerated above', () => {
+    expect(reports).toHaveLength(expected.length)
   })
 
   it('has real signal to report — at least one placeholder exists', () => {

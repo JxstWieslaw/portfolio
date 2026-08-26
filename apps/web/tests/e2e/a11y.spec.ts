@@ -5,20 +5,19 @@ import { expect, test } from '@playwright/test'
 const BACKDROP_FORMATIONS = ['monolith', 'stream', 'lattice', 'orbit', 'scatter', 'grid', 'ring']
 
 /**
- * KNOWN, UNFIXED DEFECT (Task 18 finding — do not silence this by loosening
- * the assertion; the app is the thing that needs to change, not the test):
+ * FIXED (Task 18 finding, closed by b4a08eb; the fix was later made
+ * responsive rather than unconditional — see `ChipScrollerList`):
  *
  * Below the 768px `md` breakpoint, `ChipScroller` (`components/ui/Chip.tsx`,
  * backing `.chip-scroller` in `app/globals.css`) renders the proof-strip's
- * eight domain chips as an `overflow-x: auto` row with no wrapping. That
- * element is a horizontally scrollable region with no `tabindex` and no
- * `role="region"`/accessible name, so it is reachable by touch or mouse drag
- * but not by keyboard — axe's `scrollable-region-focusable` rule (serious,
- * WCAG 2.1.1) correctly flags it. It only triggers under 768px: at 768px and
- * above `md:overflow-visible md:flex-wrap` removes the scroll container
- * entirely, which is why this only reproduces on the `mobile` project (Pixel
- * 5, 393px) and not on `desktop`/`webkit`/`tablet`/`ultrawide` (all >= 810px).
- * See the Task 18 report for the full writeup.
+ * eight domain chips as an `overflow-x: auto` row with no wrapping. That used
+ * to be a horizontally scrollable region with no `tabindex`, reachable by
+ * touch or mouse drag but not by keyboard — axe's `scrollable-region-focusable`
+ * rule (serious, WCAG 2.1.1) correctly flagged it, reproducing only on the
+ * `mobile` project (Pixel 5, 393px) where the row is a real scroll container.
+ * `ChipScrollerList` gives the `<ul>` a tab stop exactly there — below
+ * 768px, where the row genuinely scrolls — and this test asserts that
+ * violation stays gone on the `mobile` project.
  */
 test('home page has no serious or critical accessibility violations', async ({ page }) => {
   await page.goto('/')

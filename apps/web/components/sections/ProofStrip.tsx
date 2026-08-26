@@ -61,7 +61,7 @@ export function ProofStrip({
   domains = NO_DOMAINS,
   kpis = NO_KPIS,
   label = 'Domains and figures',
-  domainsLabel = 'Domains shipped in',
+  domainsLabel = 'Domains shipped in production',
 }: ProofStripProps = {}) {
   const hasDomains = domains.length > 0
   const hasKpis = kpis.length > 0

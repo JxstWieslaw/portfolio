@@ -375,8 +375,8 @@ export function Craft({
           </div>
 
           <p id={PHYSICS_NOTE_ID} className="mb-5" style={NOTE}>
-            The physics engine ships in a later milestone — this control records the preference
-            only.
+            The physics engine ships in a later milestone — Enable physics and Reset are inert
+            until then, and change nothing but this button&rsquo;s own label.
           </p>
 
           <div

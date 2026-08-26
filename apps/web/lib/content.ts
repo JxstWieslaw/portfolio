@@ -169,5 +169,10 @@ export function listPlaceholders(): { kind: string; label: string }[] {
     ...projects.filter((p) => p.placeholder).map((p) => ({ kind: 'project', label: p.name })),
     ...experience.filter((e) => e.placeholder).map((e) => ({ kind: 'experience', label: e.org })),
     ...writing.filter((w) => w.placeholder).map((w) => ({ kind: 'writing', label: w.title })),
+    // The site's primary contact address, flagged provisional in profile.json and rendered
+    // with the dotted provisional treatment by CopyEmailButton (Contact.tsx -> ContactForm.tsx).
+    // It is the highest-stakes placeholder on the site, so it belongs in the same report as
+    // the other four sources.
+    ...(profile.emailPlaceholder === true ? [{ kind: 'profile', label: 'email' }] : []),
   ]
 }

@@ -226,7 +226,7 @@ describe('Craft — the physics toggle', () => {
     expect(noteId).not.toBeNull()
     const note = noteId === null ? null : document.getElementById(noteId)
     expect(note?.textContent).toBe(
-      'The physics engine ships in a later milestone — this control records the preference only.'
+      "The physics engine ships in a later milestone — Enable physics and Reset are inert until then, and change nothing but this button’s own label."
     )
   })
 

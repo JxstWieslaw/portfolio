@@ -1,16 +1,15 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FieldCanvas, INITIAL_PAINT_DELAY_MS } from '@/components/three/FieldCanvas'
+import { FieldCanvas } from '@/components/three/FieldCanvas'
 import { clearPointCache } from '@/lib/formations/render'
 
 /**
- * The initial paint is deferred behind `INITIAL_PAINT_DELAY_MS` (task 20 —
- * see `FieldCanvas`'s `scheduleIdle` docstring). jsdom has no
- * `requestIdleCallback`, so the fallback path runs the paint synchronously
- * once that timer fires; a margin above the constant is enough to observe it
- * without hardcoding a second copy of the delay.
+ * The initial paint is deferred behind `scheduleIdle` (see `FieldCanvas`).
+ * jsdom has no `requestIdleCallback`, so the fallback path runs the paint on
+ * the next macrotask (`setTimeout(callback, 0)`); a small margin is enough
+ * to observe it without pinning an exact number of milliseconds.
  */
-const AFTER_INITIAL_PAINT_MS = INITIAL_PAINT_DELAY_MS + 40
+const AFTER_INITIAL_PAINT_MS = 40
 
 /**
  * A recording 2D context. jsdom has no canvas backend, so the component would

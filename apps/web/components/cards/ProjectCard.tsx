@@ -183,7 +183,12 @@ export function ProjectCard({
 
   if (placeholder) {
     return (
+      // `as="article"` rather than the default `div`: ARIA prohibits `aria-label` on a
+      // role-generic element (a plain `<div>` has no role for the name to attach to,
+      // so assistive tech drops it silently), and `article` is also the semantically
+      // correct role for a self-contained case-study card.
       <PlaceholderCard
+        as="article"
         aria-label={ariaLabel ?? `${name} case study, in preparation`}
         className={cx('w-full p-6 lg:p-7', className)}
       >

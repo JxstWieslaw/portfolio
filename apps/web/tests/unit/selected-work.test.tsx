@@ -178,7 +178,10 @@ describe('SelectedWork — the bento', () => {
     render(<SelectedWork projects={SEVEN} />)
     const ar = screen.getByLabelText('AR case study, in preparation')
 
-    expect(ar.tagName).toBe('DIV')
+    // `article`, not `div`: ARIA prohibits `aria-label` on a role-generic element,
+    // so the placeholder card renders as `article` (a real role that supports a
+    // name) rather than the default `div` — see `ProjectCard`'s placeholder branch.
+    expect(ar.tagName).toBe('ARTICLE')
     expect(ar.closest('a')).toBeNull()
     expect(within(ar).queryByRole('link')).toBeNull()
     expect(ar).toHaveAttribute('data-placeholder', 'true')

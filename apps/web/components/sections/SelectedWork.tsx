@@ -95,8 +95,18 @@ const SPAN_CLASS: Record<BentoSpan, string> = {
   4: 'lg:col-span-4',
 }
 
+/**
+ * Deliberately does not name a domain count. The adjacent proof-strip KPI
+ * derives one (`countDomainsShipped()`, excluding placeholder projects) — this
+ * section takes its content as props and has no access to that derivation, so
+ * a number hardcoded here would be a second, unrelated count on the same
+ * screen, free to drift from the real one. It already had: the export's copy
+ * said "Eight domains" while the KPI correctly said seven (`domains.json` has
+ * eight entries, but one project's domain is still `placeholder`, so the
+ * count of domains actually *shipped* is seven).
+ */
 const DEFAULT_LEDE =
-  'Eight domains, one habit: decide the architecture early, make every migration ' +
+  'One habit, across every domain: decide the architecture early, make every migration ' +
   'reversible, and leave the next engineer a system they can read.'
 
 export function SelectedWork({

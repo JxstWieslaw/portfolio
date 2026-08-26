@@ -1,4 +1,5 @@
 import type { HTMLAttributes, MouseEventHandler, ReactNode } from 'react'
+import { ChipScrollerList } from '@/components/ui/ChipScrollerList'
 import { cx } from '@/lib/cx'
 import { type Tone, toneStyle } from '@/lib/accent'
 
@@ -105,22 +106,19 @@ export function Chip({
  * scroller gives the same "there are more of these" affordance for no
  * animation frames. The edge fade is a CSS mask, not motion.
  *
- * Below 768px this is a genuine `overflow-x: auto` scroll container, and its
- * children (`Chip` in its non-`filter` variants) render as plain, inert
- * `<li>`s — so with no fix, the row is reachable by touch or mouse-drag but
- * has no keyboard path in or out (axe's `scrollable-region-focusable`, WCAG
- * 2.1.1; caught by `apps/web/tests/e2e/a11y.spec.ts`). `tabIndex={0}` gives
- * the scroller itself a stop in the tab order — from there, arrow keys pan
- * the native scroll. The `<ul>`'s implicit `list` role is left alone
- * (deliberately — a first attempt overrode it to `role="region"`, which
- * "worked" for that one rule but orphaned every `<li>` child from a
- * list-rooted ARIA tree, trading one axe violation for a second one,
- * `listitem`'s required-parent check); `list` already correctly describes
- * eight domain names, and every call site is already required to give it an
- * accessible name via `aria-label`/`aria-labelledby` (`ProofStrip` passes
- * `aria-label`), which is a fully valid combination on a `list`-rooted
- * element. This does not remove or replace the horizontal scroll, which is a
- * deliberate design decision, not the defect.
+ * The `<ul>`'s implicit `list` role is left alone (deliberately — a first
+ * attempt overrode it to `role="region"`, which "worked" for the mobile
+ * focusability fix below but orphaned every `<li>` child from a list-rooted
+ * ARIA tree, trading one axe violation for a second one, `listitem`'s
+ * required-parent check); `list` already correctly describes eight domain
+ * names, and every call site is already required to give it an accessible
+ * name via `aria-label`/`aria-labelledby` (`ProofStrip` passes `aria-label`).
+ * This does not remove or replace the horizontal scroll, which is a
+ * deliberate design decision, not a defect.
+ *
+ * The tab-stop logic (needed below 768px, dead weight at and above it) lives
+ * in `ChipScrollerList` — see that file for the why. This function itself
+ * stays a plain server component; only that one piece pays for the client.
  */
 export function ChipScroller({
   children,
@@ -131,16 +129,8 @@ export function ChipScroller({
   className?: string
 } & Omit<HTMLAttributes<HTMLUListElement>, 'children' | 'className'>) {
   return (
-    <ul
-      tabIndex={0}
-      {...rest}
-      className={cx(
-        'chip-scroller',
-        'md:flex-wrap md:overflow-visible md:pb-0 md:[mask-image:none]',
-        className
-      )}
-    >
+    <ChipScrollerList className={className} {...rest}>
       {children}
-    </ul>
+    </ChipScrollerList>
   )
 }
