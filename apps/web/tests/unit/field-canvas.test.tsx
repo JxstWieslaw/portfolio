@@ -1,7 +1,16 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FieldCanvas } from '@/components/three/FieldCanvas'
+import { FieldCanvas, INITIAL_PAINT_DELAY_MS } from '@/components/three/FieldCanvas'
 import { clearPointCache } from '@/lib/formations/render'
+
+/**
+ * The initial paint is deferred behind `INITIAL_PAINT_DELAY_MS` (task 20 —
+ * see `FieldCanvas`'s `scheduleIdle` docstring). jsdom has no
+ * `requestIdleCallback`, so the fallback path runs the paint synchronously
+ * once that timer fires; a margin above the constant is enough to observe it
+ * without hardcoding a second copy of the delay.
+ */
+const AFTER_INITIAL_PAINT_MS = INITIAL_PAINT_DELAY_MS + 40
 
 /**
  * A recording 2D context. jsdom has no canvas backend, so the component would
@@ -120,7 +129,7 @@ describe('FieldCanvas', () => {
 
   it('paints a static formation exactly once', async () => {
     render(<FieldCanvas formation="lattice" />)
-    await settle(160)
+    await settle(AFTER_INITIAL_PAINT_MS)
     expect(recorder.clears).toBe(1)
   })
 
@@ -133,14 +142,14 @@ describe('FieldCanvas', () => {
       // The whole point: reduced motion is not slower motion. One frame, then
       // nothing — no rAF loop is ever started.
       const { container } = render(<FieldCanvas formation="monolith" animate />)
-      await settle(200)
+      await settle(AFTER_INITIAL_PAINT_MS)
       expect(recorder.clears).toBe(1)
       expect(container.querySelector('canvas')).toHaveAttribute('data-rung', 'reduced-motion')
     })
 
     it('keeps the opacity cross-fade, which --d-crossfade survives for', async () => {
       const { container } = render(<FieldCanvas formation="monolith" animate />)
-      await settle(20)
+      await settle(AFTER_INITIAL_PAINT_MS)
       const canvas = container.querySelector('canvas')
       expect(canvas?.style.transition).toBe('opacity var(--d-crossfade) var(--ease)')
       expect(canvas?.style.opacity).toBe('1')
@@ -149,15 +158,15 @@ describe('FieldCanvas', () => {
 
   it('runs the hero loop when motion is allowed', async () => {
     render(<FieldCanvas formation="monolith" animate />)
-    await settle(200)
-    // ~20 fps over 200ms, plus the mount paint. Anything above one proves the
-    // loop is live without pinning an exact frame count.
+    // The initial (deferred) paint, then ~20 fps for another 200ms. Anything
+    // above one proves the loop is live without pinning an exact frame count.
+    await settle(AFTER_INITIAL_PAINT_MS + 200)
     expect(recorder.clears).toBeGreaterThan(1)
   })
 
   it('stops painting the hero while it is scrolled out of view', async () => {
     render(<FieldCanvas formation="monolith" animate />)
-    await settle(120)
+    await settle(AFTER_INITIAL_PAINT_MS)
     const observer = observers[0]
     if (!observer) throw new Error('the hero canvas was never observed')
 
@@ -173,12 +182,14 @@ describe('FieldCanvas', () => {
 
   it('never observes or animates a non-hero formation', async () => {
     render(<FieldCanvas formation="grid" />)
-    await settle(160)
+    await settle(AFTER_INITIAL_PAINT_MS)
     expect(observers).toHaveLength(0)
     expect(recorder.clears).toBe(1)
   })
 
   it('falls to the wash rung when there is no 2D context, without shifting anything', async () => {
+    // No `scheduleIdle` call happens on this path — rung 5 returns before it —
+    // so there is nothing to wait out; the short settle just flushes effects.
     contextAvailable = false
     const { container } = render(<FieldCanvas formation="orbit" />)
     await settle(60)
@@ -193,7 +204,7 @@ describe('FieldCanvas', () => {
   it('drops the cross-fade when there is no IntersectionObserver', async () => {
     vi.stubGlobal('IntersectionObserver', undefined)
     const { container } = render(<FieldCanvas formation="ring" />)
-    await settle(60)
+    await settle(AFTER_INITIAL_PAINT_MS)
     const canvas = container.querySelector('canvas')
     expect(canvas).toHaveAttribute('data-rung', 'static')
     expect(canvas?.style.transition).toBe('')
@@ -202,14 +213,14 @@ describe('FieldCanvas', () => {
 
   it('paints fewer instances on modest hardware', async () => {
     render(<FieldCanvas formation="ring" />)
-    await settle(60)
+    await settle(AFTER_INITIAL_PAINT_MS)
     const full = recorder.fills
 
     cleanup()
     recorder = new RecordingContext()
     stubCores(2)
     render(<FieldCanvas formation="ring" />)
-    await settle(60)
+    await settle(AFTER_INITIAL_PAINT_MS)
 
     expect(recorder.fills).toBeLessThan(full)
     expect(recorder.fills).toBeGreaterThan(0)
@@ -217,7 +228,7 @@ describe('FieldCanvas', () => {
 
   it('repaints on resize once the resize settles', async () => {
     render(<FieldCanvas formation="lattice" />)
-    await settle(60)
+    await settle(AFTER_INITIAL_PAINT_MS)
     expect(recorder.clears).toBe(1)
 
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
