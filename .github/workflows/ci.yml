@@ -22,8 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose — `packageManager` in package.json is the single
+      # source of truth, and specifying both makes this action fail with
+      # "Multiple versions of pnpm specified".
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -41,8 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose — `packageManager` in package.json is the single
+      # source of truth, and specifying both makes this action fail with
+      # "Multiple versions of pnpm specified".
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -60,8 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose — `packageManager` in package.json is the single
+      # source of truth, and specifying both makes this action fail with
+      # "Multiple versions of pnpm specified".
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
       - uses: actions/setup-node@v4
         with:
           node-version: 22
