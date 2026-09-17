@@ -92,4 +92,71 @@ describe('content seed', () => {
     expect(runs[0]?.dryRun).toBe(true)
     expect(runs[1]?.contentHash).toMatch(/^[0-9a-f]{64}$/)
   })
+
+  it('swaps the order of two existing projects', async () => {
+    // Establish starting state with the original bundle.
+    await runSeed(db, bundle, { gitSha: 'd0', dryRun: false })
+
+    // Swap order of the first two projects.
+    const [first, second, ...rest] = bundle.projects
+    if (first === undefined || second === undefined) throw new Error('content has fewer than two projects')
+    const swapped = {
+      ...bundle,
+      projects: [{ ...first, order: second.order }, { ...second, order: first.order }, ...rest],
+    }
+
+    // Should apply the swap without constraint violation.
+    const outcome = await runSeed(db, swapped, { gitSha: 'd1', dryRun: false })
+    expect(outcome.plan.projects.updated).toHaveLength(2)
+    expect(outcome.plan.projects.deleted).toHaveLength(0)
+    expect(outcome.plan.projects.inserted).toHaveLength(0)
+
+    // Verify the swapped values in the database.
+    const [firstInDb] = await db.select({ order: projects.sortOrder }).from(projects).where(eq(projects.slug, first.slug))
+    const [secondInDb] = await db.select({ order: projects.sortOrder }).from(projects).where(eq(projects.slug, second.slug))
+    expect(firstInDb?.order).toBe(second.order)
+    expect(secondInDb?.order).toBe(first.order)
+
+    // Verify no drift after the swap.
+    expect(await detectDrift(db, swapped)).toBe(false)
+  })
+
+  it('reuses a removed project\'s order for a new project', async () => {
+    // Establish starting state with the original bundle.
+    await runSeed(db, bundle, { gitSha: 'e0', dryRun: false })
+
+    // Remove the first project and add a new one with its order value.
+    const [target, ...rest] = bundle.projects
+    if (target === undefined) throw new Error('content has no projects')
+    const newProject = {
+      slug: 'new-project-slug',
+      name: 'New Project',
+      domain: target.domain, // Reuse an existing domain.
+      role: 'Engineer',
+      period: { from: '2025-01' },
+      summary: 'A new project.',
+      stack: ['TypeScript'],
+      visibility: 'public' as const,
+      featured: false,
+      order: target.order, // Reuse the removed project's order.
+      links: [],
+      formation: 'badge' as const,
+      placeholder: false,
+      outcome: [],
+    }
+    const modified = { ...bundle, projects: [newProject, ...rest] }
+
+    // Should apply the change without unique constraint violation.
+    const outcome = await runSeed(db, modified, { gitSha: 'e1', dryRun: false })
+    expect(outcome.plan.projects.inserted).toEqual(['new-project-slug'])
+    expect(outcome.plan.projects.deleted).toEqual([target.slug])
+    expect(outcome.plan.projects.unchanged).toBe(rest.length)
+
+    // Verify the new project has the reused order.
+    const [newInDb] = await db.select({ order: projects.sortOrder }).from(projects).where(eq(projects.slug, 'new-project-slug'))
+    expect(newInDb?.order).toBe(target.order)
+
+    // Verify no drift after the modification.
+    expect(await detectDrift(db, modified)).toBe(false)
+  })
 })

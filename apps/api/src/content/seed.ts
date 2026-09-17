@@ -53,13 +53,11 @@ function diff(desired: { key: string; hash: string }[], existing: { key: string;
 }
 
 export async function planSeed(db: DbExecutor, rows: SeedRows): Promise<SeedPlan> {
-  const [profileRows, domainRows, projectRows, experienceRows, groupRows] = await Promise.all([
-    db.select({ key: sql<string>`${profile.id}::text`, hash: profile.contentHash }).from(profile),
-    db.select({ key: domains.id, hash: domains.contentHash }).from(domains),
-    db.select({ key: projects.slug, hash: projects.contentHash }).from(projects),
-    db.select({ key: experiences.id, hash: experiences.contentHash }).from(experiences),
-    db.select({ key: skillGroups.id, hash: skillGroups.contentHash }).from(skillGroups),
-  ])
+  const profileRows = await db.select({ key: sql<string>`${profile.id}::text`, hash: profile.contentHash }).from(profile)
+  const domainRows = await db.select({ key: domains.id, hash: domains.contentHash }).from(domains)
+  const projectRows = await db.select({ key: projects.slug, hash: projects.contentHash }).from(projects)
+  const experienceRows = await db.select({ key: experiences.id, hash: experiences.contentHash }).from(experiences)
+  const groupRows = await db.select({ key: skillGroups.id, hash: skillGroups.contentHash }).from(skillGroups)
   return {
     profile: diff([{ key: '1', hash: rows.profile.contentHash }], profileRows),
     domains: diff(rows.domains.map((d) => ({ key: d.id, hash: d.contentHash })), domainRows),
@@ -92,16 +90,27 @@ async function applyPlan(tx: DbExecutor, rows: SeedRows, plan: SeedPlan): Promis
     await tx.insert(domains).values(row).onConflictDoUpdate({ target: domains.id, set: { ...row, ...touched } })
   }
 
+  // Delete removed projects BEFORE upserts to avoid unique constraint violations when sort_order is reused.
+  if (plan.projects.deleted.length > 0) {
+    await tx.delete(projects).where(inArray(projects.slug, plan.projects.deleted))
+  }
+
+  // Move updated projects temporarily out of the way so their sort_order values can be reused or swapped.
   const projectChanges = changedKeys(plan.projects)
+  if (plan.projects.updated.length > 0) {
+    await tx
+      .update(projects)
+      .set({ sortOrder: sql`-${projects.sortOrder} - 1` })
+      .where(inArray(projects.slug, plan.projects.updated))
+  }
+
+  // Now upsert projects with their desired sort_order values.
   for (const { row, outcomes } of rows.projects.filter((p) => projectChanges.has(p.row.slug))) {
     await tx.insert(projects).values(row).onConflictDoUpdate({ target: projects.slug, set: { ...row, ...touched } })
     await tx.delete(projectOutcomes).where(inArray(projectOutcomes.projectSlug, [row.slug]))
     if (outcomes.length > 0) await tx.insert(projectOutcomes).values(outcomes)
   }
-  // Projects go before domains: a removed domain may still be referenced by a removed project.
-  if (plan.projects.deleted.length > 0) {
-    await tx.delete(projects).where(inArray(projects.slug, plan.projects.deleted))
-  }
+
   if (plan.domains.deleted.length > 0) {
     await tx.delete(domains).where(inArray(domains.id, plan.domains.deleted))
   }
