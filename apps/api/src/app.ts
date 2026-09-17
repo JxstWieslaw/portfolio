@@ -9,6 +9,7 @@ import { corsOptions } from './http/cors'
 import { ProblemDetailsFilter } from './http/problem-details'
 import { requestId } from './http/request-id'
 import { securityHeaders } from './http/security'
+import { setupOpenApi } from './openapi/openapi'
 
 /**
  * Builds the fully configured application without listening. Every global — logging, headers,
@@ -33,6 +34,8 @@ export async function createApp(
   app.use(securityHeaders())
   app.enableCors(corsOptions(env))
   app.useGlobalFilters(new ProblemDetailsFilter(env.PUBLIC_BASE_URL))
+
+  setupOpenApi(app, env)
 
   // SIGTERM → stop accepting, drain, run onApplicationShutdown hooks (Cloud Run allows 10 s).
   app.enableShutdownHooks()
