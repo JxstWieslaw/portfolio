@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { projectSchema, profileSchema, skillGroupSchema } from './content.js'
+import {
+  countDomainsShipped,
+  profileSchema,
+  projectSchema,
+  resolveDerivedKpis,
+  skillGroupSchema,
+} from './content.js'
 
 const validProject = {
   slug: 'heycreator',
@@ -43,7 +49,7 @@ const validProfile = {
   availability: 'Open to consulting & collaboration',
   roles: [{ org: 'Data Age', title: 'Tech Lead' }],
   links: [{ label: 'GitHub', url: 'https://github.com/JxstWieslaw', kind: 'primary' }],
-  kpis: [{ label: 'Domains shipped', value: '4' }],
+  kpis: [{ label: 'Domains shipped', value: '4', group: 'hero' }],
 }
 
 describe('profileSchema', () => {
@@ -53,6 +59,47 @@ describe('profileSchema', () => {
 
   it('rejects a profile with no KPIs', () => {
     expect(() => profileSchema.parse({ ...validProfile, kpis: [] })).toThrow()
+  })
+})
+
+describe('profileSchema — KPI groups and provisional email', () => {
+  it('requires every KPI to name its group', () => {
+    expect(() =>
+      profileSchema.parse({ ...validProfile, kpis: [{ label: 'Years', value: '5+' }] }),
+    ).toThrow()
+  })
+
+  it('keeps group and emailPlaceholder instead of stripping them', () => {
+    const parsed = profileSchema.parse({ ...validProfile, emailPlaceholder: true })
+    expect(parsed.kpis[0]?.group).toBe('hero')
+    expect(parsed.emailPlaceholder).toBe(true)
+  })
+})
+
+describe('derived KPIs', () => {
+  const projects = [
+    { domain: 'healthcare', placeholder: false },
+    { domain: 'healthcare', placeholder: false },
+    { domain: 'education', placeholder: false },
+    { domain: 'interactive-3d', placeholder: true },
+  ]
+
+  it('counts distinct domains across non-placeholder projects only', () => {
+    expect(countDomainsShipped(projects)).toBe(2)
+  })
+
+  it('replaces a derived KPI value and leaves authored ones alone', () => {
+    const profile = profileSchema.parse({
+      ...validProfile,
+      kpis: [
+        { label: 'Domains shipped', value: '99', derived: 'domainsShipped', group: 'hero' },
+        { label: 'Years shipping', value: '5+', group: 'hero' },
+      ],
+    })
+    const resolved = resolveDerivedKpis(profile, projects)
+    expect(resolved.kpis.map((k) => k.value)).toEqual(['2', '5+'])
+    // Pure: the input is not mutated.
+    expect(profile.kpis[0]?.value).toBe('99')
   })
 })
 
