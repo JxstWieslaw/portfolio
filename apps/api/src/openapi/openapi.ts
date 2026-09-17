@@ -1,7 +1,7 @@
 import { STATUS_CODES } from 'node:http'
 import { applyDecorators } from '@nestjs/common'
 import type { NestExpressApplication } from '@nestjs/platform-express'
-import { ApiResponse, DocumentBuilder, type OpenAPIObject, SwaggerModule } from '@nestjs/swagger'
+import { ApiResponse, DocumentBuilder, type OpenAPIObject, type SchemaObject, SwaggerModule } from '@nestjs/swagger'
 import type { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { problemDetailsSchema } from '@repo/contracts'
@@ -9,11 +9,10 @@ import type { Env } from '../config/env'
 
 export const OPENAPI_JSON_PATH = 'v1/openapi.json'
 
-type SchemaObject = Record<string, unknown>
-
 /** One schema, three uses: request validation, this document, and the web app's types. */
 export function zodToOpenApi(schema: z.ZodTypeAny): SchemaObject {
-  return zodToJsonSchema(schema, { target: 'openApi3', $refStrategy: 'none' }) as SchemaObject
+  // zod-to-json-schema returns an untyped object that matches OpenAPI schema structure
+  return zodToJsonSchema(schema, { target: 'openApi3', $refStrategy: 'none' }) as unknown as SchemaObject
 }
 
 /** Documents RFC 9457 error responses for the given statuses. */
