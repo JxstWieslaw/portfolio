@@ -88,31 +88,32 @@ describe('PostgresContentReader — with enriched outcomes and period.to', () =>
     const sorted = [...bundle.projects].sort(byOrder)
     const [first, second] = sorted.slice(0, 2)
 
-    if (!first || !second) return // Guard against fewer than 2 projects
+    expect(sorted.length).toBeGreaterThanOrEqual(2)
+    if (!first || !second) throw new Error('first or second project undefined')
 
     // Create enriched projects with outcomes and period.to
+    const firstEnriched = {
+      ...first,
+      outcome: [
+        { label: 'Zeta latency', value: 'z-40%', placeholder: false },
+        { label: 'Alpha uptime', value: 'a-99.9%', placeholder: true },
+        { label: 'Mu throughput', value: 'm-3x', placeholder: false },
+      ],
+      period: { from: first.period.from, to: '2024-12' },
+    } as Project
+
+    const secondEnriched = {
+      ...second,
+      outcome: [
+        { label: 'Omega cost', value: 'o-30%', placeholder: true },
+        { label: 'Beta adoption', value: 'b-12k', placeholder: false },
+      ],
+      period: { from: second.period.from, to: '2025-06' },
+    } as Project
+
     const enrichedProjects = bundle.projects.map((p) => {
-      if (p.slug === first.slug) {
-        return {
-          ...p,
-          outcome: [
-            { label: 'first-outcome', value: 'value-1', placeholder: false },
-            { label: 'second-outcome', value: 'value-2', placeholder: true },
-          ],
-          period: { from: p.period.from, to: '2024-12' },
-        }
-      }
-      if (p.slug === second.slug) {
-        return {
-          ...p,
-          outcome: [
-            { label: 'alpha', value: 'alpha-val', placeholder: true },
-            { label: 'beta', value: 'beta-val', placeholder: false },
-            { label: 'gamma', value: 'gamma-val', placeholder: false },
-          ],
-          period: { from: p.period.from, to: '2025-06' },
-        }
-      }
+      if (p.slug === first.slug) return firstEnriched
+      if (p.slug === second.slug) return secondEnriched
       return p
     })
 
@@ -125,40 +126,20 @@ describe('PostgresContentReader — with enriched outcomes and period.to', () =>
     try {
       await runSeed(drizzle(pool, { schema }), enrichedBundle, { gitSha: 'outcomes', dryRun: false })
 
-      // Test getProject for both projects
       const reader = new PostgresContentReader(drizzle(pool, { schema }))
 
+      // Test getProject for both projects with whole-object assertions
       const firstRead = await reader.getProject(first.slug)
-      expect(firstRead).toBeDefined()
-      expect(firstRead?.outcome).toEqual([
-        { label: 'first-outcome', value: 'value-1', placeholder: false },
-        { label: 'second-outcome', value: 'value-2', placeholder: true },
-      ])
-      expect(firstRead?.period).toEqual({ from: first.period.from, to: '2024-12' })
+      expect(firstRead).not.toBeNull()
+      expect(firstRead).toEqual(firstEnriched)
 
       const secondRead = await reader.getProject(second.slug)
-      expect(secondRead).toBeDefined()
-      expect(secondRead?.outcome).toEqual([
-        { label: 'alpha', value: 'alpha-val', placeholder: true },
-        { label: 'beta', value: 'beta-val', placeholder: false },
-        { label: 'gamma', value: 'gamma-val', placeholder: false },
-      ])
-      expect(secondRead?.period).toEqual({ from: second.period.from, to: '2025-06' })
+      expect(secondRead).not.toBeNull()
+      expect(secondRead).toEqual(secondEnriched)
 
       // Test listProjects returns both with their outcomes in authored order
       const page = await reader.listProjects({ limit: 2 })
-      expect(page.data).toHaveLength(2)
-      expect(page.data[0]?.slug).toBe(first.slug)
-      expect(page.data[0]?.outcome).toEqual([
-        { label: 'first-outcome', value: 'value-1', placeholder: false },
-        { label: 'second-outcome', value: 'value-2', placeholder: true },
-      ])
-      expect(page.data[1]?.slug).toBe(second.slug)
-      expect(page.data[1]?.outcome).toEqual([
-        { label: 'alpha', value: 'alpha-val', placeholder: true },
-        { label: 'beta', value: 'beta-val', placeholder: false },
-        { label: 'gamma', value: 'gamma-val', placeholder: false },
-      ])
+      expect(page.data).toEqual([firstEnriched, secondEnriched])
     } finally {
       await pool.end()
       await database.drop()
