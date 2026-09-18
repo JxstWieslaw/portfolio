@@ -68,6 +68,7 @@ Requires Node ≥ 22.11 and pnpm ≥ 9.
 | [`docs/superpowers/specs/2026-08-15-api-service-design.md`](docs/superpowers/specs/2026-08-15-api-service-design.md) | Planned backend service — not yet built |
 | [`docs/next-16-upgrade-notes.md`](docs/next-16-upgrade-notes.md) | Toolchain breakages to expect when upgrading off Next 15 |
 | [`docs/3d-asset-sourcing.md`](docs/3d-asset-sourcing.md) | 3D asset sources, requirements and pipeline, for M2 |
+| [`docs/m1-status.md`](docs/m1-status.md) | M1 close-out: API service delivered, verified state, owner inputs still open. One-time cloud setup: [`docs/api-gcp-setup.md`](docs/api-gcp-setup.md) |
 
 ## Roadmap
 

@@ -134,6 +134,7 @@ jobs:
         run: docker build -f apps/api/Dockerfile -t portfolio-api:ci .
       - name: Image is within the 200 MB budget (compressed)
         run: |
+          set -euo pipefail
           size=$(docker save portfolio-api:ci | gzip -c | wc -c)
           echo "Compressed image size: $((size / 1000000)) MB (budget 200 MB)"
           test "$size" -le 200000000
