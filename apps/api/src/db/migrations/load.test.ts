@@ -5,14 +5,14 @@ import { writeMigrations } from '../../../test/support/migrations'
 import { checksumOf, loadMigrations, MigrationLayoutError } from './load'
 
 describe('loadMigrations', () => {
-  it('loads directories in id order with a checksum of up.sql', async () => {
+  it('loads directories in id order with a checksum of up.sql and down.sql', async () => {
     const dir = await writeMigrations({
       '0001_b': { up: 'create table b (id int);', down: 'drop table b;' },
       '0000_a': { up: 'create table a (id int);', down: 'drop table a;' },
     })
     const migrations = await loadMigrations(dir)
     expect(migrations.map((m) => m.id)).toEqual(['0000_a', '0001_b'])
-    expect(migrations[0]?.checksum).toBe(checksumOf('create table a (id int);'))
+    expect(migrations[0]?.checksum).toBe(checksumOf('create table a (id int);\ndrop table a;'))
   })
 
   it('treats CRLF and LF as the same file, so a Windows checkout never reads as drift', () => {
@@ -27,6 +27,28 @@ describe('loadMigrations', () => {
   it('fails when down.sql holds only comments', async () => {
     const dir = await writeMigrations({ '0000_a': { up: 'create table a (id int);', down: '-- TODO\n' } })
     await expect(loadMigrations(dir)).rejects.toThrow(MigrationLayoutError)
+  })
+
+  it('fails when down.sql holds only a block comment', async () => {
+    const dir = await writeMigrations({ '0000_a': { up: 'create table a (id int);', down: '/* TODO */\n' } })
+    await expect(loadMigrations(dir)).rejects.toThrow(MigrationLayoutError)
+  })
+
+  it('detects when only down.sql changes', async () => {
+    const dir = await writeMigrations({
+      '0000_a': { up: 'create table a (id int);', down: 'drop table a;' },
+    })
+    const migrations1 = await loadMigrations(dir)
+    const checksum1 = migrations1[0]?.checksum
+
+    await writeFile(
+      join(dir, '0000_a', 'down.sql'),
+      'drop table a; -- added comment',
+    )
+    const migrations2 = await loadMigrations(dir)
+    const checksum2 = migrations2[0]?.checksum
+
+    expect(checksum1).not.toBe(checksum2)
   })
 
   it('rejects badly named directories, duplicate prefixes and stray files', async () => {

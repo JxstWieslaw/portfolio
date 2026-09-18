@@ -12,6 +12,8 @@ Reversible by policy (API spec §6). Each migration is a directory `NNNN_snake_n
 5. `pnpm --filter @repo/api test:integration` — `schema.int.test.ts` applies everything, rolls
    everything back and applies again.
 
+**Note:** The migration checksum now covers both `up.sql` and `down.sql`. On a database that has never been deployed, the applied migration `0000_content_tables` now uses the new checksum. If you have already run `db:migrate --apply` locally, you will see drift. Delete the row from `schema_migrations` table and re-apply the migration, or recreate your local database.
+
 ## Destructive changes: expand / contract
 
 Never drop or rename in the release that stops using a column. Add → backfill → switch reads →

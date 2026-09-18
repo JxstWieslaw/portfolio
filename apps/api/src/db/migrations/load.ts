@@ -7,7 +7,7 @@ export interface Migration {
   id: string
   up: string
   down: string
-  /** sha256 of `up.sql` with LF line endings. A changed applied migration is drift. */
+  /** sha256 of `up.sql` and `down.sql` with LF line endings. A changed applied migration is drift. */
   checksum: string
 }
 
@@ -26,7 +26,9 @@ function normalize(sql: string): string {
 }
 
 function hasStatements(sql: string): boolean {
-  return sql.split('\n').some((line) => line.replace(/--.*$/, '').trim() !== '')
+  // Strip block comments (/* ... */, including multi-line) then line comments (--)
+  const noBlockComments = sql.replace(/\/\*[\s\S]*?\*\//g, '')
+  return noBlockComments.split('\n').some((line) => line.replace(/--.*$/, '').trim() !== '')
 }
 
 export function checksumOf(sql: string): string {
@@ -76,7 +78,7 @@ export async function loadMigrations(dir: string): Promise<Migration[]> {
       throw new MigrationLayoutError(`${entry.name}/down.sql has no statements — write the SQL that undoes up.sql`)
     }
 
-    migrations.push({ id: entry.name, up: normalize(up), down: normalize(down), checksum: checksumOf(up) })
+    migrations.push({ id: entry.name, up: normalize(up), down: normalize(down), checksum: checksumOf(normalize(up) + '\n' + normalize(down)) })
   }
 
   return migrations.sort((a, b) => a.id.localeCompare(b.id))

@@ -53,11 +53,8 @@ jobs:
           docker build -f apps/api/Dockerfile -t "$IMAGE" .
           docker push "$IMAGE"
 
-      - name: Read the database URLs from Secret Manager
+      - name: Read the migration database URL from Secret Manager
         run: |
-          url=$(gcloud secrets versions access latest --secret=api-database-url --project="${{ vars.GCP_PROJECT_ID }}")
-          echo "::add-mask::$url"
-          echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
           url_direct=$(gcloud secrets versions access latest --secret=api-database-url-direct --project="${{ vars.GCP_PROJECT_ID }}")
           echo "::add-mask::$url_direct"
           echo "DATABASE_URL_DIRECT=$url_direct" >> "$GITHUB_ENV"

@@ -114,6 +114,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Every migration ships a down.sql
         run: pnpm --filter @repo/api db:migrate --verify
+      - name: Generated SQL is up to date with the Drizzle schema
+        run: |
+          set -euo pipefail
+          pnpm --filter @repo/api exec drizzle-kit generate --name ci_drift_check
+          if [ -n "$(git status --porcelain apps/api/drizzle)" ]; then
+            echo "drizzle/ is stale — run: pnpm --filter @repo/api db:generate --name <change>"
+            git status --porcelain apps/api/drizzle
+            exit 1
+          fi
       - name: Integration and end-to-end suites
         run: pnpm --filter @repo/api test:integration
       - name: Migrations apply and content seeds cleanly from git

@@ -38,3 +38,13 @@ branch per PR gated on the Neon project · tracing deferred to M3.
 ## Owner inputs still open
 
 GCP project + billing · Neon project · API domain.
+
+## Open before the first deploy
+
+- No Cloud Run health probe is configured, so the spec §12 promise ("database down → /v1/ready fails and Cloud Run stops routing") is not in effect; add `--liveness-probe` on `/v1/ready` and `--startup-probe` on `/v1/health` to the deploy step, or move to a declarative service YAML.
+- Base images in `apps/api/Dockerfile` use floating tags, so the image CI scans with Trivy can differ from the one the deploy workflow builds; pin both by digest.
+- Third-party actions are pinned by tag rather than commit SHA in workflows holding `secrets.NEON_API_KEY` and `id-token: write`.
+- The deploy seeds content before promoting the candidate revision, so content that only the new contract accepts can make the still-serving old revision 500 on that route; decide whether to seed after promotion or apply expand/contract to contract changes too.
+- On a service's very first deploy, gcloud ignores `--no-traffic`, so revision one serves before it is smoke-tested.
+- The `candidate` tag stays publicly resolvable after promotion; add `--remove-tags=candidate` to the promotion step when convenient.
+- `DB_POOL_MAX` is not set at deploy: the default 5 × `--max-instances=10` allows up to 50 Neon connections; set it explicitly.
