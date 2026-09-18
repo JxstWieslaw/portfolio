@@ -1,0 +1,17 @@
+name: Neon branch cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  delete:
+    name: Delete the PR's Neon branch
+    if: vars.NEON_PROJECT_ID != '' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: neondatabase/delete-branch-action@v3.2.1
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/pr-${{ github.event.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}
