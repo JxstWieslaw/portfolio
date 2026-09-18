@@ -1,0 +1,18 @@
+# The build context is the repo root, for the pnpm workspace and lockfile. Keep it small.
+.git
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/coverage
+**/test-results
+**/playwright-report
+**/.lighthouseci
+docs
+content
+# apps/web is not built into this image, but pnpm needs its manifest to honour the lockfile.
+apps/web/*
+!apps/web/package.json
+**/.env
+**/.env.*
+!**/.env.example
