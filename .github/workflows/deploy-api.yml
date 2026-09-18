@@ -1,0 +1,103 @@
+name: Deploy API
+
+# Deploys only a commit that CI already passed on main. No service-account keys exist anywhere:
+# GitHub's OIDC token is exchanged for short-lived GCP credentials (Workload Identity Federation).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build, migrate, seed, deploy
+    if: >-
+      vars.GCP_PROJECT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SERVICE: portfolio-api
+      REGION: ${{ vars.GCP_REGION }}
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/portfolio/api:${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Build and push the image
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -f apps/api/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Read the migration database URL from Secret Manager
+        run: |
+          url_direct=$(gcloud secrets versions access latest --secret=api-database-url-direct --project="${{ vars.GCP_PROJECT_ID }}")
+          echo "::add-mask::$url_direct"
+          echo "DATABASE_URL_DIRECT=$url_direct" >> "$GITHUB_ENV"
+
+      # Expand/contract (spec §6) is what makes migrating before the new revision serves safe:
+      # the old revision keeps working against the expanded schema.
+      - name: Migrate
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_DIRECT }}
+        run: |
+          pnpm --filter @repo/api db:migrate --dry-run
+          pnpm --filter @repo/api db:migrate --apply
+      - name: Seed content from git
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_DIRECT }}
+        run: pnpm --filter @repo/api db:seed --apply --git-sha "${{ github.event.workflow_run.head_sha || github.sha }}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          # Deploy as a candidate revision with no traffic; only promote if smoke passes.
+          # ^@^ switches gcloud's list delimiter to @, because CORS_ORIGINS itself contains commas.
+          gcloud run deploy "$SERVICE" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="$REGION" \
+            --image="$IMAGE" \
+            --service-account="${{ vars.GCP_RUNTIME_SA }}" \
+            --allow-unauthenticated \
+            --no-traffic --tag=candidate \
+            --min-instances=0 --max-instances=10 \
+            --cpu=1 --memory=512Mi --concurrency=80 --timeout=30 \
+            --set-secrets=DATABASE_URL=api-database-url:latest \
+            --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${{ vars.API_PUBLIC_BASE_URL }}@CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}@CORS_PREVIEW_ORIGIN_PATTERN=${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}"
+
+      - name: Smoke test the new revision
+        run: |
+          url=$(gcloud run services describe "$SERVICE" --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --format=json | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf-8')); const traffic = data.status.traffic.find(t => t.tag === 'candidate'); console.log(traffic.url)")
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 "$url/v1/ready"
+          curl -fsS "$url/v1/profile" > /dev/null
+          curl -fsS "$url/v1/openapi.json" > /dev/null
+
+      - name: Send traffic to the new revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="$REGION" \
+            --to-latest
