@@ -53,23 +53,31 @@ jobs:
           docker build -f apps/api/Dockerfile -t "$IMAGE" .
           docker push "$IMAGE"
 
-      - name: Read the database URL from Secret Manager
+      - name: Read the database URLs from Secret Manager
         run: |
           url=$(gcloud secrets versions access latest --secret=api-database-url --project="${{ vars.GCP_PROJECT_ID }}")
           echo "::add-mask::$url"
           echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
+          url_direct=$(gcloud secrets versions access latest --secret=api-database-url-direct --project="${{ vars.GCP_PROJECT_ID }}")
+          echo "::add-mask::$url_direct"
+          echo "DATABASE_URL_DIRECT=$url_direct" >> "$GITHUB_ENV"
 
       # Expand/contract (spec §6) is what makes migrating before the new revision serves safe:
       # the old revision keeps working against the expanded schema.
       - name: Migrate
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_DIRECT }}
         run: |
           pnpm --filter @repo/api db:migrate --dry-run
           pnpm --filter @repo/api db:migrate --apply
       - name: Seed content from git
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_DIRECT }}
         run: pnpm --filter @repo/api db:seed --apply --git-sha "${{ github.event.workflow_run.head_sha || github.sha }}"
 
       - name: Deploy to Cloud Run
         run: |
+          # Deploy as a candidate revision with no traffic; only promote if smoke passes.
           # ^@^ switches gcloud's list delimiter to @, because CORS_ORIGINS itself contains commas.
           gcloud run deploy "$SERVICE" \
             --project="${{ vars.GCP_PROJECT_ID }}" \
@@ -77,6 +85,7 @@ jobs:
             --image="$IMAGE" \
             --service-account="${{ vars.GCP_RUNTIME_SA }}" \
             --allow-unauthenticated \
+            --no-traffic --tag=candidate \
             --min-instances=0 --max-instances=10 \
             --cpu=1 --memory=512Mi --concurrency=80 --timeout=30 \
             --set-secrets=DATABASE_URL=api-database-url:latest \
@@ -84,7 +93,14 @@ jobs:
 
       - name: Smoke test the new revision
         run: |
-          url=$(gcloud run services describe "$SERVICE" --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --format='value(status.url)')
+          url=$(gcloud run services describe "$SERVICE" --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --format=json | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf-8')); const traffic = data.status.traffic.find(t => t.tag === 'candidate'); console.log(traffic.url)")
           curl -fsS --retry 5 --retry-all-errors --retry-delay 2 "$url/v1/ready"
           curl -fsS "$url/v1/profile" > /dev/null
           curl -fsS "$url/v1/openapi.json" > /dev/null
+
+      - name: Send traffic to the new revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="$REGION" \
+            --to-latest

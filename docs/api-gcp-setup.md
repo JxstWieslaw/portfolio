@@ -39,18 +39,28 @@ gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" --project="$PRO
   --member="serviceAccount:$DEPLOY_SA" --role=roles/iam.serviceAccountUser
 ```
 
-## 3. The database URL, in Secret Manager only
+## 3. The database URLs, in Secret Manager only
 
-Create the Neon project (Postgres 17, a region near `$REGION`), then copy the **pooled** connection
-string for the `main` branch.
+Create the Neon project (Postgres 17, a region near `$REGION`), then copy the **pooled** and **direct** connection
+strings for the `main` branch.
 
 ```bash
+# Pooled connection (for Cloud Run runtime via PgBouncer)
 printf '%s' '<neon-pooled-connection-string>' | \
   gcloud secrets create api-database-url --data-file=- --project="$PROJECT_ID"
 for SA in "$RUNTIME_SA" "$DEPLOY_SA"; do
   gcloud secrets add-iam-policy-binding api-database-url --project="$PROJECT_ID" \
     --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
 done
+
+# Direct connection (for migrations and seed, which require session-level locks)
+printf '%s' '<neon-direct-connection-string>' | \
+  gcloud secrets create api-database-url-direct --data-file=- --project="$PROJECT_ID"
+gcloud secrets add-iam-policy-binding api-database-url-direct --project="$PROJECT_ID" \
+  --member="serviceAccount:$DEPLOY_SA" --role=roles/secretmanager.secretAccessor
+# The direct URL is used only by the deployer (GitHub Actions) for migrations and seed;
+# Cloud Run's runtime never needs it. This is necessary because the migration runner takes
+# a session-level advisory lock, which PgBouncer's transaction-mode pooling does not preserve.
 ```
 
 ## 4. Workload Identity Federation for GitHub Actions
@@ -88,6 +98,8 @@ Create a GitHub environment named `production` (Settings → Environments); add 
 there if deploys should wait for approval.
 
 ## 6. First deploy
+
+Merge this branch to `main` first — the `workflow_dispatch` and `workflow_run` triggers require the workflow file to exist on the repository's default branch.
 
 `gh workflow run "Deploy API"`, then `gh run watch`. The smoke step prints `/v1/ready`.
 
