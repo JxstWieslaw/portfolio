@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Digest and SHA pins go stale silently; these open reviewable PRs that move them.
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
