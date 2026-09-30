@@ -103,6 +103,17 @@ Merge this branch to `main` first — the `workflow_dispatch` and `workflow_run`
 
 `gh workflow run "Deploy API"`, then `gh run watch`. The smoke step prints `/v1/ready`.
 
+**First-deploy caveat.** On a service's very first deploy gcloud ignores `--no-traffic`: revision one
+receives 100% of traffic as soon as it is ready, before the smoke step runs. The startup probe on
+`/v1/health` still gates readiness, so an image that cannot boot fails the deploy and never serves, but
+a revision that boots and then misbehaves (for example a wrong `DATABASE_URL`) would serve until you
+notice. That is acceptable because nothing consumes the API yet: do the first deploy before pointing
+the web app or the API domain at it, and confirm `/v1/ready` from the run.app URL. The `candidate`
+tag URL that the smoke step reads is only guaranteed for updates, so if the first run fails at the
+smoke step, check the revision with `gcloud run services describe portfolio-api --region="$REGION"`
+and re-run the workflow; the second deploy takes the candidate-then-promote path. Every later deploy
+is safe by construction, and the promotion step removes the `candidate` tag.
+
 ## Domain (when chosen)
 
 `gcloud beta run domain-mappings create --service=portfolio-api --domain=api.<domain> --region="$REGION"`,

@@ -75,7 +75,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           # Deploy as a candidate revision with no traffic; only promote if smoke passes.
-          # Probes (spec §12). Startup hits /v1/health, which needs no database: a revision that cannot boot
+          # Probes (spec ï¿½12). Startup hits /v1/health, which needs no database: a revision that cannot boot
           # never becomes ready, so a bad image fails the deploy instead of reaching traffic (30 s budget).
           # Liveness hits /v1/ready, which checks Postgres: three failures in a row (~90 s) restart the
           # instance. The lenient period and the 5 s timeout ride out a Neon cold start or a brief blip
@@ -106,9 +106,10 @@ jobs:
           curl -fsS "$url/v1/profile" > /dev/null
           curl -fsS "$url/v1/openapi.json" > /dev/null
 
+      # Also drops the candidate tag, so the pre-promotion URL stops resolving publicly.
       - name: Send traffic to the new revision
         run: |
           gcloud run services update-traffic "$SERVICE" \
             --project="${{ vars.GCP_PROJECT_ID }}" \
             --region="$REGION" \
-            --to-latest
+            --to-latest \n            --remove-tags=candidate
