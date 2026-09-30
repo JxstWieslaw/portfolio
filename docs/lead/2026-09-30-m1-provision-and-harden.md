@@ -36,3 +36,18 @@ All jobs green except **API — image scan**: Trivy reports 2 HIGH in `libssl3t6
 
 ## Repo card
 `~/.claude/skills/senior-engineer-personas/repos/portfolio.md` created (`auto_main: no`).
+
+## GCP provisioned (later the same day)
+Wieslaw authenticated `wieslawsamushonga01@gmail.com` and chose the **Firebase Payment** billing account (`01C7F1-B7670F-ECC1B9`).
+Done with `--account=wieslawsamushonga01@gmail.com` on every command, following `docs/api-gcp-setup.md`:
+- Project `jxst-portfolio-api` (number 890707232965), billing linked; APIs enabled: run, artifactregistry, secretmanager, iamcredentials, sts.
+- Artifact Registry `portfolio` (docker, europe-west1). The first create was denied while the API enablement propagated; the retry succeeded.
+- Service accounts `portfolio-api-runtime` and `portfolio-api-deployer`, with the runbook's roles (deployer: run.admin, artifactregistry.writer, serviceAccountUser on the runtime SA).
+- Secret Manager `api-database-url` (pooled; runtime + deployer accessors) and `api-database-url-direct` (deployer only), from the Neon project's `main` branch.
+- Workload Identity pool `github`, provider `portfolio`, limited to `JxstWieslaw/portfolio` on `refs/heads/main`; deployer SA bound as `workloadIdentityUser`.
+- GitHub variables: GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_DEPLOY_SA, GCP_RUNTIME_SA, API_PUBLIC_BASE_URL (the deterministic run.app URL), API_CORS_ORIGINS (**provisional `http://localhost:3000`** — no web deployment or domain exists yet), API_CORS_PREVIEW_ORIGIN_PATTERN.
+
+### Deliberately not done
+- `NEON_PROJECT_ID` variable and `NEON_API_KEY` secret: the key value is not available to the lead, and setting the variable alone would turn on a CI job that needs it.
+- GitHub `production` environment and the first deploy: the deploy workflow only exists on the default branch once PR #1 merges, and merging promotes `main`.
+- The Neon connection strings passed through this session once (the Neon connector returns them in its result). The project is new and empty; rotate the `portfolio_owner` password later if that matters.
