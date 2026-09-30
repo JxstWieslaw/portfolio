@@ -67,6 +67,10 @@ jobs:
         run: |
           pnpm --filter @repo/api db:migrate --dry-run
           pnpm --filter @repo/api db:migrate --apply
+      # Seeds BEFORE promotion on purpose: the API parses every row through the contract on the way out,
+      # so seeding after promotion would make the new revision fail on old content (and fail its own
+      # smoke test, which could then never pass). Content contract changes therefore follow the same
+      # expand/contract rule as migrations; see "Seed ordering" in docs/m1-status.md.
       - name: Seed content from git
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_DIRECT }}

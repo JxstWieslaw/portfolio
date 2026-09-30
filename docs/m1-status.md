@@ -37,14 +37,54 @@ branch per PR gated on the Neon project · tracing deferred to M3.
 
 ## Owner inputs still open
 
-GCP project + billing · Neon project · API domain.
+GCP project + billing � API domain.
 
-## Open before the first deploy
+The Neon project now exists: id `holy-star-27595330`, org Code Villa, `aws-eu-central-1`, Postgres 17, default
+branch `main`, database `portfolio`. Still to do by the owner: store its pooled and direct connection strings in
+Secret Manager (`docs/api-gcp-setup.md` section 3), set the `NEON_PROJECT_ID` variable and `NEON_API_KEY` secret to
+switch on the per-PR branch job. Connection strings are never committed or written in docs.
 
-- No Cloud Run health probe is configured, so the spec §12 promise ("database down → /v1/ready fails and Cloud Run stops routing") is not in effect; add `--liveness-probe` on `/v1/ready` and `--startup-probe` on `/v1/health` to the deploy step, or move to a declarative service YAML.
-- Base images in `apps/api/Dockerfile` use floating tags, so the image CI scans with Trivy can differ from the one the deploy workflow builds; pin both by digest.
-- Third-party actions are pinned by tag rather than commit SHA in workflows holding `secrets.NEON_API_KEY` and `id-token: write`.
-- The deploy seeds content before promoting the candidate revision, so content that only the new contract accepts can make the still-serving old revision 500 on that route; decide whether to seed after promotion or apply expand/contract to contract changes too.
-- On a service's very first deploy, gcloud ignores `--no-traffic`, so revision one serves before it is smoke-tested.
-- The `candidate` tag stays publicly resolvable after promotion; add `--remove-tags=candidate` to the promotion step when convenient.
-- `DB_POOL_MAX` is not set at deploy: the default 5 × `--max-instances=10` allows up to 50 Neon connections; set it explicitly.
+## Closed before the first deploy
+
+| Item | Resolution |
+|---|---|
+| No Cloud Run health probe | `deploy-api.yml` passes `--startup-probe` on `/v1/health` and `--liveness-probe` on `/v1/ready`. `gcloud run deploy` supports both natively (checked against gcloud 574.0.0 `--help`), so no service YAML was needed. |
+| Floating base-image tags | Both `FROM` lines in `apps/api/Dockerfile` are pinned by index digest. Trivy (`api-image`) and the deploy build the same file, so the scanned base is the shipped base. Dependabot (`.github/dependabot.yml`) opens the PRs that move the pins. |
+| Actions pinned by tag | Every action in `ci.yml`, `deploy-api.yml` and `neon-branch-cleanup.yml` (all hold `NEON_API_KEY` or `id-token: write`) is pinned to a commit SHA with the version as a trailing comment. |
+| `DB_POOL_MAX` unset | `DB_POOL_MAX=3` at deploy: 3 x `--max-instances=10` = 30 connections at most, against a free-tier compute floor of about 112 `max_connections`. The runtime URL is the pooled one. |
+| `candidate` tag stays public | Promotion runs `update-traffic --to-latest --remove-tags=candidate`. |
+| First-deploy `--no-traffic` ignored | Documented in `docs/api-gcp-setup.md` section 6, with the compensating startup probe and the safe order of operations. |
+| Seed ordering | Decided below; comment added at the seed step. |
+
+### Seed ordering: decision
+
+Options were seed after promotion, or apply expand/contract to content contract changes and keep seeding first.
+The reader parses every row through the shared Zod contract on the way out, so a mismatch breaks whichever
+revision meets content it does not understand:
+
+- Seed before promotion (current): content in the new shape can make the still-serving old revision return 500 on
+  the affected routes until promotion, typically under a minute.
+- Seed after promotion: the candidate runs against old content first, so its own smoke check on `/v1/profile` can
+  fail and abort the deploy before the seed ever runs, so a contract-changing release can never ship. If the
+  smoke check does pass, users hit 500s on the new revision instead.
+
+Seed-after-promotion only swaps which revision breaks and adds a deadlock, so the smaller safe option is to keep
+the order and make the rule explicit. Content contract changes follow expand/contract, like migrations: release N
+widens the contract to accept both the old and new shape and ships the new content; release N+1 tightens it.
+Additive changes (new optional fields, new entries) need no ceremony. A contract PR shows up as an
+`openapi.snapshot.json` diff, which is the trigger for applying the rule. No pipeline change was needed beyond a
+comment; the residual risk is a reviewer missing a breaking contract change, and it is limited to a short window
+on a public read API with no consumers yet.
+
+## Still open
+
+- Liveness on `/v1/ready` restarts an instance during a sustained database outage. A restart does not fix Postgres,
+  and Cloud Run has no notion of "stop routing but keep the process", so the outage still surfaces as errors. The
+  spec �12 wording ("Cloud Run stops routing") is closer to a readiness probe; `gcloud run deploy` also lists
+  `--readiness-probe`, but its availability for services was not confirmed offline. Decide after the first deploy
+  whether to add it.
+- The Dockerfile digests were resolved from registry metadata (`docker buildx imagetools inspect`), but the
+  image was not rebuilt locally because the Docker daemon was not running. CI's `api-image` job is the first real
+  build with the pins.
+- `DB_POOL_MAX=3` and the Neon connection limit are reasoned from published limits, not measured; revisit with
+  real load.
