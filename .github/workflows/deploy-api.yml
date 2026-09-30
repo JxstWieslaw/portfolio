@@ -99,7 +99,9 @@ jobs:
             --allow-unauthenticated \
             --no-traffic --tag=candidate \
             --min-instances=0 --max-instances=10 \
-            --cpu=1 --memory=512Mi --concurrency=80 --timeout=30             --startup-probe=httpGet.path=/v1/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=1,failureThreshold=15             --liveness-probe=httpGet.path=/v1/ready,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3 \
+            --cpu=1 --memory=512Mi --concurrency=80 --timeout=30 \
+            --startup-probe=httpGet.path=/v1/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=1,failureThreshold=15 \
+            --liveness-probe=httpGet.path=/v1/ready,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3 \
             --set-secrets=DATABASE_URL=api-database-url:latest \
             --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${{ vars.API_PUBLIC_BASE_URL }}@CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}@CORS_PREVIEW_ORIGIN_PATTERN=${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}@DB_POOL_MAX=3"
 
@@ -116,4 +118,5 @@ jobs:
           gcloud run services update-traffic "$SERVICE" \
             --project="${{ vars.GCP_PROJECT_ID }}" \
             --region="$REGION" \
-            --to-latest \n            --remove-tags=candidate
+            --to-latest \
+            --remove-tags=candidate
