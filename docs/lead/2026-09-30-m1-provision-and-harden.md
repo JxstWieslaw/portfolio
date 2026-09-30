@@ -27,3 +27,12 @@
 
 ## Grants used
 None.
+
+## CI result after the hardening push (run 36695760731)
+All jobs green except **API — image scan**: Trivy reports 2 HIGH in `libssl3t64` 3.5.7-1~deb13u2 (CVE-2026-75804 QUIC flow-control DoS, CVE-2026-84782 DTLS retransmission disclosure), fixed in deb13u3. The pinned distroless digest is still the newest `nodejs22-debian13:nonroot` upstream, so there is no fixed base to move to yet.
+- **Decision:** leave the gate red rather than add a `.trivyignore`; weakening a gate Wieslaw set on purpose is his call. Dependabot (added this run) will propose the new digest once distroless republishes.
+- **Open question for security-auditor / Wieslaw:** whether to time-box an ignore for these two, since Node does not obviously exercise QUIC or DTLS (not verified).
+- Nothing merges or deploys until this is green or explicitly waived.
+
+## Repo card
+`~/.claude/skills/senior-engineer-personas/repos/portfolio.md` created (`auto_main: no`).
