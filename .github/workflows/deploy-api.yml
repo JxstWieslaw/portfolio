@@ -75,6 +75,11 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           # Deploy as a candidate revision with no traffic; only promote if smoke passes.
+          # Probes (spec §12). Startup hits /v1/health, which needs no database: a revision that cannot boot
+          # never becomes ready, so a bad image fails the deploy instead of reaching traffic (30 s budget).
+          # Liveness hits /v1/ready, which checks Postgres: three failures in a row (~90 s) restart the
+          # instance. The lenient period and the 5 s timeout ride out a Neon cold start or a brief blip
+          # without flapping; timeoutSeconds must not exceed periodSeconds.
           # ^@^ switches gcloud's list delimiter to @, because CORS_ORIGINS itself contains commas.
           gcloud run deploy "$SERVICE" \
             --project="${{ vars.GCP_PROJECT_ID }}" \
@@ -84,7 +89,7 @@ jobs:
             --allow-unauthenticated \
             --no-traffic --tag=candidate \
             --min-instances=0 --max-instances=10 \
-            --cpu=1 --memory=512Mi --concurrency=80 --timeout=30 \
+            --cpu=1 --memory=512Mi --concurrency=80 --timeout=30             --startup-probe=httpGet.path=/v1/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=1,failureThreshold=15             --liveness-probe=httpGet.path=/v1/ready,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3 \
             --set-secrets=DATABASE_URL=api-database-url:latest \
             --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${{ vars.API_PUBLIC_BASE_URL }}@CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}@CORS_PREVIEW_ORIGIN_PATTERN=${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}"
 
