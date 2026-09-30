@@ -80,6 +80,12 @@ jobs:
           # Liveness hits /v1/ready, which checks Postgres: three failures in a row (~90 s) restart the
           # instance. The lenient period and the 5 s timeout ride out a Neon cold start or a brief blip
           # without flapping; timeoutSeconds must not exceed periodSeconds.
+          # DB_POOL_MAX=3 x --max-instances=10 = at most 30 Postgres connections from the API. Neon's free
+          # tier starts at 0.25 CU (about 112 max_connections, some reserved), and the migrate and seed
+          # steps, PR-branch CI and console sessions use direct connections on top. 30 leaves roughly 3x
+          # headroom; the runtime URL is the pooled (PgBouncer) one, so real server connections are lower
+          # still. Each request holds a connection for milliseconds, so 3 per instance serves the 80
+          # concurrent requests. Raise it only together with a paid compute size; the app default is 5.
           # ^@^ switches gcloud's list delimiter to @, because CORS_ORIGINS itself contains commas.
           gcloud run deploy "$SERVICE" \
             --project="${{ vars.GCP_PROJECT_ID }}" \
@@ -91,7 +97,7 @@ jobs:
             --min-instances=0 --max-instances=10 \
             --cpu=1 --memory=512Mi --concurrency=80 --timeout=30             --startup-probe=httpGet.path=/v1/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=1,failureThreshold=15             --liveness-probe=httpGet.path=/v1/ready,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3 \
             --set-secrets=DATABASE_URL=api-database-url:latest \
-            --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${{ vars.API_PUBLIC_BASE_URL }}@CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}@CORS_PREVIEW_ORIGIN_PATTERN=${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}"
+            --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${{ vars.API_PUBLIC_BASE_URL }}@CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}@CORS_PREVIEW_ORIGIN_PATTERN=${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}@DB_POOL_MAX=3"
 
       - name: Smoke test the new revision
         run: |
