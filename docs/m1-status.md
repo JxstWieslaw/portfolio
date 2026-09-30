@@ -23,8 +23,8 @@
 | `pnpm --filter @repo/web test` (unchanged by M1) | 584 passed |
 | Image size (budget 200 MB) | 59.5 MB compressed (docker save \| gzip) · ~204 MB unpacked (docker history sum) |
 | Container ready time, local (budget 2 s) | 112 ms measured locally at Task 11 (container already pulled; not a cold Cloud Run start) |
-| CI: verify · budgets · e2e · api-integration · api-image | Not run — branch not pushed (controller ruling); workflows validated statically with @action-validator |
-| Live deploy smoke test | Blocked — owner inputs (GCP project + billing, Neon project) do not exist yet |
+| CI: verify · budgets · e2e · api-integration · api-image | Ran on PR #1: all green except the image scan (see below) |
+| Live deploy smoke test | Not run — GCP and Neon now exist; needs PR #1 on `main` (see below) |
 
 The plan's ≤200 MB budget is applied to the compressed size; the unpacked figure exceeds it by ~2% and is flagged for the owner's decision.
 
@@ -37,12 +37,17 @@ branch per PR gated on the Neon project · tracing deferred to M3.
 
 ## Owner inputs still open
 
-GCP project + billing � API domain.
+Provisioned 2026-09-30 (see `docs/lead/2026-09-30-m1-provision-and-harden.md`): GCP project `jxst-portfolio-api`
+(Artifact Registry, both service accounts, Workload Identity Federation, both database secrets) and Neon project
+`holy-star-27595330` (org Code Villa, `aws-eu-central-1`, Postgres 17, branch `main`, database `portfolio`).
+GitHub variables for the deploy are set. Still open:
 
-The Neon project now exists: id `holy-star-27595330`, org Code Villa, `aws-eu-central-1`, Postgres 17, default
-branch `main`, database `portfolio`. Still to do by the owner: store its pooled and direct connection strings in
-Secret Manager (`docs/api-gcp-setup.md` section 3), set the `NEON_PROJECT_ID` variable and `NEON_API_KEY` secret to
-switch on the per-PR branch job. Connection strings are never committed or written in docs.
+- API domain, and the web origin for `API_CORS_ORIGINS` (provisional `http://localhost:3000`; no web deployment exists yet).
+- `NEON_API_KEY` secret and `NEON_PROJECT_ID` variable, to switch on the per-PR Neon branch job.
+- GitHub `production` environment (optional required reviewers).
+- Merging PR #1 to `main`, which the first deploy needs, because the workflow triggers only exist on the default branch.
+- The image scan is red on two fixable OpenSSL HIGH CVEs in the distroless base (fix not yet republished upstream).
+Connection strings are never committed or written in docs.
 
 ## Closed before the first deploy
 
@@ -80,7 +85,7 @@ on a public read API with no consumers yet.
 
 - Liveness on `/v1/ready` restarts an instance during a sustained database outage. A restart does not fix Postgres,
   and Cloud Run has no notion of "stop routing but keep the process", so the outage still surfaces as errors. The
-  spec �12 wording ("Cloud Run stops routing") is closer to a readiness probe; `gcloud run deploy` also lists
+  spec �12 wording ("Cloud Run stops routing") is closer to a readiness probe; `gcloud run deploy` also lists
   `--readiness-probe`, but its availability for services was not confirmed offline. Decide after the first deploy
   whether to add it.
 - The Dockerfile digests were resolved from registry metadata (`docker buildx imagetools inspect`), but the
