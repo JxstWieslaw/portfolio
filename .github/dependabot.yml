@@ -12,3 +12,12 @@ updates:
       # The runtime is Node 22 (distroless nodejs22); a new Node major is a deliberate change, not a bump.
       - dependency-name: node
         update-types: ['version-update:semver-major']
+  # npm dependencies: one monthly PR grouping minor and patch bumps, so routine updates arrive through
+  # the same reviewed path as the base-image pins. Majors still open their own PR.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      minor-and-patch:
+        update-types: ['minor', 'patch']
