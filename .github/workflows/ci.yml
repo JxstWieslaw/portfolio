@@ -164,6 +164,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           vuln-type: os,library
+          trivyignores: .trivyignore.yaml
           exit-code: '1'
 
   api-neon-branch:
