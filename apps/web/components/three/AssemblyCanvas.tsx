@@ -459,7 +459,6 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp }: AssemblyCanva
   }, [])
   useAssemblyScroll(apply)
 
-  const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
 
   return (
     <div ref={wrapper} className="absolute inset-0">
