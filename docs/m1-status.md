@@ -58,7 +58,7 @@ Connection strings are never committed or written in docs.
 | Actions pinned by tag | Every action in `ci.yml`, `deploy-api.yml` and `neon-branch-cleanup.yml` (all hold `NEON_API_KEY` or `id-token: write`) is pinned to a commit SHA with the version as a trailing comment. |
 | `DB_POOL_MAX` unset | `DB_POOL_MAX=3` at deploy: 3 x `--max-instances=10` = 30 connections at most, against a free-tier compute floor of about 112 `max_connections`. The runtime URL is the pooled one. |
 | `candidate` tag stays public | Promotion runs `update-traffic --to-latest --remove-tags=candidate`. |
-| First-deploy `--no-traffic` ignored | Documented in `docs/api-gcp-setup.md` section 6, with the compensating startup probe and the safe order of operations. |
+| First-deploy `--no-traffic` rejected by gcloud; the workflow omits it when the service does not exist | Documented in `docs/api-gcp-setup.md` section 6, with the compensating startup probe and the safe order of operations. |
 | Seed ordering | Decided below; comment added at the seed step. |
 
 ### Seed ordering: decision
