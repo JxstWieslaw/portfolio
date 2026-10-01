@@ -55,7 +55,7 @@ describe('personJsonLd', () => {
 
   it('asserts both job titles, because both roles are current', () => {
     // Collapsing these to one would misrepresent the positioning the whole site rests on.
-    expect(ld.jobTitle).toEqual(['Tech Lead', 'Senior Software Engineer'])
+    expect(ld.jobTitle).toEqual(['Tech Lead', 'Team Lead & Senior Software Engineer'])
   })
 
   it('lists both employers', () => {

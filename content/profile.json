@@ -1,13 +1,13 @@
 {
   "name": "Wieslaw Samushonga",
   "headline": "I lead teams that ship production software — and I make the web move.",
-  "sub": "Hospital operations, learning platforms, creator-discovery tooling, procurement systems. Technical direction, code review and mentorship by day; real-time 3D on the web that holds frame rate on a mid-range phone.",
+  "sub": "Hospital operations, learning platforms, creator-discovery tooling, procurement systems. Technical direction, code review and mentorship by day; real-time 3D on the web that holds frame rate on a mid-range phone. An AI agent fleet runs review, security and performance passes inside the delivery loop; decisions, merges and standards stay with me.",
   "location": "Harare, Zimbabwe",
   "email": "wieslawsamushonga01@gmail.com",
   "availability": "Open to consulting & collaboration",
   "roles": [
     { "org": "Data Age", "title": "Tech Lead" },
-    { "org": "Rapidev Labs", "title": "Senior Software Engineer", "url": "https://rapidevlabs.com" }
+    { "org": "Rapidev Labs", "title": "Team Lead & Senior Software Engineer", "url": "https://rapidevlabs.com" }
   ],
   "links": [
     { "label": "Email", "url": "mailto:wieslawsamushonga01@gmail.com", "kind": "primary" },
@@ -20,12 +20,12 @@
     { "label": "Reddit", "url": "https://reddit.com/user/jxstWieslaw", "kind": "elsewhere" }
   ],
   "kpis": [
-    { "label": "Years shipping", "value": "5+", "group": "hero" },
+    { "label": "Years shipping", "value": "6+", "group": "hero" },
     { "label": "Domains shipped", "value": "7", "derived": "domainsShipped", "group": "hero" },
     { "label": "Specialism", "value": "WebGL / real-time 3D", "group": "hero" },
     { "label": "Production platforms led/shipped", "value": "10", "placeholder": true, "group": "proof" },
     { "label": "Domains shipped", "value": "7", "derived": "domainsShipped", "group": "proof" },
-    { "label": "Roles", "value": "Tech Lead + Senior SWE", "group": "proof" },
+    { "label": "Roles", "value": "Tech Lead · Team Lead · Senior SWE", "group": "proof" },
     { "label": "Concurrent production systems monitored", "value": "6", "placeholder": true, "group": "proof" }
   ]
 }
