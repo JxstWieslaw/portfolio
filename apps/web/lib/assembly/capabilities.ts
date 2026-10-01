@@ -44,11 +44,20 @@ export function hasNoGlFlag(search: string): boolean {
 /**
  * Probes WebGL2 on a throwaway canvas. Locked-down browsers can throw here
  * rather than returning null; both answers mean "stay on 2D".
+ *
+ * The canvas must not have been asked for any other context kind: a canvas
+ * holds one kind only, and a second kind returns null by spec. A successful
+ * probe releases its context straight away so the spare never counts against
+ * the browser's context limit.
  */
 export function probeWebGL2(canvas: HTMLCanvasElement): boolean {
   if (typeof canvas.getContext !== 'function') return false
   try {
-    return Boolean(canvas.getContext('webgl2'))
+    const gl = canvas.getContext('webgl2')
+    if (!gl) return false
+    const lose = gl.getExtension('WEBGL_lose_context')
+    lose?.loseContext()
+    return true
   } catch {
     return false
   }

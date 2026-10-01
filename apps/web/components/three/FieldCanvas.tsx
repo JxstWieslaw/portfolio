@@ -129,6 +129,10 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
         const loop = (ts: number): void => {
           frame = requestAnimationFrame(loop)
           if (ts - lastFrameAt < HERO_FRAME_MS || !heroVisible) return
+          // While the WebGL Assembly is live this canvas is faded out, so
+          // painting under it is wasted work. The last frame stays as the
+          // fallback for the moment the attribute is removed.
+          if (document.documentElement.dataset.gl === 'live') return
           lastFrameAt = ts
           paint(ts / 1000)
         }

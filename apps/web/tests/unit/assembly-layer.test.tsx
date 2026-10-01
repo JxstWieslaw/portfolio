@@ -2,28 +2,64 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * `next/dynamic` is replaced so the test can see whether the three-importing
- * chunk was ever asked for. The stand-in never invokes the loader: jsdom has
- * no WebGL, and three must stay out of every unit test.
+ * `next/dynamic` is replaced by a stand-in that behaves like the real one —
+ * it calls the loader on first render — so the test can see whether the
+ * three-importing chunk was asked for. The chunk itself is replaced by a
+ * module whose factory throws: the import rejects the way a ChunkLoadError
+ * does after a deploy, which keeps three out of jsdom and exercises the
+ * give-up path at the same time.
  */
-const dynamicProbe = vi.hoisted(() => ({ loaders: 0, renders: 0 }))
+const dynamicProbe = vi.hoisted(() => ({ loaders: 0, requests: 0 }))
 
-vi.mock('next/dynamic', () => ({
-  default: () => {
-    dynamicProbe.loaders += 1
-    return function AssemblyCanvasStandIn() {
-      dynamicProbe.renders += 1
-      return <div data-testid="assembly-canvas" />
-    }
-  },
-}))
+vi.mock('next/dynamic', async () => {
+  const React = await import('react')
+  return {
+    default: (loader: () => Promise<{ default: React.ComponentType<Record<string, unknown>> }>) => {
+      dynamicProbe.loaders += 1
+      return function DynamicStandIn(props: Record<string, unknown>) {
+        const [Loaded, setLoaded] = React.useState<React.ComponentType<Record<string, unknown>> | null>(null)
+        React.useEffect(() => {
+          dynamicProbe.requests += 1
+          void loader().then((module) => setLoaded(() => module.default))
+        }, [])
+        return Loaded ? <Loaded {...props} /> : null
+      }
+    },
+  }
+})
 
-import { AssemblyLayer } from '@/components/three/AssemblyLayer'
+vi.mock('@/components/three/AssemblyCanvas', () => {
+  throw new Error('ChunkLoadError: Loading chunk three failed')
+})
 
-/** Past the `scheduleIdle` macrotask fallback. */
-const AFTER_IDLE_MS = 40
+import { AssemblyLayer, resetAssemblyForTests } from '@/components/three/AssemblyLayer'
+
+/** Past the `scheduleIdle` macrotask fallback and the rejected import. */
+const AFTER_IDLE_MS = 60
 
 let webgl2 = false
+
+/**
+ * A canvas holds one context kind only: the first kind asked for wins and
+ * every other kind returns null, exactly as the spec says. This is the
+ * regression the mount decision once had — probing WebGL2 on the canvas the
+ * 2D ladder had already claimed.
+ */
+const claimed = new WeakMap<HTMLCanvasElement, string>()
+
+function stubContexts(): void {
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+    configurable: true,
+    value: function getContext(this: HTMLCanvasElement, kind: string) {
+      const first = claimed.get(this) ?? kind
+      claimed.set(this, first)
+      if (first !== kind) return null
+      if (kind === '2d') return {}
+      if (kind === 'webgl2' && webgl2) return { getExtension: () => ({ loseContext: () => {} }) }
+      return null
+    },
+  })
+}
 
 function stubMatchMedia(matching: readonly string[]): void {
   Object.defineProperty(window, 'matchMedia', {
@@ -48,12 +84,10 @@ async function settle(ms: number): Promise<void> {
 }
 
 beforeEach(() => {
-  dynamicProbe.renders = 0
+  resetAssemblyForTests()
+  dynamicProbe.requests = 0
   webgl2 = false
-  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
-    configurable: true,
-    value: (kind: string) => (kind === '2d' ? {} : webgl2 ? {} : null),
-  })
+  stubContexts()
   Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 8 })
   stubMatchMedia([])
   vi.stubGlobal(
@@ -87,35 +121,47 @@ describe('AssemblyLayer', () => {
     expect(layer?.className).toContain('inset-0')
     expect(layer?.className).toContain('pointer-events-none')
     expect(layer).toHaveAttribute('data-assembly', 'idle')
-    expect(container.querySelector('[data-testid="assembly-canvas"]')).toBeNull()
-    expect(dynamicProbe.renders).toBe(0)
+    expect(dynamicProbe.requests).toBe(0)
     expect(document.documentElement.hasAttribute('data-gl')).toBe(false)
   })
 
-  it('mounts the canvas after an idle period once WebGL2 is available', async () => {
+  it('asks for the chunk after an idle period when a fresh canvas offers WebGL2', async () => {
+    webgl2 = true
+    render(<AssemblyLayer />)
+    expect(dynamicProbe.requests).toBe(0)
+    await settle(AFTER_IDLE_MS)
+    expect(dynamicProbe.requests).toBe(1)
+  })
+
+  it('gives up quietly when the chunk fails to load: nothing extra rendered, no data-gl, no retry', async () => {
     webgl2 = true
     const { container } = render(<AssemblyLayer />)
-    expect(container.querySelector('[data-testid="assembly-canvas"]')).toBeNull()
     await settle(AFTER_IDLE_MS)
-    expect(container.querySelector('[data-testid="assembly-canvas"]')).not.toBeNull()
-    expect(container.firstElementChild).toHaveAttribute('data-assembly', 'live')
+    expect(container.firstElementChild).toHaveAttribute('data-assembly', 'idle')
+    expect(container.firstElementChild?.childElementCount).toBe(0)
+    expect(document.documentElement.hasAttribute('data-gl')).toBe(false)
+
+    // Sticky for the session: a remount does not ask again.
+    cleanup()
+    render(<AssemblyLayer />)
+    await settle(AFTER_IDLE_MS)
+    expect(dynamicProbe.requests).toBe(1)
   })
 
   it('never mounts under prefers-reduced-motion, even with WebGL2', async () => {
     webgl2 = true
     stubMatchMedia(['(prefers-reduced-motion: reduce)'])
-    const { container } = render(<AssemblyLayer />)
+    render(<AssemblyLayer />)
     await settle(AFTER_IDLE_MS)
-    expect(container.querySelector('[data-testid="assembly-canvas"]')).toBeNull()
-    expect(dynamicProbe.renders).toBe(0)
+    expect(dynamicProbe.requests).toBe(0)
   })
 
   it('honours the ?nogl=1 kill switch', async () => {
     webgl2 = true
     window.history.replaceState({}, '', '/?nogl=1')
-    const { container } = render(<AssemblyLayer />)
+    render(<AssemblyLayer />)
     await settle(AFTER_IDLE_MS)
-    expect(container.querySelector('[data-testid="assembly-canvas"]')).toBeNull()
+    expect(dynamicProbe.requests).toBe(0)
   })
 
   it('registers exactly one dynamic chunk for the whole module', () => {

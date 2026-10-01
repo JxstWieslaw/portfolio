@@ -116,7 +116,9 @@ export function Footer({
   return (
     <footer
       className={cx(
-        'border-t border-[var(--line-1)] bg-[var(--bg-0)]',
+        // `relative`: positioned, so it paints above the fixed z-0 Assembly
+        // layer inside <main>; a non-positioned footer would sit beneath it.
+        'relative border-t border-[var(--line-1)] bg-[var(--bg-0)]',
         // § 3.2 principle 5 — landscape notches on the sides, the home
         // indicator underneath.
         '[padding-inline:env(safe-area-inset-left)_env(safe-area-inset-right)]',

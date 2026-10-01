@@ -290,6 +290,15 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   }, [gl, onLive, onGiveUp, invalidate])
 
   const live = useRef(false)
+  const liveFrame = useRef(0)
+  // An unmount in the frame between drawing and flagging must not leave
+  // data-gl set with no layer behind it.
+  useEffect(
+    () => () => {
+      if (liveFrame.current) cancelAnimationFrame(liveFrame.current)
+    },
+    [],
+  )
   const motion = useRef({ parallaxX: 0, parallaxY: 0 })
   const pointerLocal = useMemo(() => new Vector3(), [])
   const viewLocal = useMemo(() => new Vector3(), [])
@@ -397,7 +406,10 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     if (!live.current) {
       live.current = true
       // The attribute flips after this frame has actually been presented.
-      requestAnimationFrame(() => onLive(true))
+      liveFrame.current = requestAnimationFrame(() => {
+        liveFrame.current = 0
+        onLive(true)
+      })
     }
 
     // Keep stepping while a spring or the parallax is still settling.
