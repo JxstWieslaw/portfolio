@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
+      # Node 22 ships npm 10; packageManager pins npm@11.19.0, and only the same npm reads the lockfile identically.
+      - run: npm install -g npm@11.19.0
       - run: npm ci
       # Verifies registry signatures and provenance attestations of every installed package.
       - run: npm audit signatures
@@ -54,6 +56,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
+      # Node 22 ships npm 10; packageManager pins npm@11.19.0, and only the same npm reads the lockfile identically.
+      - run: npm install -g npm@11.19.0
       - run: npm ci
       - run: npm run build
       - name: Enforce JS bundle budget
@@ -71,6 +75,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
+      # Node 22 ships npm 10; packageManager pins npm@11.19.0, and only the same npm reads the lockfile identically.
+      - run: npm install -g npm@11.19.0
       - run: npm ci
       - run: npm exec -w @repo/web -- playwright install --with-deps chromium webkit
       - run: npm run test:e2e -w @repo/web
@@ -107,6 +113,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
+      # Node 22 ships npm 10; packageManager pins npm@11.19.0, and only the same npm reads the lockfile identically.
+      - run: npm install -g npm@11.19.0
       - run: npm ci
       - name: Every migration ships a down.sql
         run: npm run db:migrate -w @repo/api -- --verify
@@ -178,6 +186,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
+      # Node 22 ships npm 10; packageManager pins npm@11.19.0, and only the same npm reads the lockfile identically.
+      - run: npm install -g npm@11.19.0
       - run: npm ci
       - name: Branch production data for this PR
         id: branch

@@ -11,6 +11,8 @@
 #    cached across source-only changes; out/full adds the pruned packages' sources.
 FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS prune
 WORKDIR /repo
+# Same npm as packageManager in package.json: the node image ships npm 10.
+RUN npm install -g npm@11.19.0
 # turbo comes from the lockfile (root devDependency), never from an ad-hoc npx fetch: it writes the pruned
 # lockfile that every later stage trusts. --workspaces=false installs the root manifest only.
 COPY package.json package-lock.json ./
@@ -21,6 +23,7 @@ RUN ./node_modules/.bin/turbo prune @repo/api --docker
 # 2. Install, build, then reinstall with production dependencies only.
 FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
 WORKDIR /repo
+RUN npm install -g npm@11.19.0
 COPY --from=prune /repo/out/json/ ./
 RUN npm ci
 # Registry signatures and provenance, so the deploy path checks what CI checks.
