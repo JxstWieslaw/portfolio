@@ -28,7 +28,7 @@ RUN pnpm --filter @repo/api build
 # and ulid are devDependencies because tsup inlined them into dist/main.js.
 RUN pnpm --filter @repo/api deploy --prod /out
 
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:5ef534d3db0ac0c43bee379af4ae49cfbfc0ef38a46c94c52d87c68f32f34d8a
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:ec2313763dd43931543bd03830466e0c409ce73a487e8d46f10db72d3b816c1c
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
