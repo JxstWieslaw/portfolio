@@ -6,7 +6,7 @@ shipped before any WebGL or backend exists, so both are additive risk rather tha
 
 ## What exists today
 
-A single Next.js app in a pnpm + Turborepo workspace.
+A single Next.js app in an npm + Turborepo workspace.
 
 | Package | What |
 |---|---|
@@ -38,14 +38,14 @@ the controlled experiment that ruled out the backdrop canvases as the cause.
 ## Running it
 
 ```bash
-pnpm install
-pnpm dev          # http://localhost:3000
-pnpm test         # unit
-pnpm build
-pnpm lint:content # reports which content is still placeholder copy
+npm ci
+npm run dev          # http://localhost:3000
+npm run test         # unit
+npm run build
+npm run lint:content # reports which content is still placeholder copy
 ```
 
-Requires Node ≥ 22.11 and pnpm ≥ 9.
+Requires Node ≥ 22.11 and npm ≥ 10.
 
 ## Principles this codebase holds to
 

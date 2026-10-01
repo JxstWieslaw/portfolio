@@ -27,7 +27,7 @@ export default defineConfig({
     { name: 'ultrawide', use: { ...devices['Desktop Chrome'], viewport: { width: 2560, height: 1080 } } },
   ],
   webServer: {
-    command: 'pnpm build && pnpm start',
+    command: 'npm run build && npm start',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
