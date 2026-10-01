@@ -55,10 +55,23 @@ export function probeWebGL2(canvas: HTMLCanvasElement): boolean {
   try {
     const gl = canvas.getContext('webgl2')
     if (!gl) return false
-    const lose = gl.getExtension('WEBGL_lose_context')
-    lose?.loseContext()
+    releaseContext(gl)
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * Releasing the probe context must never change the answer: a context that
+ * cannot be released (no extension, a locked-down or stubbed implementation)
+ * is still a working context.
+ */
+function releaseContext(gl: WebGL2RenderingContext): void {
+  try {
+    if (typeof gl.getExtension !== 'function') return
+    gl.getExtension('WEBGL_lose_context')?.loseContext()
+  } catch {
+    // The context stays alive until garbage collection; the probe result stands.
   }
 }

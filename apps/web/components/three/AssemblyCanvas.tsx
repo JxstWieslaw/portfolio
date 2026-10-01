@@ -70,7 +70,11 @@ const REPEL_STRENGTH = 0.6
 /** Group parallax toward the pointer, radians (3 degrees). */
 const PARALLAX = (3 * Math.PI) / 180
 
-const BREATH_FPS = 30
+/**
+ * 20 on touch devices (the 2D hero this replaces ran at 20), 30 on pointer
+ * devices. Evaluated once: this module only ever loads in the browser.
+ */
+const BREATH_FPS = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 ? 20 : 30
 
 interface PointerState {
   x: number
@@ -463,8 +467,14 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp }: AssemblyCanva
       <div ref={washTo} className="absolute inset-0" style={{ opacity: 0 }} />
       <Canvas
         frameloop="demand"
-        dpr={[1, touch ? 1.5 : 2]}
-        gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
+        // R3F's default resize debounce is 0, so a mobile URL-bar collapse mid-scroll
+        // would rebuild every target bundle. 150 ms matches FieldCanvas.
+        resize={{ debounce: { scroll: 50, resize: 150 } }}
+        // 1.5 everywhere: flat-shaded cubes cannot show DPR 2, and a full-screen
+        // MSAA canvas at DPR 2 on a 1440p desktop is ~15 megapixels per frame.
+        dpr={[1, 1.5]}
+        // A decorative layer should not pin a laptop to its discrete GPU.
+        gl={{ alpha: true, antialias: true, powerPreference: 'default' }}
         camera={{ fov: FOV_LANDSCAPE, near: 0.1, far: 100, position: [0, 0, CAMERA_DISTANCE] }}
         onCreated={({ gl }) => {
           gl.toneMapping = ACESFilmicToneMapping
