@@ -343,7 +343,7 @@ them. Every string, attribute and the a11y contract are unchanged;
 | Measure | Before | After |
 |---|---|---|
 | Route `/` chunk (`next build`) | 12 kB, First Load 115 kB | 10.7 kB, First Load 113 kB |
-| `size-limit` initial JS (non-3D), gzip | 118.77 kB / 120 kB | 117.35 kB / 120 kB |
+| `size-limit` initial JS (non-3D), gzip | 118.77 kB (baseline re-measured at `de9c95e` after the npm move and the M2 slices; the 119.01 kB cited earlier in this document predates them; headroom is now 117.35 of 120 kB) / 120 kB | 117.35 kB / 120 kB |
 | `size-limit` assembly core (lazy), gzip | 259.38 kB / 275 kB | 259.38 kB / 275 kB |
 | `'use client'` modules reachable from `app/page.tsx` | 7 (Craft, ContactForm, Reveal, ChipScrollerList, FieldCanvas, AssemblyLayer, AssemblyCanvas lazy) | 7 (CraftControls replaces Craft) |
 | HTML of `/` (gzip) | 27.5 kB, of which inlined RSC payload 15.2 kB (98 kB raw); ~708 elements, 157 inline `style` attributes | not re-measured (markup identical) |
