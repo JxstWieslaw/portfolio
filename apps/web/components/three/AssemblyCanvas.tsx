@@ -28,7 +28,7 @@ import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
-import { NO_DROP, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, shiverAt, type DropState } from '@/lib/assembly/motion'
+import { NO_DROP, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
 import { EMPTY_SLOTS, planSlots, type SlotState } from '@/lib/assembly/slots'
@@ -516,11 +516,12 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
 
     // The section's own motion rule (§ 3 table), lerped across the band.
     const rule = lerpMotion(motionFor(from), motionFor(to), mix)
-    // The contact ring's calm (§ 3.7): starts once the ring has fully landed.
-    if (to === 'ring' && mix >= 1) {
+    // The contact ring's calm (§ 3.7): starts once the visitor is at rest on the ring.
+    const settled = settledFormation(from, to, mix)
+    if (settled === 'ring') {
       if (m.settledAt < 0) m.settledAt = t
     } else m.settledAt = -1
-    const calm = calmAt(to, mix, m.settledAt < 0 ? 0 : t - m.settledAt)
+    const calm = calmAt(settled, m.settledAt < 0 ? 0 : t - m.settledAt)
 
     // Group: anchor, formation rotation, idle wobble, pointer parallax, breath, ultrawide spread.
     const wobble = Math.sin(t * WOBBLE_RATE) * WOBBLE_AMPLITUDE * rule.wobble
@@ -552,23 +553,25 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     uniforms.uRepel.value = m.repel > 1e-4 ? m.repel : 0
     uniforms.uRepelRadius.value = radius
 
-    // Attractors (§ 3.3): the card's box, measured now, through the same ray
-    // maths onto z = 0, into group space; strength eases 0 -> 1 at 6/s.
+    // Attractors (§ 3.3): the card's box (measured by the DOM hook, never
+    // here) through the same ray maths onto z = 0, into group space; strength
+    // eases 0 -> 1 at 6/s. One attractor: uAttractCount bounds the loop.
     const card = attractorStore.get()
     const attractTarget = card && rule.attract > 0 ? rule.attract : 0
     m.attract += (attractTarget - m.attract) * (1 - Math.exp(-dt * ATTRACT_RISE))
     const slot0 = uniforms.uAttractors.value[0]
     if (card && m.attract > 1e-3 && slot0) {
-      const [px, py] = boxCentre(card.getBoundingClientRect())
+      const [px, py] = boxCentre(card)
       const [wx, wy, wz] = rayAtPlane(rayThrough(px, py))
       scratch.point.set(wx, wy, wz).applyMatrix4(inverse)
       slot0.set(scratch.point.x, scratch.point.y, scratch.point.z, m.attract)
     } else if (slot0) slot0.w = 0
+    uniforms.uAttractCount.value = slot0 && slot0.w > 0 ? 1 : 0
     uniforms.uAttractRadius.value = ATTRACT_RADIUS * sTo.unit
     uniforms.uAttractPull.value = m.attract > 1e-3 ? ATTRACT_PULL_MODEL * sTo.unit : 0
 
-    // The craft drop (§ 3.5): once per entry, when the scatter is half landed.
-    m.drop = dropTrigger(m.drop, to, mix, t)
+    // The craft drop (§ 3.5): once per visit, when half the scatter is on screen from either side.
+    m.drop = dropTrigger(m.drop, from, to, mix, t)
     const shiver = m.drop.dropAt >= 0 ? shiverAt(t - m.drop.dropAt) : 0
     uniforms.uDropAt.value = m.drop.dropAt
     uniforms.uShiver.value.set(from === 'scatter' ? shiver : 0, to === 'scatter' ? shiver : 0)

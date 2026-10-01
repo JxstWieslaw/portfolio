@@ -68,12 +68,10 @@ vec3 curl(vec3 p) {
 }
 `
 
+import { BOUNCE, GRAVITY, GROUND_Y } from '@/lib/assembly/motion'
+
 export const STAGGER = 0.35
 
-/** The scatter's ground plane and gravity (`lib/assembly/motion.ts`), mirrored into GLSL. */
-export const GROUND_Y = -0.95
-export const GRAVITY = 2.2
-export const BOUNCE = 0.3
 /** The stream's river speed, model units/s, and its wrap half-width (§ 3.2). */
 export const FLOW_SPEED = 0.35
 export const FLOW_HALF = 3.2
@@ -115,6 +113,7 @@ uniform float uStaggerByT;
 uniform vec4 uAttractors[8];
 uniform float uAttractRadius;
 uniform float uAttractPull;
+uniform int uAttractCount;
 
 varying vec3 vInstanceColor;
 
@@ -211,6 +210,7 @@ void main() {
   // Attractors: the hovered card pulls cubes within uAttractRadius toward it (§ 3.3).
   if (uAttractPull > 0.0) {
     for (int i = 0; i < 8; i++) {
+      if (i >= uAttractCount) break;
       vec4 a = uAttractors[i];
       if (a.w <= 0.0) continue;
       vec3 d = a.xyz - centre;

@@ -35,29 +35,30 @@ export function nearestToCentre(boxes: readonly Box[], width: number, height: nu
   return best
 }
 
-export type AttractorListener = (element: Element | null) => void
+export type AttractorListener = (box: Box | null) => void
 
 /**
- * The single hovered (or centred) card, shared between the DOM hook in the
- * Selected Work section and the scene, which measures it per frame while it
- * is set. A module-level store, like the give-up flag in `AssemblyLayer`:
- * the two sides never render each other.
+ * The hovered (or centred) card's box, measured by the DOM hook in the
+ * Selected Work section on hover, scroll and resize, and read by the scene's
+ * frame loop, which never touches layout. A module-level store, like the
+ * give-up flag in `AssemblyLayer`: the two sides never render each other.
  */
 export interface AttractorStore {
-  get(): Element | null
-  set(element: Element | null): void
+  get(): Box | null
+  set(box: Box | null): void
   subscribe(listener: AttractorListener): () => void
 }
 
 export function createAttractorStore(): AttractorStore {
-  let current: Element | null = null
+  let current: Box | null = null
   const listeners = new Set<AttractorListener>()
   return {
     get: () => current,
-    set(element) {
-      if (element === current) return
-      current = element
-      for (const listener of listeners) listener(element)
+    set(box) {
+      if (box === current) return
+      if (box && current && box.left === current.left && box.top === current.top && box.width === current.width && box.height === current.height) return
+      current = box
+      for (const listener of listeners) listener(box)
     },
     subscribe(listener) {
       listeners.add(listener)

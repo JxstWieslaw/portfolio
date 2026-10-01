@@ -22,31 +22,26 @@ export function AttractorField({ className, children }: { readonly className?: s
     if (!element) return undefined
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
 
-    if (!coarse) {
-      const over = (event: PointerEvent): void => {
-        const card = (event.target as Element | null)?.closest('[data-attract]') ?? null
-        if (card && element.contains(card)) attractorStore.set(card)
-      }
-      const out = (event: PointerEvent): void => {
-        const card = (event.target as Element | null)?.closest('[data-attract]')
-        const next = (event.relatedTarget as Element | null)?.closest?.('[data-attract]') ?? null
-        if (card && next !== card) attractorStore.set(null)
-      }
-      element.addEventListener('pointerover', over)
-      element.addEventListener('pointerout', out)
-      return () => {
-        element.removeEventListener('pointerover', over)
-        element.removeEventListener('pointerout', out)
-        attractorStore.set(null)
-      }
-    }
-
+    // The card's box is measured here, on the events that can move it, so the
+    // frame loop never reads layout.
+    let current: Element | null = null
     let frame = 0
-    const pick = (): void => {
+    const publish = (): void => {
       frame = 0
+      if (!current) {
+        attractorStore.set(null)
+        return
+      }
+      const r = current.getBoundingClientRect()
+      attractorStore.set({ left: r.left, top: r.top, width: r.width, height: r.height })
+    }
+    const schedule = (): void => {
+      if (!frame) frame = requestAnimationFrame(publish)
+    }
+    const pick = (): void => {
       const bounds = element.getBoundingClientRect()
       if (bounds.bottom < 0 || bounds.top > window.innerHeight) {
-        attractorStore.set(null)
+        current = null
         return
       }
       const cards = Array.from(element.querySelectorAll('[data-attract]'))
@@ -55,18 +50,41 @@ export function AttractorField({ className, children }: { readonly className?: s
         window.innerWidth,
         window.innerHeight,
       )
-      attractorStore.set(index < 0 ? null : (cards[index] ?? null))
+      current = index < 0 ? null : (cards[index] ?? null)
     }
-    const schedule = (): void => {
-      if (!frame) frame = requestAnimationFrame(pick)
+    const move = (): void => {
+      if (coarse) pick()
+      schedule()
     }
-    schedule()
-    window.addEventListener('scroll', schedule, { passive: true })
-    window.addEventListener('resize', schedule)
+
+    const over = (event: PointerEvent): void => {
+      const card = (event.target as Element | null)?.closest('[data-attract]') ?? null
+      if (card && element.contains(card)) {
+        current = card
+        publish()
+      }
+    }
+    const out = (event: PointerEvent): void => {
+      const card = (event.target as Element | null)?.closest('[data-attract]')
+      const next = (event.relatedTarget as Element | null)?.closest?.('[data-attract]') ?? null
+      if (card && next !== card) {
+        current = null
+        publish()
+      }
+    }
+    if (coarse) move()
+    else {
+      element.addEventListener('pointerover', over)
+      element.addEventListener('pointerout', out)
+    }
+    window.addEventListener('scroll', move, { passive: true })
+    window.addEventListener('resize', move)
     return () => {
       if (frame) cancelAnimationFrame(frame)
-      window.removeEventListener('scroll', schedule)
-      window.removeEventListener('resize', schedule)
+      element.removeEventListener('pointerover', over)
+      element.removeEventListener('pointerout', out)
+      window.removeEventListener('scroll', move)
+      window.removeEventListener('resize', move)
       attractorStore.set(null)
     }
   }, [])

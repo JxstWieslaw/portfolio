@@ -44,6 +44,8 @@ export interface AssemblyUniforms {
   /** World-unit radius and pull of the attractors. */
   readonly uAttractRadius: { value: number }
   readonly uAttractPull: { value: number }
+  /** How many leading entries of `uAttractors` are live; bounds the shader loop. */
+  readonly uAttractCount: { value: number }
 }
 
 /** The 2D painter's ramp, sRGB; the shader converts to linear. */
@@ -76,6 +78,7 @@ export function createAssemblyUniforms(): AssemblyUniforms {
     uAttractors: { value: Array.from({ length: MAX_ATTRACTORS }, () => new Vector4(0, 0, 0, 0)) },
     uAttractRadius: { value: 1 },
     uAttractPull: { value: 0 },
+    uAttractCount: { value: 0 },
   }
 }
 

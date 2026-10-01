@@ -8,7 +8,7 @@ import {
   nearestToCentre,
 } from '@/lib/assembly/attractors'
 import { CAMERA_DAMP, CAMERA_RIGS, PORTRAIT_DISTANCE_SCALE, cameraPosition, damp, lerpRig, rigFor } from '@/lib/assembly/camera'
-import { LCP_CEILING_MS, LCP_IDLE_TIMEOUT_MS, LOAD_FALLBACK_MS, afterLcp } from '@/lib/assembly/lcp'
+import { LCP_CEILING_MS, LCP_IDLE_TIMEOUT_MS, LCP_QUIET_MS, LOAD_FALLBACK_MS, afterLcp } from '@/lib/assembly/lcp'
 import {
   BOUNCE,
   CALM_SECONDS,
@@ -24,8 +24,11 @@ import {
   fallHeight,
   lerpMotion,
   motionFor,
+  scatterWeight,
+  settledFormation,
   shiverAt,
 } from '@/lib/assembly/motion'
+import { resolveScroll, type SectionBox } from '@/lib/assembly/scroll'
 import {
   AIRBORNE_T,
   GRID_RATE,
@@ -37,7 +40,7 @@ import {
   groupFor,
   orbitRingAxis,
 } from '@/lib/assembly/targets'
-import { FORMATIONS, FORMATION_IDS } from '@/lib/formations/config'
+import { FORMATIONS, FORMATION_IDS, SECTION_BACKDROPS } from '@/lib/formations/config'
 import { REDUCED_KEEP } from '@/lib/formations/fallback'
 import { createRng, generatePoints, seedFor } from '@/lib/formations/generators'
 
@@ -141,33 +144,86 @@ describe('the craft drop (§ 3.5)', () => {
     expect(shiverAt(FIRST_LANDING + SHIVER_SECONDS)).toBe(0)
   })
 
-  it('sets uDropAt once per entry, when the mix passes 0.5, and replays on a return', () => {
-    let state = dropTrigger(NO_DROP, 'scatter', 0.2, 10)
-    expect(state.dropAt).toBe(-1)
-    state = dropTrigger(state, 'scatter', 0.5, 11)
-    expect(state.dropAt).toBe(11)
-    state = dropTrigger(state, 'scatter', 0.9, 12)
-    state = dropTrigger(state, 'scatter', 1, 13)
-    expect(state.dropAt).toBe(11)
-    // Leaving keeps the fallen cubes where they are and re-arms.
-    state = dropTrigger(state, 'grid', 0.3, 14)
-    expect(state.dropAt).toBe(11)
-    expect(state.armed).toBe(false)
-    state = dropTrigger(state, 'scatter', 0.6, 20)
-    expect(state.dropAt).toBe(20)
-    // A heading-to-scatter that never passed 0.5 is not a drop.
-    expect(dropTrigger(NO_DROP, 'orbit', 1, 5)).toBe(NO_DROP)
+  it('drops once per visit from either direction, never re-arms on a nudge, and replays after leaving', () => {
+    // Arriving from above: orbit -> scatter.
+    let state = dropTrigger(NO_DROP, 'orbit', 'scatter', 0.2, 10)
+    expect(state).toBe(NO_DROP)
+    state = dropTrigger(state, 'orbit', 'scatter', 0.5, 11)
+    expect(state).toEqual({ dropAt: 11, armed: true })
+    // At rest in Craft the store reads from = scatter, to = grid, mix ~ 0; nudges keep the drop.
+    state = dropTrigger(state, 'scatter', 'grid', 0, 12)
+    state = dropTrigger(state, 'scatter', 'grid', 0.3, 13)
+    state = dropTrigger(state, 'scatter', 'grid', 0.95, 14)
+    state = dropTrigger(state, 'scatter', 'grid', 0.1, 15)
+    expect(state).toEqual({ dropAt: 11, armed: true })
+    // Gone from both slots: disarmed, uDropAt back to -1 so the slot shows the airborne layout.
+    state = dropTrigger(state, 'grid', 'ring', 0.2, 16)
+    expect(state).toEqual(NO_DROP)
+    // Returning from below: from = scatter again as the band crosses back.
+    state = dropTrigger(state, 'scatter', 'grid', 0.7, 20)
+    expect(state).toBe(NO_DROP)
+    state = dropTrigger(state, 'scatter', 'grid', 0.5, 21)
+    expect(state).toEqual({ dropAt: 21, armed: true })
+    expect(scatterWeight('scatter', 'scatter', 0)).toBe(1)
+    expect(scatterWeight('orbit', 'grid', 0.5)).toBe(0)
+  })
+
+  it('knows when the visitor is at rest on a formation', () => {
+    expect(settledFormation('ring', 'ring', 0)).toBe('ring')
+    expect(settledFormation('grid', 'ring', 0.01)).toBe('grid')
+    expect(settledFormation('grid', 'ring', 0.99)).toBe('ring')
+    expect(settledFormation('grid', 'ring', 0.5)).toBeNull()
+  })
+
+  it('fires the drop once per visit and calms at rest on Contact across a real scroll sweep', () => {
+    // The real section order, 1000 px each, 900 px viewport.
+    const boxes: SectionBox[] = SECTION_BACKDROPS.map((entry, i) => ({ id: entry.section, formation: entry.formation, top: i * 1000, height: 1000 }))
+    let drop = NO_DROP
+    let drops = 0
+    let settledAt = -1
+    let calm = 0
+    let time = 0
+    const sweep = (from: number, to: number, step: number): void => {
+      for (let y = from; step > 0 ? y <= to : y >= to; y += step) {
+        time += 0.05
+        const s = resolveScroll(boxes, y, 900)
+        const next = dropTrigger(drop, s.from, s.to, s.mix, time)
+        if (next.armed && !drop.armed) drops += 1
+        drop = next
+        const settled = settledFormation(s.from, s.to, s.mix)
+        if (settled === 'ring') {
+          if (settledAt < 0) settledAt = time
+        } else settledAt = -1
+        calm = calmAt(settled, settledAt < 0 ? 0 : time - settledAt)
+      }
+    }
+    sweep(0, 8100, 20) // top to the bottom (contact)
+    expect(drops).toBe(1)
+    expect(drop.armed).toBe(false)
+    expect(calm).toBeLessThan(1) // at rest on contact, the calm is still rising
+    for (let i = 0; i < 60; i += 1) sweep(8100, 8100, 1)
+    expect(calm).toBe(1)
+    sweep(8100, 4200, -20) // back up into Craft
+    expect(drops).toBe(2)
+    expect(calm).toBe(0)
+    sweep(4200, 4500, 20) // a nudge inside Craft
+    sweep(4500, 4200, -20)
+    expect(drops).toBe(2)
+    sweep(4200, 0, -20) // up to the hero
+    expect(drop.armed).toBe(false)
+    sweep(0, 4200, 20) // and down again: a new visit
+    expect(drops).toBe(3)
   })
 })
 
 describe('the contact ring calms (§ 3.7)', () => {
-  it('eases 0 -> 1 over 2 s only once the ring has fully landed', () => {
-    expect(calmAt('ring', 0.99, 5)).toBe(0)
-    expect(calmAt('grid', 1, 5)).toBe(0)
-    expect(calmAt('ring', 1, 0)).toBe(0)
-    expect(calmAt('ring', 1, CALM_SECONDS / 2)).toBeCloseTo(0.5, 9)
-    expect(calmAt('ring', 1, CALM_SECONDS)).toBe(1)
-    expect(calmAt('ring', 1, 10)).toBe(1)
+  it('eases 0 -> 1 over 2 s only while at rest on the ring', () => {
+    expect(calmAt(null, 5)).toBe(0)
+    expect(calmAt('grid', 5)).toBe(0)
+    expect(calmAt('ring', 0)).toBe(0)
+    expect(calmAt('ring', CALM_SECONDS / 2)).toBeCloseTo(0.5, 9)
+    expect(calmAt('ring', CALM_SECONDS)).toBe(1)
+    expect(calmAt('ring', 10)).toBe(1)
   })
 })
 
@@ -195,11 +251,11 @@ describe('attractors (§ 3.3)', () => {
 
   it('notifies subscribers of a change only, and unsubscribes cleanly', () => {
     const store = createAttractorStore()
-    const seen: Array<Element | null> = []
+    const seen: Array<ReturnType<typeof store.get>> = []
     const off = store.subscribe((element) => seen.push(element))
-    const card = document.createElement('div')
+    const card = { left: 1, top: 2, width: 3, height: 4 }
     store.set(card)
-    store.set(card)
+    store.set({ ...card })
     store.set(null)
     off()
     store.set(card)
@@ -294,7 +350,13 @@ describe('attribute slots: spin, flow, fall (§ 4.3)', () => {
 })
 
 describe('afterLcp (§ 5.7)', () => {
-  let observers: Array<{ fire(): void; observe: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }>
+  interface Stub {
+    type: string
+    observe: ReturnType<typeof vi.fn>
+    disconnect: ReturnType<typeof vi.fn>
+    fire(): void
+  }
+  let observers: Stub[]
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -306,24 +368,29 @@ describe('afterLcp (§ 5.7)', () => {
     vi.unstubAllGlobals()
   })
 
+  /** One stub per `observe` call; entries are delivered by the test, never inside `observe`. */
   function stubObserver(): void {
     vi.stubGlobal(
       'PerformanceObserver',
       class {
-        static supportedEntryTypes = ['largest-contentful-paint']
-        observe = vi.fn()
-        disconnect = vi.fn()
-        constructor(private readonly callback: () => void) {
+        static supportedEntryTypes = ['largest-contentful-paint', 'first-input']
+        type = ''
+        observe = vi.fn((options: { type: string }) => {
+          this.type = options.type
           observers.push(this)
-        }
+        })
+        disconnect = vi.fn()
+        constructor(private readonly callback: () => void) {}
         fire(): void {
           this.callback()
         }
       },
     )
   }
+  const lcp = (): Stub | undefined => observers.find((o) => o.type === 'largest-contentful-paint')
+  const input = (): Stub | undefined => observers.find((o) => o.type === 'first-input')
 
-  it('runs after the LCP entry and an idle period, with a 2 s idle ceiling, and disconnects', () => {
+  it('resolves once, 500 ms after the last LCP candidate, then an idle period with a 2 s ceiling', () => {
     stubObserver()
     const ric = vi.fn((cb: () => void, options: { timeout: number }) => {
       expect(options.timeout).toBe(LCP_IDLE_TIMEOUT_MS)
@@ -332,17 +399,46 @@ describe('afterLcp (§ 5.7)', () => {
     vi.stubGlobal('requestIdleCallback', ric)
     const callback = vi.fn()
     afterLcp(callback)
-    expect(observers[0]?.observe).toHaveBeenCalledWith({ type: 'largest-contentful-paint', buffered: true })
-    expect(callback).not.toHaveBeenCalled()
-    observers[0]?.fire()
-    expect(observers[0]?.disconnect).toHaveBeenCalled()
+    expect(lcp()?.observe).toHaveBeenCalledWith({ type: 'largest-contentful-paint', buffered: true })
+    expect(input()?.observe).toHaveBeenCalledWith({ type: 'first-input', buffered: true })
+    lcp()?.fire() // the wordmark at first paint
+    vi.advanceTimersByTime(300)
+    lcp()?.fire() // the hero lede
+    vi.advanceTimersByTime(LCP_QUIET_MS - 1)
+    expect(ric).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
     expect(ric).toHaveBeenCalledTimes(1)
+    expect(lcp()?.disconnect).toHaveBeenCalled()
+    expect(input()?.disconnect).toHaveBeenCalled()
     vi.advanceTimersByTime(5)
     expect(callback).toHaveBeenCalledTimes(1)
-    // A second entry never re-fires.
-    observers[0]?.fire()
-    vi.advanceTimersByTime(50)
+    lcp()?.fire()
+    vi.advanceTimersByTime(LCP_QUIET_MS + 50)
     expect(callback).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves at once on first input, since Chrome freezes the LCP there', () => {
+    stubObserver()
+    const callback = vi.fn()
+    afterLcp(callback)
+    lcp()?.fire()
+    vi.advanceTimersByTime(100)
+    input()?.fire()
+    vi.advanceTimersByTime(1) // the idle macrotask fallback
+    expect(callback).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels before resolution: both observers disconnected, no timer fires', () => {
+    stubObserver()
+    const callback = vi.fn()
+    const cancel = afterLcp(callback)
+    lcp()?.fire()
+    cancel()
+    expect(lcp()?.disconnect).toHaveBeenCalled()
+    expect(input()?.disconnect).toHaveBeenCalled()
+    vi.advanceTimersByTime(LCP_CEILING_MS + LCP_IDLE_TIMEOUT_MS)
+    expect(callback).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('falls back to load + 1 s without the observer, and a cancel stops it', () => {

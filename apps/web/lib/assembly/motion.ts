@@ -98,23 +98,47 @@ export function shiverAt(elapsed: number): number {
   return since >= 0 && since < SHIVER_SECONDS ? SHIVER_AMPLITUDE : 0
 }
 
+/** Below this the scroll store is "at rest" on a formation (`resolveScroll` never returns exactly 1). */
+export const SETTLE_EPSILON = 0.02
+
+/**
+ * The formation the visitor is at rest on, or `null` mid-band. The scroll
+ * store's `mix` stays strictly below 1 and `from` is the section the visitor
+ * is in, so "settled on X" means `from === X` with a near-zero mix (the last
+ * section reports `from === to`, mix 0) or `to === X` with a near-one mix.
+ */
+export function settledFormation(from: BundleKind, to: BundleKind, mix: number, epsilon: number = SETTLE_EPSILON): BundleKind | null {
+  if (from === to) return from
+  if (mix < epsilon) return from
+  if (mix > 1 - epsilon) return to
+  return null
+}
+
+/** How much of the scatter is on screen: 1 at rest in Craft, 0 with it in neither slot. */
+export function scatterWeight(from: BundleKind, to: BundleKind, mix: number): number {
+  if (from === 'scatter' && to === 'scatter') return 1
+  return (from === 'scatter' ? 1 - mix : 0) + (to === 'scatter' ? mix : 0)
+}
+
 export interface DropState {
-  /** `uTime` at which the drop started; `-1` while nothing has dropped. */
+  /** `uTime` at which the drop started; `-1` while unarmed, so the slot shows the airborne layout. */
   readonly dropAt: number
-  /** Whether the current entry into the scatter has already triggered. */
+  /** Whether the current visit to the scatter has already dropped. */
   readonly armed: boolean
 }
 
 export const NO_DROP: DropState = { dropAt: -1, armed: false }
 
 /**
- * Sets `dropAt` once per entry into the scatter: when `to` is `scatter` and
- * the mix passes 0.5. Leaving the section re-arms it, so a return replays
- * the fall. Holding the section does not re-trigger.
+ * Sets `dropAt` once per visit to the scatter: when at least half of it is
+ * on screen, from either direction. It disarms only once the scatter has
+ * left both slots, so sitting in Craft, nudging up and down, or hovering
+ * over its bands never replays the fall; leaving and coming back does.
  */
-export function dropTrigger(state: DropState, to: BundleKind, mix: number, time: number): DropState {
-  if (to !== 'scatter') return state.armed ? { ...state, armed: false } : state
-  if (!state.armed && mix >= 0.5) return { dropAt: time, armed: true }
+export function dropTrigger(state: DropState, from: BundleKind, to: BundleKind, mix: number, time: number): DropState {
+  const weight = scatterWeight(from, to, mix)
+  if (weight <= 0) return state.armed ? NO_DROP : state
+  if (!state.armed && weight >= 0.5) return { dropAt: time, armed: true }
   return state
 }
 
@@ -122,9 +146,9 @@ export function dropTrigger(state: DropState, to: BundleKind, mix: number, time:
 
 export const CALM_SECONDS = 2
 
-/** 0 → 1 over two seconds once the ring has fully landed (`mix >= 1`); 0 anywhere else. */
-export function calmAt(to: BundleKind, mix: number, settledFor: number): number {
-  if (to !== 'ring' || mix < 1) return 0
+/** 0 → 1 over two seconds once the visitor is at rest on the ring (`settledFormation`); 0 anywhere else. */
+export function calmAt(settled: BundleKind | null, settledFor: number): number {
+  if (settled !== 'ring') return 0
   const u = settledFor / CALM_SECONDS
   return u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u)
 }
