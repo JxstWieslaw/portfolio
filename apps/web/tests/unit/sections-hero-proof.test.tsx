@@ -44,7 +44,7 @@ const DOMAINS: readonly ProofDomain[] = [
 const PROOF_KPIS: readonly ProofKpi[] = [
   { label: 'Production platforms led/shipped', value: '10', placeholder: true },
   { label: 'Domains shipped', value: '7' },
-  { label: 'Roles', value: 'Tech Lead + Senior SWE' },
+  { label: 'Roles held today', value: '2' },
   { label: 'Concurrent production systems monitored', value: '6', placeholder: true },
 ]
 
@@ -160,9 +160,7 @@ describe('Hero — copy', () => {
     render(<Hero kpis={HERO_KPIS} />)
 
     expect(
-      screen.getByText(
-        'Tech Lead @ Data Age · Team Lead & Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe'
-      )
+      screen.getByText('Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe')
     ).toBeInTheDocument()
     expect(
       screen.getByRole('heading', {
@@ -211,7 +209,7 @@ describe('Hero — copy', () => {
 
   it('keeps HERO_COPY aligned with the canonical strings', () => {
     expect(HERO_COPY.eyebrow).toBe(
-      'Tech Lead @ Data Age · Team Lead & Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe'
+      'Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe'
     )
     expect(HERO_COPY.headline).toBe(
       'I lead teams that ship production software — and I make the web move.'
@@ -450,8 +448,8 @@ describe('ProofStrip — figures', () => {
 
     expect(screen.getByText('Production platforms led/shipped')).toBeInTheDocument()
     expect(screen.getByText('10')).toBeInTheDocument()
-    expect(screen.getByText('Roles')).toBeInTheDocument()
-    expect(screen.getByText('Tech Lead + Senior SWE')).toBeInTheDocument()
+    expect(screen.getByText('Roles held today')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('Concurrent production systems monitored')).toBeInTheDocument()
   })
 
@@ -477,7 +475,7 @@ describe('ProofStrip — figures', () => {
       expect(tile.querySelector('.placeholder-text')).not.toBeNull()
     }
 
-    expect(screen.getByText('Tech Lead + Senior SWE')).not.toHaveClass('placeholder-text')
+    expect(screen.getByText('2')).not.toHaveClass('placeholder-text')
   })
 
   it('never presents the export figures the reconciliation removed', () => {

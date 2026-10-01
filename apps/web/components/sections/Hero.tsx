@@ -75,8 +75,7 @@ export interface HeroProps {
  * never silently render the export's rejected copy.
  */
 export const HERO_COPY = {
-  eyebrow:
-    'Tech Lead @ Data Age · Team Lead & Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe',
+  eyebrow: 'Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe',
   headline: 'I lead teams that ship production software — and I make the web move.',
   sub:
     'Hospital operations, learning platforms, creator-discovery tooling, procurement systems. ' +

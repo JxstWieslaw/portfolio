@@ -5,7 +5,7 @@
     "period": { "from": "2026-08" },
     "location": "Harare, Zimbabwe",
     "highlights": [
-      "Lead the engineering team while still shipping as a senior engineer: planning, review and the hard tickets.",
+      "Lead the engineering team while still shipping as a senior engineer: planning, review and production releases.",
       "Run an AI agent fleet inside the delivery loop — a lead agent plus specialists for code review, security and performance passes.",
       "Decisions, merges and standards stay with me; the agents draft and check, they do not sign off."
     ]
@@ -27,9 +27,9 @@
     "period": { "from": "2025-01", "to": "2026-06" },
     "location": "Harare, Zimbabwe",
     "highlights": [
-      "Built and shipped production features end to end — data model, API, UI and deployment.",
-      "Wrote the typed contracts and migrations the team's services run on, with rollback rehearsed before release.",
-      "Reviewed peers' pull requests and wrote the handover notes that outlived each release."
+      "Built and shipped full-stack features end to end — data modelling through deployment.",
+      "Typed APIs and backends, with the contract living in the code.",
+      "Reversible migrations: dry-run, apply, rollback."
     ]
   },
   {

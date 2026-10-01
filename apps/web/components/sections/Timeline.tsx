@@ -2,6 +2,7 @@ import { Section } from '@/components/layout/Section'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TimelineItem, type TimelineCompany, type TimelineEntry } from '@/components/cards/TimelineItem'
 import type { Tone } from '@/lib/accent'
+import type { Period } from '@/lib/format-period'
 
 export type { TimelineCompany, TimelineEntry }
 
@@ -14,32 +15,34 @@ export interface TimelineProps {
   readonly entries: readonly TimelineEntry[]
 }
 
+/** `YYYY-MM` strings compare correctly as plain strings; newest first. */
+function byNewestStart(a: { period: Period }, b: { period: Period }): number {
+  return b.period.from.localeCompare(a.period.from)
+}
+
 /**
- * Groups the flat role rows into one company per `org`, in first-appearance
- * order. The input is newest first, so the company order follows the newest
- * role at each company and the roles inside a company stay newest first.
+ * Groups the flat role rows into one company per `org`. Roles inside a company
+ * are sorted newest first by `period.from`, and companies by their newest
+ * role's `period.from`, so the ladder never depends on the JSON order.
  *
- * `location` and `placeholder` are taken from the first row of the group: the
- * content authors both per company, and the aggregate placeholder is one row.
+ * `location` comes from the first row of the group (the content authors it per
+ * company); `placeholder` is true when any row in the group is a placeholder.
  */
 export function groupByOrg(entries: readonly TimelineEntry[]): TimelineCompany[] {
-  const companies: TimelineCompany[] = []
-
+  const groups = new Map<string, TimelineEntry[]>()
   for (const entry of entries) {
-    const existing = companies.find((company) => company.org === entry.org)
-    if (existing === undefined) {
-      companies.push({
-        org: entry.org,
-        location: entry.location,
-        placeholder: entry.placeholder === true,
-        roles: [entry],
-      })
-    } else {
-      existing.roles.push(entry)
-    }
+    groups.set(entry.org, [...(groups.get(entry.org) ?? []), entry])
   }
 
-  return companies
+  return Array.from(groups, ([org, rows]) => {
+    const roles = [...rows].sort(byNewestStart)
+    return {
+      org,
+      location: rows[0]?.location,
+      placeholder: rows.some((row) => row.placeholder === true),
+      roles,
+    }
+  }).sort((a, b) => byNewestStart(a.roles[0] as TimelineEntry, b.roles[0] as TimelineEntry))
 }
 
 /**

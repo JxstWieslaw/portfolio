@@ -39,7 +39,7 @@ export const SITE_TITLE = 'Wieslaw Samushonga — Tech Lead & Software Engineer'
  * recruiter is scanning for.
  */
 export const SITE_DESCRIPTION =
-  'Tech Lead at Data Age, Team Lead and Senior Software Engineer at Rapidev Labs. I lead teams that ship ' +
+  'Tech Lead at Data Age and Team Lead at Rapidev Labs. I lead teams that ship ' +
   'production software across healthcare, education, creator tooling and procurement — and ' +
   'build real-time 3D on the web that holds 60 fps on a mid-range phone.'
 

@@ -70,7 +70,7 @@ describe('content: the rejected pivot must never come back', () => {
     expect(roles).toHaveLength(2)
     expect(roles.map((r) => `${r.title} @ ${r.org}`)).toEqual([
       'Tech Lead @ Data Age',
-      'Team Lead & Senior Software Engineer @ Rapidev Labs',
+      'Team Lead @ Rapidev Labs',
     ])
   })
 

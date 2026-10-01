@@ -7,7 +7,7 @@
   "availability": "Open to consulting & collaboration",
   "roles": [
     { "org": "Data Age", "title": "Tech Lead" },
-    { "org": "Rapidev Labs", "title": "Team Lead & Senior Software Engineer", "url": "https://rapidevlabs.com" }
+    { "org": "Rapidev Labs", "title": "Team Lead", "url": "https://rapidevlabs.com" }
   ],
   "links": [
     { "label": "Email", "url": "mailto:wieslawsamushonga01@gmail.com", "kind": "primary" },
@@ -25,7 +25,7 @@
     { "label": "Specialism", "value": "WebGL / real-time 3D", "group": "hero" },
     { "label": "Production platforms led/shipped", "value": "10", "placeholder": true, "group": "proof" },
     { "label": "Domains shipped", "value": "7", "derived": "domainsShipped", "group": "proof" },
-    { "label": "Roles held today", "value": "3", "group": "proof" },
+    { "label": "Roles held today", "value": "2", "group": "proof" },
     { "label": "Concurrent production systems monitored", "value": "6", "placeholder": true, "group": "proof" }
   ]
 }

@@ -135,6 +135,31 @@ describe('groupByOrg', () => {
     expect(companies[2]?.placeholder).toBe(true)
   })
 
+  it('marks a company as placeholder when any of its rows is', () => {
+    const mixed: TimelineEntry[] = [
+      { org: 'X', title: 'B', period: { from: '2024-01' }, highlights: ['b'] },
+      { org: 'X', title: 'A', period: { from: '2022-01', to: '2023-12' }, highlights: ['a'], placeholder: true },
+    ]
+    expect(groupByOrg(mixed)[0]?.placeholder).toBe(true)
+  })
+
+  it('sorts by period, so rows fed out of order produce the same ladder', () => {
+    const shuffled = [ENTRIES[3], ENTRIES[4], ENTRIES[1], ENTRIES[0], ENTRIES[2]] as TimelineEntry[]
+    const fromShuffled = groupByOrg(shuffled)
+    const fromOrdered = groupByOrg(ENTRIES)
+
+    expect(fromShuffled).toEqual(fromOrdered)
+    expect(fromShuffled.map((c) => c.org)).toEqual([
+      'Rapidev Labs',
+      'Data Age',
+      'Earlier engineering roles',
+    ])
+    expect(fromShuffled[0]?.roles.map((r) => r.title)).toEqual([
+      'Team Lead',
+      'Senior Software Engineer',
+    ])
+  })
+
   it('returns nothing for no entries', () => {
     expect(groupByOrg([])).toEqual([])
   })
