@@ -38,6 +38,8 @@ export interface Artefact {
   readonly light: PointLight
   /** Advances the rings and the glow pulse. */
   tick(time: number): void
+  /** Ring presence 0..1: `1` in the hero, `0` as the orbit's core (§ 3.4). Scale, never `visible`. */
+  setRings(weight: number): void
   dispose(): void
 }
 
@@ -98,6 +100,10 @@ export function createArtefact(): Artefact {
     group,
     glowMaterial,
     light,
+    setRings(weight) {
+      const s = Math.max(0, weight)
+      for (const { ring } of rings) ring.scale.setScalar(s)
+    },
     tick(time) {
       for (const { ring, rate } of rings) ring.rotation.y = time * rate
       glowMaterial.opacity = GLOW_OPACITY[0] + (GLOW_OPACITY[1] - GLOW_OPACITY[0]) * (0.5 + 0.5 * Math.sin(time * 0.8))

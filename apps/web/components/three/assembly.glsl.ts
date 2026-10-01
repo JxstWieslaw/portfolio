@@ -68,7 +68,13 @@ vec3 curl(vec3 p) {
 }
 `
 
+import { BOUNCE, GRAVITY, GROUND_Y } from '@/lib/assembly/motion'
+
 export const STAGGER = 0.35
+
+/** The stream's river speed, model units/s, and its wrap half-width (§ 3.2). */
+export const FLOW_SPEED = 0.35
+export const FLOW_HALF = 3.2
 
 export const VERTEX = /* glsl */ `
 attribute vec3 aPosA;
@@ -77,6 +83,12 @@ attribute float aLiveA;
 attribute float aLiveB;
 attribute float aColTA;
 attribute float aColTB;
+attribute vec4 aSpinA;
+attribute vec4 aSpinB;
+attribute float aFlowA;
+attribute float aFlowB;
+attribute float aFallA;
+attribute float aFallB;
 attribute float aSeed;
 
 uniform float uMix;
@@ -94,6 +106,14 @@ uniform float uRepel;
 uniform float uRepelRadius;
 uniform vec3 uPalette[3];
 uniform float uBias;
+uniform float uDropAt;
+uniform float uCalm;
+uniform vec2 uShiver;
+uniform float uStaggerByT;
+uniform vec4 uAttractors[8];
+uniform float uAttractRadius;
+uniform float uAttractPull;
+uniform int uAttractCount;
 
 varying vec3 vInstanceColor;
 
@@ -121,30 +141,86 @@ vec3 rotateAxis(vec3 v, vec3 axis, float angle) {
   return v * c + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - c);
 }
 
+/** The stream generator's river, z flipped like the bundle: y = sin(1.15x)·0.18, z = -cos(0.75x)·0.3. */
+vec3 river(float x) {
+  return vec3(x, sin(x * 1.15) * 0.18, -cos(x * 0.75) * 0.3);
+}
+
+/** Free fall from rest at y0, one damped bounce, then rest on the ground (motion.ts fallHeight). */
+float fallY(float y0, float elapsed) {
+  const float ground = ${GROUND_Y};
+  const float g = ${GRAVITY};
+  if (elapsed <= 0.0 || y0 <= ground) return max(y0, ground);
+  float land = sqrt(2.0 * (y0 - ground) / g);
+  if (elapsed < land) return y0 - 0.5 * g * elapsed * elapsed;
+  float v = g * land * ${BOUNCE};
+  float u = elapsed - land;
+  if (u < 2.0 * v / g) return ground + v * u - 0.5 * g * u * u;
+  return ground;
+}
+
+/**
+ * A slot's model-space position after its formation's own motion: the
+ * stream's flow and wrap (colour t travels with it), the scatter's fall and
+ * the pile's shiver, the spin about the formation's origin.
+ */
+vec3 formationPos(vec3 p, inout float t, vec4 spin, float flowFlag, float fallFlag, float shiver) {
+  if (flowFlag > 0.5) {
+    vec3 residual = p - river(p.x);
+    float x = mod(p.x + uTime * ${FLOW_SPEED} + ${FLOW_HALF}, ${FLOW_HALF * 2}) - ${FLOW_HALF};
+    p = river(x) + residual;
+    t = (x + ${FLOW_HALF}) / ${FLOW_HALF * 2};
+  }
+  if (fallFlag > 0.5 && uDropAt >= 0.0) p.y = fallY(p.y, uTime - uDropAt);
+  p.y += shiver * (1.0 - fallFlag) * sin(uTime * 40.0 + aSeed * 60.0);
+  if (spin.w != 0.0) p = rotateAxis(p, spin.xyz, spin.w * uTime);
+  return p;
+}
+
 void main() {
   // Which slot is "from": uSwap = 0 -> A, 1 -> B.
   float fromUnit = mix(uUnitA, uUnitB, uSwap);
   float toUnit = mix(uUnitB, uUnitA, uSwap);
-  vec3 fromModel = mix(aPosA, aPosB, uSwap);
-  vec3 fromPos = fromModel * fromUnit;
-  vec3 toPos = mix(aPosB, aPosA, uSwap) * toUnit;
   float fromEdge = mix(aLiveA * uEdgeA, aLiveB * uEdgeB, uSwap);
   float toEdge = mix(aLiveB * uEdgeB, aLiveA * uEdgeA, uSwap);
   float fromT = mix(aColTA, aColTB, uSwap);
   float toT = mix(aColTB, aColTA, uSwap);
+  float fromFall = mix(aFallA, aFallB, uSwap);
+  float toFall = mix(aFallB, aFallA, uSwap);
+  vec3 fromModel = formationPos(mix(aPosA, aPosB, uSwap), fromT, mix(aSpinA, aSpinB, uSwap), mix(aFlowA, aFlowB, uSwap), fromFall, uShiver.x);
+  vec3 toModel = formationPos(mix(aPosB, aPosA, uSwap), toT, mix(aSpinB, aSpinA, uSwap), mix(aFlowB, aFlowA, uSwap), toFall, uShiver.y);
+  vec3 fromPos = fromModel * fromUnit;
+  vec3 toPos = toModel * toUnit;
 
   // Staggered local progress: the first cubes leave at uMix = 0, the last at uMix = ${STAGGER}.
-  float m = smoothstep(0.0, 1.0, (uMix - aSeed * ${STAGGER}) / (1.0 - ${STAGGER}));
+  // The contact ring staggers by its angle instead of its seed, so it draws itself around (§ 3.7).
+  float key = mix(aSeed, toT, uStaggerByT);
+  float m = smoothstep(0.0, 1.0, (uMix - key * ${STAGGER}) / (1.0 - ${STAGGER}));
   float envelope = sin(3.14159265 * m);
 
   vec3 centre = mix(fromPos, toPos, m);
   // Curl-noise swirl mid-morph, sampled in model space so the amplitude is
   // uNoiseAmp model units and the frequency is viewport-independent; zero at
   // both ends so formations land exactly. Idle frames skip the simplex taps.
-  float swirl = uNoiseAmp * envelope * mix(fromUnit, toUnit, m);
+  float swirl = uNoiseAmp * (1.0 - 0.7 * uCalm) * envelope * mix(fromUnit, toUnit, m);
   if (swirl > 1e-4) centre += curl(fromModel * 0.6 + uTime * 0.2) * swirl;
-  // Idle bob.
-  centre.y += uBob * sin(uTime * 1.1 + aSeed * 20.0);
+  // Idle bob, calmed on the contact ring.
+  centre.y += uBob * (1.0 - 0.7 * uCalm) * sin(uTime * 1.1 + aSeed * 20.0);
+
+  // Attractors: the hovered card pulls cubes within uAttractRadius toward it (§ 3.3).
+  if (uAttractPull > 0.0) {
+    for (int i = 0; i < 8; i++) {
+      if (i >= uAttractCount) break;
+      vec4 a = uAttractors[i];
+      if (a.w <= 0.0) continue;
+      vec3 d = a.xyz - centre;
+      float dist = length(d);
+      if (dist < uAttractRadius && dist > 1e-6) {
+        float falloff = 1.0 - dist / uAttractRadius;
+        centre += d * (falloff * falloff * uAttractPull * a.w / dist);
+      }
+    }
+  }
 
   // Pointer: perpendicular distance to the camera ray in group space, pushed stateless.
   vec3 w = centre - uPointerOrigin;

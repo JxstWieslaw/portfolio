@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { ProjectCard, type ProjectCardProps } from '@/components/cards/ProjectCard'
+import { AttractorField } from '@/components/sections/AttractorField'
 import { Section } from '@/components/layout/Section'
 import { SectionBackdrop } from '@/components/three/SectionBackdrop'
 import { Button } from '@/components/ui/Button'
@@ -154,7 +155,7 @@ export function SelectedWork({
         }
       />
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-6">
+      <AttractorField className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-6">
         {slots.map((project, slot) => {
           const layout = BENTO_LAYOUT[slot]
           if (layout === undefined) return null
@@ -177,7 +178,7 @@ export function SelectedWork({
             </Reveal>
           )
         })}
-      </div>
+      </AttractorField>
     </Section>
   )
 }
