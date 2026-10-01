@@ -59,14 +59,15 @@ describe('buildTargets', () => {
     const bundle = buildTargets('stream', frame, INSTANCE_CAPACITY)
     const [x] = pointsFor('stream')[0] ?? [0]
     const unitPx = Math.min(1440, 900) * FORMATIONS.stream.scale
-    expect((bundle.position[0] ?? 0) / frame.worldPerPx).toBeCloseTo(x * unitPx, 6)
+    // Float32 storage: exact to a thousandth of a pixel, not to double precision.
+    expect((bundle.position[0] ?? 0) / frame.worldPerPx).toBeCloseTo(x * unitPx, 3)
   })
 
   it('colours each instance from shade(t) of its own point', () => {
     const bundle = buildTargets('ring', frame, INSTANCE_CAPACITY)
     const [, , , t] = pointsFor('ring')[7] ?? [0, 0, 0, 0]
     const [r] = shade(t)
-    expect(bundle.colourT[7]).toBe(t)
+    expect(bundle.colourT[7]).toBeCloseTo(t, 6)
     // Linear-light, so darker than the sRGB value but monotonic with it.
     expect(bundle.colour[21]).toBeGreaterThan(0)
     expect(bundle.colour[21]).toBeLessThanOrEqual(r / 255)

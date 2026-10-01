@@ -21,11 +21,12 @@ const centreAt = (y: number): number => y - VH / 2
 
 describe('resolveScroll', () => {
   it.each([
-    ['hero top', 0, 'monolith', 'monolith', 0, 1],
+    // `to` is always the next section; at mix 0 it is simply not shown yet.
+    ['hero top', 0, 'monolith', 'stream', 0, 1],
     ['midway between proof and work', centreAt(1500), 'stream', 'lattice', 0.5, 1],
     ['deep inside work', centreAt(2200), 'lattice', 'orbit', 0, 1],
     ['over timeline', centreAt(7250), 'grid', 'grid', 0, 0],
-    ['over writing', centreAt(8600), 'grid', 'grid', 0, 0],
+    ['over writing', centreAt(8600), 'grid', 'ring', 0, 0],
     ['contact', centreAt(9650), 'ring', 'ring', 0, 1],
   ] as const)('%s', (_label, scrollY, from, to, mix, opacity) => {
     const state = resolveScroll(BOXES, scrollY, VH)
@@ -48,11 +49,15 @@ describe('resolveScroll', () => {
   })
 
   it('eases in and out across the band around a boundary', () => {
-    const quarter = resolveScroll(BOXES, centreAt(1500 - 0.35 * VH * 0.5), VH)
+    // The work -> lead boundary: both neighbours are taller than a band, so
+    // nothing else overlaps it. (The 600px proof strip is shorter than the
+    // two bands around it, so its formation is only ever passed through.)
+    const quarter = resolveScroll(BOXES, centreAt(2900 - 0.35 * VH * 0.5), VH)
     expect(quarter.mix).toBeCloseTo(easeInOut(0.25), 4)
     expect(quarter.mix).toBeLessThan(0.25)
-    const edge = resolveScroll(BOXES, centreAt(1500 - 0.35 * VH), VH)
+    const edge = resolveScroll(BOXES, centreAt(2900 - 0.35 * VH), VH)
     expect(edge.mix).toBe(0)
+    expect(edge.from).toBe('lattice')
   })
 
   it('never exceeds the last section', () => {
