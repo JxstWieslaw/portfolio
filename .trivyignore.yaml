@@ -1,0 +1,12 @@
+# Time-boxed waiver, approved by Wieslaw on 2026-10-01.
+# Both findings are in libssl3t64 3.5.7-1~deb13u2 from the distroless base image. The fix (deb13u3) is not
+# published in gcr.io/distroless/nodejs22-debian13 yet. The API terminates TLS at Cloud Run, not in Node, and does
+# not use QUIC or DTLS, but that is an assumption, not an audit. The entries expire on their own, so the gate
+# comes back automatically; remove them earlier once Dependabot bumps the base digest.
+vulnerabilities:
+  - id: CVE-2026-75804
+    expired_at: 2026-10-31
+    statement: OpenSSL QUIC flow-control DoS; no fixed distroless base yet
+  - id: CVE-2026-84782
+    expired_at: 2026-10-31
+    statement: OpenSSL DTLS retransmission disclosure; no fixed distroless base yet
