@@ -103,6 +103,16 @@ export interface ModelBundle {
   readonly live: Float32Array
   /** `capacity`, 0..1 seeded per index: the morph stagger key (§ 4.1). */
   readonly seed: Float32Array
+  /**
+   * `capacity * 4`: unit axis xyz + rate (rad/s) of a rotation of the
+   * instance's position about the formation's origin (§ 4.3). Zero except
+   * for the orbit's core and rings, the grid and the ring.
+   */
+  readonly spin: Float32Array
+  /** `capacity`, `1` when the instance rides the stream's river (§ 3.2). */
+  readonly flow: Float32Array
+  /** `capacity`, `1` for the scatter's airborne cubes, which fall under `uDropAt` (§ 3.5). */
+  readonly fall: Float32Array
   /** Euler y for the parent group, radians. */
   readonly rot: number
   /** Euler x for the parent group, radians. */
@@ -172,6 +182,78 @@ export function seedsFor(capacity: number): Float32Array {
   return seed
 }
 
+/** The orbit's push order (`generators.ts`): the core first, then three rings. */
+export type OrbitGroup = 'core' | 0 | 1 | 2
+
+/**
+ * Which part of the orbit instance `i` belongs to, derived from the
+ * generator's push order without touching it: `floor(count * 0.22)` core
+ * cubes, then three rings of `floor(count * 0.19)`, where `count` is the
+ * generator's own `round(n * keep)`. Indices past the last ring (surplus
+ * instances) report `null`.
+ */
+export function groupFor(i: number, n: number, keep: number = 1): OrbitGroup | null {
+  const count = Math.max(1, Math.round(n * keep))
+  const core = Math.floor(count * 0.22)
+  const ring = Math.floor(count * 0.19)
+  if (i < 0) return null
+  if (i < core) return 'core'
+  const k = Math.floor((i - core) / ring)
+  return ring > 0 && k < 3 ? (k as 0 | 1 | 2) : null
+}
+
+/** The orbit rings' tilts, verbatim from the generator; the axis below is the ring normal under those tilts. */
+export const ORBIT_RING_TILTS = [
+  { tiltX: 0.28, tiltY: 0.15 },
+  { tiltX: -0.55, tiltY: 0.9 },
+  { tiltX: 0.75, tiltY: -0.6 },
+] as const
+
+/** Spin rates, rad/s (§ 3.4, § 3.6, § 3.7). */
+export const ORBIT_RING_RATES = [0.05, -0.035, 0.08] as const
+export const ORBIT_CORE_RATE = 0.02
+export const GRID_RATE = 0.05
+export const RING_RATE = 0.02
+
+/**
+ * The unit normal of an orbit ring in bundle space: `(0, 1, 0)` through the
+ * generator's tiltX-then-tiltY rotation, with z flipped like the positions.
+ * Rotating a ring cube's position about this axis keeps it on its ring.
+ */
+export function orbitRingAxis(k: 0 | 1 | 2): readonly [number, number, number] {
+  const { tiltX, tiltY } = ORBIT_RING_TILTS[k]
+  const y2 = Math.cos(tiltX)
+  const z2 = Math.sin(tiltX)
+  const x3 = -z2 * Math.sin(tiltY)
+  const z3 = z2 * Math.cos(tiltY)
+  return [x3, y2, -z3]
+}
+
+/** The scatter generator's airborne marker: `t = 0.78` exactly. */
+export const AIRBORNE_T = 0.78
+
+/** Fills `spin`, `flow` and `fall` for one instance from the formation's structure. */
+function fillMotion(kind: FormationId, i: number, t: number, isLive: boolean, keep: number, spin: Float32Array, flow: Float32Array, fall: Float32Array): void {
+  const i4 = i * 4
+  let axis: readonly [number, number, number] = [0, 1, 0]
+  let rate = 0
+  if (kind === 'orbit') {
+    const group = isLive ? groupFor(i, FORMATIONS.orbit.n, keep) : null
+    if (group === 'core') rate = ORBIT_CORE_RATE
+    else if (group !== null) {
+      axis = orbitRingAxis(group)
+      rate = ORBIT_RING_RATES[group]
+    }
+  } else if (kind === 'grid') rate = GRID_RATE
+  else if (kind === 'ring') rate = RING_RATE
+  spin[i4] = axis[0]
+  spin[i4 + 1] = axis[1]
+  spin[i4 + 2] = axis[2]
+  spin[i4 + 3] = isLive ? rate : 0
+  flow[i] = kind === 'stream' && isLive ? 1 : 0
+  fall[i] = kind === 'scatter' && isLive && t === AIRBORNE_T ? 1 : 0
+}
+
 /**
  * Builds one formation's frame-invariant bundle.
  *
@@ -188,10 +270,14 @@ export function buildModelBundle(kind: FormationId, capacity: number, keep: numb
   const colT = new Float32Array(capacity)
   const colour = new Float32Array(capacity * 3)
   const live = new Float32Array(capacity)
+  const spin = new Float32Array(capacity * 4)
+  const flow = new Float32Array(capacity)
+  const fall = new Float32Array(capacity)
 
   for (let i = 0; i < capacity; i += 1) {
     const isLive = i < count
     const [px, py, pz, t] = (count > 0 ? points[isLive ? i : i % count] : undefined) ?? ORIGIN
+    fillMotion(kind, i, t, isLive, keep, spin, flow, fall)
     position[i * 3] = px
     position[i * 3 + 1] = py
     // Painter z runs into the screen; three's runs toward the viewer.
@@ -204,7 +290,7 @@ export function buildModelBundle(kind: FormationId, capacity: number, keep: numb
     live[i] = isLive ? 1 : 0
   }
 
-  return { kind, count, capacity, position, colT, colour, live, seed: seedsFor(capacity), rot: cfg.rot, tilt: -cfg.tilt }
+  return { kind, count, capacity, position, colT, colour, live, seed: seedsFor(capacity), spin, flow, fall, rot: cfg.rot, tilt: -cfg.tilt }
 }
 
 /**
