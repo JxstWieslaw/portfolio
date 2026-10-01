@@ -6,35 +6,41 @@
 # Digests move only through a reviewed change (Dependabot "docker" ecosystem, .github/dependabot.yml),
 # or by hand: docker buildx imagetools inspect <image:tag> and copy the top-level Digest.
 
-FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
-ENV PNPM_HOME=/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+# 1. Prune the npm workspace to @repo/api and the workspaces it depends on (contracts, config).
+#    out/json holds only the manifests and a pruned package-lock.json, so the dependency layer below is
+#    cached across source-only changes; out/full adds the pruned packages' sources.
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS prune
 WORKDIR /repo
+COPY . .
+# Same turbo as the root devDependency (package-lock.json); npx fetches it without a full install.
+RUN npx --yes turbo@2.11.6 prune @repo/api --docker
 
-# Manifests first, so dependency layers are cached across source-only changes.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY apps/api/package.json apps/api/
-COPY apps/web/package.json apps/web/
-COPY packages/config/package.json packages/config/
-COPY packages/contracts/package.json packages/contracts/
-RUN pnpm install --frozen-lockfile --filter @repo/api...
+# 2. Install, build, then reinstall with production dependencies only.
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
+WORKDIR /repo
+COPY --from=prune /repo/out/json/ ./
+RUN npm ci
+COPY --from=prune /repo/out/full/ ./
+RUN npm run build -w @repo/api
+# Contracts, Zod, Drizzle and ulid are devDependencies because tsup inlined them into dist/main.js, so
+# the runtime node_modules holds only the API's production dependencies (NestJS, pg, pino, helmet...).
+# --ignore-scripts: nothing in that set needs a lifecycle script, and the build stage already ran them.
+# The workspace symlinks (node_modules/@repo/*) point at TypeScript sources that are not shipped.
+RUN npm ci --omit=dev --ignore-scripts \
+  && rm -rf node_modules/@repo \
+  && mkdir -p apps/api/node_modules
 
-COPY packages ./packages
-COPY apps/api ./apps/api
-RUN pnpm --filter @repo/api build
-
-# A self-contained copy of @repo/api with production dependencies only. Contracts, Zod, Drizzle
-# and ulid are devDependencies because tsup inlined them into dist/main.js.
-RUN pnpm --filter @repo/api deploy --prod /out
-
+# 3. Runtime: hoisted node_modules at /app, the API at /app/apps/api, so Node resolves modules by
+#    walking up exactly as it does in the workspace.
 FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:ec2313763dd43931543bd03830466e0c409ce73a487e8d46f10db72d3b816c1c
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
-COPY --from=build /out/package.json ./package.json
-COPY --from=build /out/node_modules ./node_modules
-COPY --from=build /out/dist ./dist
+COPY --from=build /repo/node_modules ./node_modules
+COPY --from=build /repo/apps/api/node_modules ./apps/api/node_modules
+COPY --from=build /repo/apps/api/package.json ./apps/api/package.json
+COPY --from=build /repo/apps/api/dist ./apps/api/dist
+WORKDIR /app/apps/api
 EXPOSE 8080
 # The distroless entrypoint is `node`.
 CMD ["--enable-source-maps", "dist/main.js"]
