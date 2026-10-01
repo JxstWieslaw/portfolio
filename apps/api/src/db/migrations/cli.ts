@@ -11,7 +11,7 @@ export interface CliIo {
 }
 
 const USAGE = [
-  'Usage: pnpm --filter @repo/api db:migrate <mode> [--dir <path>]',
+  'Usage: npm run db:migrate -w @repo/api -- <mode> [--dir <path>]',
   '  --verify            every migration has up.sql and down.sql (no database)',
   '  --status            applied vs pending; exits 1 on drift',
   '  --dry-run           print pending SQL and ACCESS EXCLUSIVE warnings; writes nothing',

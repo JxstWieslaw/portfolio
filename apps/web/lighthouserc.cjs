@@ -10,7 +10,7 @@
 module.exports = {
   ci: {
     collect: {
-      startServerCommand: 'pnpm start',
+      startServerCommand: 'npm start',
       url: ['http://localhost:3000/'],
       numberOfRuns: 3,
     },

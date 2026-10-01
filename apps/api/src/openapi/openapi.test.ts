@@ -21,7 +21,7 @@ describe('OpenAPI', () => {
 
   it('matches the committed contract snapshot', async () => {
     const document = buildOpenApiDocument(app, env)
-    // To accept an intended change: pnpm --filter @repo/api exec vitest run --project unit -u
+    // To accept an intended change: npm exec -w @repo/api -- vitest run --project unit -u
     await expect(`${JSON.stringify(document, null, 2)}\n`).toMatchFileSnapshot('../../openapi.snapshot.json')
   })
 

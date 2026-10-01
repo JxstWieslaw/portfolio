@@ -6,10 +6,10 @@ Reversible by policy (API spec §6). Each migration is a directory `NNNN_snake_n
 ## Adding a migration
 
 1. Change the Drizzle schema in `src/db/schema/`.
-2. `pnpm --filter @repo/api db:generate --name <snake_name>` — writes `drizzle/NNNN_<snake_name>.sql`.
+2. `npm run db:generate -w @repo/api -- --name <snake_name>` — writes `drizzle/NNNN_<snake_name>.sql`.
 3. Copy it verbatim to `migrations/NNNN_<snake_name>/up.sql`. `mirror.test.ts` fails if they differ.
 4. Write `down.sql` by hand: the statements that return the schema to its previous state.
-5. `pnpm --filter @repo/api test:integration` — `schema.int.test.ts` applies everything, rolls
+5. `npm run test:integration -w @repo/api` — `schema.int.test.ts` applies everything, rolls
    everything back and applies again.
 
 **Note:** The migration checksum now covers both `up.sql` and `down.sql`. On a database that has never been deployed, the applied migration `0000_content_tables` now uses the new checksum. If you have already run `db:migrate --apply` locally, you will see drift. Delete the row from `schema_migrations` table and re-apply the migration, or recreate your local database.
@@ -24,11 +24,11 @@ drop in a *later* release. `db:migrate --dry-run` prints every statement that ta
 
 | Command | Effect |
 |---|---|
-| `pnpm --filter @repo/api db:migrate --verify` | Layout check, no database |
-| `pnpm --filter @repo/api db:migrate --status` | Applied / pending / drift; exit 1 on drift |
-| `pnpm --filter @repo/api db:migrate --dry-run` | Pending SQL + lock warnings; writes nothing |
-| `pnpm --filter @repo/api db:migrate --apply` | All pending, one transaction |
-| `pnpm --filter @repo/api db:migrate --rollback 1 --yes` | `down.sql` of the newest migration |
+| `npm run db:migrate -w @repo/api -- --verify` | Layout check, no database |
+| `npm run db:migrate -w @repo/api -- --status` | Applied / pending / drift; exit 1 on drift |
+| `npm run db:migrate -w @repo/api -- --dry-run` | Pending SQL + lock warnings; writes nothing |
+| `npm run db:migrate -w @repo/api -- --apply` | All pending, one transaction |
+| `npm run db:migrate -w @repo/api -- --rollback 1 --yes` | `down.sql` of the newest migration |
 
 The runner applies a batch in one transaction, so statements that cannot run inside a
 transaction (`CREATE INDEX CONCURRENTLY`) are not supported.

@@ -31,8 +31,8 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^11.2.5",
-    "@repo/config": "workspace:*",
-    "@repo/contracts": "workspace:*",
+    "@repo/config": "*",
+    "@repo/contracts": "*",
     "@swc/core": "^1.16.2",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/express": "^5.0.0",

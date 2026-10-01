@@ -1,3 +1,5 @@
+> Historical note: the commands quoted here are from the pnpm era; the repo now uses npm workspaces (`npm ci`, `npm run <script> -w <workspace>`).
+
 # M0 Foundations — Plan Map, Design Delta, Task 1 Verification
 
 Sources read in full:
