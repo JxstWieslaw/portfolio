@@ -1,24 +1,38 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { Timeline, type TimelineEntry } from '@/components/sections/Timeline'
+import { Timeline, groupByOrg, type TimelineEntry } from '@/components/sections/Timeline'
 import { Writing, type WritingLink } from '@/components/sections/Writing'
 import type { Article } from '@/components/cards/ArticleCard'
 import { formatMonthYear, formatPeriod } from '@/lib/format-period'
 
-/* --- Fixtures — the reconciliation § 1 roster, not the export's five ------- */
+/* --- Fixtures — one row per role, newest first, as content/experience.json --- */
 
 const ENTRIES: readonly TimelineEntry[] = [
   {
+    org: 'Rapidev Labs',
+    title: 'Team Lead',
+    period: { from: '2026-08' },
+    location: 'Harare, Zimbabwe',
+    highlights: ['Lead the engineering team while still shipping as a senior engineer.'],
+  },
+  {
     org: 'Data Age',
     title: 'Tech Lead',
-    period: { from: '2025-01' },
+    period: { from: '2026-07' },
     location: 'Harare, Zimbabwe',
     highlights: ['Set technical direction and architecture standards.'],
   },
   {
+    org: 'Data Age',
+    title: 'Senior Software Engineer',
+    period: { from: '2025-01', to: '2026-06' },
+    location: 'Harare, Zimbabwe',
+    highlights: ['Built and shipped production features end to end.'],
+  },
+  {
     org: 'Rapidev Labs',
     title: 'Senior Software Engineer',
-    period: { from: '2024-01' },
+    period: { from: '2024-01', to: '2026-07' },
     location: 'Harare, Zimbabwe',
     highlights: ['Design and ship full-stack features end to end.'],
   },
@@ -96,6 +110,36 @@ describe('formatMonthYear', () => {
   })
 })
 
+/* --- groupByOrg ----------------------------------------------------------- */
+
+describe('groupByOrg', () => {
+  it('keeps one company per org, in first-appearance (newest-first) order', () => {
+    const companies = groupByOrg(ENTRIES)
+    expect(companies.map((c) => c.org)).toEqual([
+      'Rapidev Labs',
+      'Data Age',
+      'Earlier engineering roles',
+    ])
+  })
+
+  it('keeps each company’s roles newest first, so the ladder reads top-down', () => {
+    const [rapidev, dataAge] = groupByOrg(ENTRIES)
+    expect(rapidev?.roles.map((r) => r.title)).toEqual(['Team Lead', 'Senior Software Engineer'])
+    expect(dataAge?.roles.map((r) => r.title)).toEqual(['Tech Lead', 'Senior Software Engineer'])
+  })
+
+  it('lifts location and the placeholder flag to the company', () => {
+    const companies = groupByOrg(ENTRIES)
+    expect(companies[0]?.location).toBe('Harare, Zimbabwe')
+    expect(companies[0]?.placeholder).toBe(false)
+    expect(companies[2]?.placeholder).toBe(true)
+  })
+
+  it('returns nothing for no entries', () => {
+    expect(groupByOrg([])).toEqual([])
+  })
+})
+
 /* --- Timeline ------------------------------------------------------------- */
 
 describe('Timeline', () => {
@@ -121,19 +165,74 @@ describe('Timeline', () => {
     expect(container.querySelector('canvas')).toBeNull()
   })
 
-  it('renders every entry with its role line, period and highlights', () => {
+  it('renders each company once, as an h3 with its location, in newest-first order', () => {
     render(<Timeline entries={ENTRIES} />)
 
+    const companies = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
+    expect(companies).toEqual(['Rapidev Labs', 'Data Age', 'Earlier engineering roles'])
+    expect(screen.getAllByText('Harare, Zimbabwe')).toHaveLength(2)
+  })
+
+  it('nests a role ladder under each company: one list item per company, roles inside', () => {
+    const { container } = render(<Timeline entries={ENTRIES} />)
+
+    const rail = container.querySelector('[data-section="timeline"] ol')
+    expect(rail).not.toBeNull()
+    // Direct children only: the companies, not the rungs.
+    expect(Array.from((rail as HTMLElement).children).map((li) => li.tagName)).toEqual([
+      'LI',
+      'LI',
+      'LI',
+    ])
+
+    const ladder = screen.getByRole('list', { name: 'Roles at Data Age' })
+    const rungs = within(ladder).getAllByRole('heading', { level: 4 })
+    expect(rungs.map((h) => h.textContent)).toEqual(['Tech Lead', 'Senior Software Engineer'])
+  })
+
+  it('renders every role’s title, period and highlights', () => {
+    render(<Timeline entries={ENTRIES} />)
+
+    // Every role is a rung under its own company: title, period and highlights
+    // all inside that company's ladder. Senior Software Engineer appears twice
+    // (once per company), which is the point of the ladder.
     for (const entry of ENTRIES) {
-      expect(screen.getByRole('heading', { level: 3, name: entry.org })).toBeInTheDocument()
-      expect(screen.getByText(formatPeriod(entry.period))).toBeInTheDocument()
+      const ladder = screen.getByRole('list', { name: `Roles at ${entry.org}` })
+      expect(within(ladder).getByRole('heading', { level: 4, name: entry.title })).toBeVisible()
+      expect(within(ladder).getByText(formatPeriod(entry.period))).toBeInTheDocument()
       for (const highlight of entry.highlights) {
-        expect(screen.getByText(highlight)).toBeInTheDocument()
+        expect(within(ladder).getByText(highlight)).toBeInTheDocument()
       }
     }
+    expect(screen.getAllByRole('heading', { level: 4, name: 'Senior Software Engineer' })).toHaveLength(2)
+  })
 
-    expect(screen.getByText('Tech Lead · Harare, Zimbabwe')).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem').length).toBeGreaterThanOrEqual(ENTRIES.length)
+  it('reads a current role as “… — present”, exactly as formatPeriod renders it', () => {
+    render(<Timeline entries={ENTRIES} />)
+
+    const rapidev = screen.getByRole('list', { name: 'Roles at Rapidev Labs' })
+    expect(within(rapidev).getByText('2026 — present')).toBeInTheDocument()
+    const dataAge = screen.getByRole('list', { name: 'Roles at Data Age' })
+    expect(within(dataAge).getByText('2026 — present')).toBeInTheDocument()
+  })
+
+  // The owner's explicit request: the rail must show he started as a Senior
+  // Software Engineer at each company and moved up. The step is stated in
+  // words, so it never depends on the dots or their colour.
+  it('marks each earlier role with the role it led to, in text', () => {
+    const { container } = render(<Timeline entries={ENTRIES} />)
+
+    expect(screen.getByText('Promoted to Tech Lead')).toBeInTheDocument()
+    expect(screen.getByText('Promoted to Team Lead')).toBeInTheDocument()
+
+    expect(container.querySelectorAll('[data-rung="current"]')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-rung="earlier"]')).toHaveLength(2)
+    // The earlier rung sits below the current one in every ladder.
+    for (const ladder of Array.from(container.querySelectorAll('ol[aria-label^="Roles at"]'))) {
+      const rungs = Array.from(ladder.children).map((li) => li.getAttribute('data-rung'))
+      expect(rungs[0]).toBe('current')
+      for (const rung of rungs.slice(1)) expect(rung).toBe('earlier')
+    }
   })
 
   // The reconciliation rejects the export's employment history outright.
@@ -147,7 +246,7 @@ describe('Timeline', () => {
 
   // design-home.md § 9: the last dot loses its glow to read as "fading into
   // the past". That missing box-shadow is the entire effect.
-  it('gives the placeholder entry a muted dot with no glow', () => {
+  it('gives the placeholder company a muted dot with no glow', () => {
     const { container } = render(<Timeline entries={ENTRIES} />)
 
     const muted = container.querySelectorAll('[data-dot="muted"]')
@@ -167,6 +266,12 @@ describe('Timeline', () => {
 
     expect(container.querySelectorAll('[data-placeholder="true"]')).toHaveLength(1)
     expect(screen.getByRole('heading', { name: 'Earlier engineering roles' })).toBeVisible()
+    // A single-role company still gets its ladder, with no step-up label.
+    const earlier = screen.getByRole('list', { name: 'Roles at Earlier engineering roles' })
+    expect(within(earlier).getByRole('heading', { level: 4 })).toHaveTextContent(
+      'Software Engineer'
+    )
+    expect(within(earlier).queryByText(/Promoted to/)).toBeNull()
   })
 })
 
