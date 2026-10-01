@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, type ReactNode } from 'react'
-import { attractorStore, nearestToCentre } from '@/lib/assembly/attractors'
+import { attractorStore, nearestToCentre } from '@/lib/assembly/attractor-store'
 
 /**
  * The Selected Work grid's hover hook — journey spec § 3.3.
