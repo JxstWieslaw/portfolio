@@ -17,27 +17,31 @@ import {
   Vector3,
   type PerspectiveCamera,
 } from 'three'
+import { createBundleCache, formationBuilder } from '@/lib/assembly/bundle-cache'
+import { pointerRay } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
 import {
   CAMERA_DISTANCE,
   FOV_LANDSCAPE,
-  buildTargets,
   frameFor,
+  frameScalars,
   instanceCount,
-  pixelToWorld,
-  type TargetBundle,
+  type BundleKind,
+  type FrameScalars,
 } from '@/lib/assembly/targets'
-import { FORMATION_IDS, washCss, type FormationId } from '@/lib/formations/config'
+import { FORMATIONS, washCss, type FormationId } from '@/lib/formations/config'
 
 /**
  * The only module that imports three. Loaded through `next/dynamic` from
  * `AssemblyLayer`; never imported by a unit test.
  *
  * One `InstancedMesh` of cubes morphs between the seven formations on the CPU
- * — each frame lerps position, scale and colour between the bundle the
- * visitor is leaving and the one they are heading to, writes `instanceMatrix`
- * once and flags it. 3000 instances at ~60 flops each is well under a
- * millisecond; a GPU morph would buy nothing here but a shader to maintain.
+ * — each frame lerps position and scale between the bundle the visitor is
+ * leaving and the one they are heading to, writes `instanceMatrix` once and
+ * flags it. Bundles are frame-invariant and built on demand (`bundle-cache`);
+ * the viewport only contributes three scalars per formation per frame, so a
+ * resize rebuilds nothing. Colours are written only when `from`, `to` or
+ * `mix` change.
  *
  * Frame loop is `demand`: scroll, pointer and resize invalidate; a 30 fps
  * ticker invalidates for the idle breathing while the tab is visible and the
@@ -213,21 +217,47 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
 
   const capacity = useMemo(() => instanceCount(keep), [keep])
   const frame = useMemo(() => frameFor(size.width, size.height), [size.width, size.height])
-  const targets = useMemo(() => {
-    const bundles = {} as Record<FormationId, TargetBundle>
-    for (const kind of FORMATION_IDS) bundles[kind] = buildTargets(kind, frame, capacity, keep)
-    return bundles
-  }, [frame, capacity, keep])
+  // Frame-invariant bundles, built on first use. Mount primes the hero only;
+  // the next formation is built the first time the scroll store names it.
+  const bundles = useMemo(() => {
+    const cache = createBundleCache(formationBuilder(capacity, keep))
+    cache.get('monolith')
+    return cache
+  }, [capacity, keep])
+  // The O(1) per-frame scalars, memoised per viewport so a frame does no `tan`.
+  const scalars = useMemo(() => {
+    const map = new Map<BundleKind, FrameScalars>()
+    return (kind: BundleKind): FrameScalars => {
+      let s = map.get(kind)
+      if (!s) {
+        s = frameScalars(FORMATIONS[kind === 'cloud' ? 'monolith' : kind], frame)
+        map.set(kind, s)
+      }
+      return s
+    }
+  }, [frame])
 
   const rig = useMemo(() => createRig(capacity), [capacity])
+  // Shaders link before the first visible frame: `compileAsync` resolves once
+  // the programs are ready (KHR_parallel_shader_compile where available), so
+  // the first drawn frame has no link stall. The 2D canvases paint until then.
+  const compiled = useRef(false)
   useEffect(() => {
     scene.add(rig.group, rig.hemisphere, rig.sun)
-    invalidate()
+    compiled.current = false
+    let cancelled = false
+    const ready = (): void => {
+      if (cancelled) return
+      compiled.current = true
+      invalidate()
+    }
+    gl.compileAsync(scene, camera).then(ready, ready)
     return () => {
+      cancelled = true
       scene.remove(rig.group, rig.hemisphere, rig.sun)
       rig.dispose()
     }
-  }, [scene, rig, invalidate])
+  }, [gl, scene, camera, rig, invalidate])
 
   // The camera and the framing maths share `frame`, so the anchor lands on the pixel.
   useEffect(() => {
@@ -306,13 +336,18 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   const motion = useRef({ parallaxX: 0, parallaxY: 0 })
   const pointerLocal = useMemo(() => new Vector3(), [])
   const viewLocal = useMemo(() => new Vector3(), [])
+  /** What the colour buffer currently holds; rewritten only when this changes. */
+  const painted = useRef<{ from: BundleKind | null; to: BundleKind | null; mix: number }>({ from: null, to: null, mix: -1 })
 
   useFrame((state, delta) => {
     const { from, to, mix, opacity } = store.current.scroll
     if (opacity <= 0 && live.current) return
+    if (!compiled.current) return
 
-    const a = targets[from]
-    const b = targets[to]
+    const a = bundles.get(from)
+    const b = bundles.get(to)
+    const sa = scalars(from)
+    const sb = scalars(to)
     const t = state.clock.elapsedTime
     const dt = Math.min(delta, 0.1)
     const { group, mesh, colour, offsets, inverse } = rig
@@ -327,34 +362,40 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     const ease = 1 - Math.exp(-dt * 6)
     m.parallaxX += (ny * PARALLAX - m.parallaxX) * ease
     m.parallaxY += (nx * PARALLAX - m.parallaxY) * ease
-    group.position.set(lerp(a.anchor[0], b.anchor[0], mix), lerp(a.anchor[1], b.anchor[1], mix), 0)
+    group.position.set(lerp(sa.anchor[0], sb.anchor[0], mix), lerp(sa.anchor[1], sb.anchor[1], mix), 0)
     group.rotation.set(lerp(a.tilt, b.tilt, mix) + m.parallaxX, lerp(a.rot, b.rot, mix) + wobble + m.parallaxY, 0)
-    group.scale.set(breath * lerp(a.spreadX, b.spreadX, mix), breath, breath)
+    group.scale.set(breath * lerp(sa.spreadX, sb.spreadX, mix), breath, breath)
     group.updateMatrixWorld()
 
-    // The pointer as a ray through the group's local space.
+    // The pointer as a perspective ray (camera through the pixel) in the group's local space.
     const radius = size.height * REPEL_RADIUS * frame.worldPerPx
     const repel = pointer.active && radius > 0
     if (repel) {
-      const [wx, wy] = pixelToWorld(frame, pointer.x, pointer.y)
+      const ray = pointerRay(frame, pointer.x, pointer.y)
       inverse.copy(group.matrixWorld).invert()
-      pointerLocal.set(wx, wy, 0).applyMatrix4(inverse)
-      viewLocal.set(0, 0, 1).transformDirection(inverse)
+      pointerLocal.set(ray.origin[0], ray.origin[1], ray.origin[2]).applyMatrix4(inverse)
+      viewLocal.set(ray.direction[0], ray.direction[1], ray.direction[2]).transformDirection(inverse)
     }
 
     const bob = size.height * BOB * frame.worldPerPx
     const spring = 1 - Math.exp(-dt * 8)
     const matrices = mesh.instanceMatrix.array as Float32Array
     const colours = colour.array as Float32Array
+    const unitA = sa.unit
+    const unitB = sb.unit
+    const edgeA = sa.edge
+    const edgeB = sb.edge
     let energy = 0
 
     for (let i = 0; i < capacity; i += 1) {
       const i3 = i * 3
       const i16 = i * 16
 
-      let x = lerp(a.position[i3] ?? 0, b.position[i3] ?? 0, mix)
-      let y = lerp(a.position[i3 + 1] ?? 0, b.position[i3 + 1] ?? 0, mix) + bob * Math.sin(t * BOB_RATE + i * 0.37)
-      let z = lerp(a.position[i3 + 2] ?? 0, b.position[i3 + 2] ?? 0, mix)
+      let x = lerp((a.position[i3] ?? 0) * unitA, (b.position[i3] ?? 0) * unitB, mix)
+      let y =
+        lerp((a.position[i3 + 1] ?? 0) * unitA, (b.position[i3 + 1] ?? 0) * unitB, mix) +
+        bob * Math.sin(t * BOB_RATE + i * 0.37)
+      let z = lerp((a.position[i3 + 2] ?? 0) * unitA, (b.position[i3 + 2] ?? 0) * unitB, mix)
 
       let tx = 0
       let ty = 0
@@ -390,22 +431,27 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       y += offsets[i3 + 1] ?? 0
       z += offsets[i3 + 2] ?? 0
 
-      const s = lerp(a.scale[i] ?? 0, b.scale[i] ?? 0, mix)
+      const s = lerp((a.live[i] ?? 0) * edgeA, (b.live[i] ?? 0) * edgeB, mix)
       matrices[i16] = s
       matrices[i16 + 5] = s
       matrices[i16 + 10] = s
       matrices[i16 + 12] = x
       matrices[i16 + 13] = y
       matrices[i16 + 14] = z
+    }
 
-      colours[i3] = lerp(a.colour[i3] ?? 0, b.colour[i3] ?? 0, mix)
-      colours[i3 + 1] = lerp(a.colour[i3 + 1] ?? 0, b.colour[i3 + 1] ?? 0, mix)
-      colours[i3 + 2] = lerp(a.colour[i3 + 2] ?? 0, b.colour[i3 + 2] ?? 0, mix)
+    // Colour depends on from/to/mix only: skip the write (and the upload) while they hold.
+    const p = painted.current
+    if (p.from !== from || p.to !== to || p.mix !== mix) {
+      for (let i = 0; i < capacity * 3; i += 1) colours[i] = lerp(a.colour[i] ?? 0, b.colour[i] ?? 0, mix)
+      colour.needsUpdate = true
+      p.from = from
+      p.to = to
+      p.mix = mix
     }
 
     mesh.count = Math.max(a.count, b.count)
     mesh.instanceMatrix.needsUpdate = true
-    colour.needsUpdate = true
 
     if (!live.current) {
       live.current = true

@@ -1,10 +1,20 @@
 /**
  * Formation targets for the Assembly — the per-instance data the WebGL layer
- * morphs between. Spec § 4.4.
+ * morphs between. Spec § 4.4; journey spec § 5.2.
  *
  * PURE. No three, no DOM. Every bundle is built from the same memoised,
  * seeded clouds the 2D painter draws (`pointsFor`), so the cubes a visitor
  * sees in 3D are the same cubes that were in the poster.
+ *
+ * Two layers:
+ *
+ * - `ModelBundle` is **frame-invariant**: positions in model units exactly as
+ *   the generator made them (z flipped), the colour-ramp `t`, a live flag and
+ *   a per-instance seed. It is built once per formation and never again; a
+ *   resize touches no buffer.
+ * - `frameScalars` is the O(1) per-frame part: the model unit in world units,
+ *   the cube edge and the anchor for the current viewport and camera distance.
+ *   World position = model position × `unit`; cube edge = `live` × `edge`.
  *
  * Framing reproduces `projectPoints` in `lib/formations/render.ts` on the
  * z = 0 plane: the formation's anchor sits at viewport fraction (`cx`, `cy`),
@@ -13,16 +23,19 @@
  * the painter's weak `1 / (1 + z * 0.16)`, which at this camera distance works
  * out within a few percent of it.
  *
- * Coordinates: positions are **model space scaled to world units and
- * relative to the anchor, unrotated**. The scene applies the formation's
- * `rot` / `tilt` on the parent group — lerping two Euler angles once per frame
- * is far cheaper than lerping 3000 rotated positions — and the painter's
- * z-into-the-screen axis is flipped into three's z-toward-the-viewer. The
- * reflection negates the tilt; the painter's own sign convention negates the
- * rotation back. See `AssemblyCanvas`.
+ * Coordinates: positions are **model space relative to the anchor,
+ * unrotated**. The scene applies the formation's `rot` / `tilt` on the parent
+ * group — lerping two Euler angles once per frame is far cheaper than lerping
+ * 3000 rotated positions — and the painter's z-into-the-screen axis is flipped
+ * into three's z-toward-the-viewer. The reflection negates the tilt; the
+ * painter's own sign convention negates the rotation back. See `AssemblyCanvas`.
+ *
+ * `buildTargets` (the viewport-baked `TargetBundle`) is kept as the composition
+ * of the two, so the equivalence is tested rather than assumed.
  */
 
-import { FORMATIONS, spreadXFor, type FormationId } from '@/lib/formations/config'
+import { FORMATIONS, spreadXFor, type FormationConfig, type FormationId } from '@/lib/formations/config'
+import { createRng, seedFor } from '@/lib/formations/generators'
 import { pointsFor, shade } from '@/lib/formations/render'
 
 /** Instances at full keep: covers the monolith's 2600 plus its 6% stragglers. */
@@ -71,9 +84,46 @@ export function instanceCount(keep: number): number {
   return Math.max(1, Math.round(INSTANCE_CAPACITY * clamped))
 }
 
+/** A formation, or the `cloud` pseudo-formation the hero assembles from (§ 3.1). */
+export type BundleKind = FormationId | 'cloud'
+
+/** The frame-invariant part of a formation. Built once; never rebuilt on resize. */
+export interface ModelBundle {
+  readonly kind: BundleKind
+  /** Instances with a real point behind them. The rest sit at scale 0. */
+  readonly count: number
+  readonly capacity: number
+  /** `capacity * 3`, model units relative to the anchor, unrotated, z flipped. */
+  readonly position: Float32Array
+  /** `capacity`, the colour-ramp position of each point. */
+  readonly colT: Float32Array
+  /** `capacity * 3`, `shade(t)` converted to linear RGB 0..1 for the GPU. */
+  readonly colour: Float32Array
+  /** `capacity`, `1` for a live instance, `0` for surplus. */
+  readonly live: Float32Array
+  /** `capacity`, 0..1 seeded per index: the morph stagger key (§ 4.1). */
+  readonly seed: Float32Array
+  /** Euler y for the parent group, radians. */
+  readonly rot: number
+  /** Euler x for the parent group, radians. */
+  readonly tilt: number
+}
+
+/** The O(1) per-frame part: what the viewport and the camera distance decide. */
+export interface FrameScalars {
+  /** World units per model unit. */
+  readonly unit: number
+  /** Cube edge in world units. */
+  readonly edge: number
+  /** World position of the formation's framing point, on z = 0. */
+  readonly anchor: readonly [number, number, number]
+  /** Parent group x scale — 1.4 above 2.2 aspect, else 1. */
+  readonly spreadX: number
+}
+
+/** The viewport-baked bundle: `ModelBundle` × `FrameScalars`. */
 export interface TargetBundle {
   readonly kind: FormationId
-  /** Instances with a real point behind them. The rest sit at scale 0. */
   readonly count: number
   readonly capacity: number
   /** `capacity * 3`, world units relative to `anchor`, unrotated. */
@@ -84,13 +134,9 @@ export interface TargetBundle {
   readonly colour: Float32Array
   /** `capacity`, cube edge in world units; `0` for surplus instances. */
   readonly scale: Float32Array
-  /** World position of the formation's framing point, on z = 0. */
   readonly anchor: readonly [number, number, number]
-  /** Euler y for the parent group, radians. */
   readonly rot: number
-  /** Euler x for the parent group, radians. */
   readonly tilt: number
-  /** Parent group x scale — 1.4 above 2.2 aspect, else 1. */
   readonly spreadX: number
 }
 
@@ -102,53 +148,90 @@ function srgbToLinear(channel: number): number {
 }
 
 /**
- * Builds one formation's bundle for a viewport.
+ * The scalars that turn a model bundle into world units for one viewport.
+ * One `tan` (inside `frameFor`), a handful of multiplies: cheap enough to run
+ * every frame when the camera dollies (§ 3.8).
+ */
+export function frameScalars(cfg: FormationConfig, frame: Frame, distance: number = frame.distance): FrameScalars {
+  const f = distance === frame.distance ? frame : frameFor(frame.width, frame.height, distance)
+  const fit = cfg.fit === 'h' ? f.height : Math.min(f.width, f.height)
+  const [ax, ay] = pixelToWorld(f, f.width * cfg.cx, f.height * cfg.cy)
+  return {
+    unit: fit * cfg.scale * f.worldPerPx,
+    edge: cfg.size * f.worldPerPx,
+    anchor: [ax, ay, 0],
+    spreadX: spreadXFor(f.width, f.height),
+  }
+}
+
+/** Per-index stagger seeds, one stream shared by every bundle so a cube keeps its seed across formations. */
+export function seedsFor(capacity: number): Float32Array {
+  const r = createRng(seedFor('assembly-seed'))
+  const seed = new Float32Array(capacity)
+  for (let i = 0; i < capacity; i += 1) seed[i] = r()
+  return seed
+}
+
+/**
+ * Builds one formation's frame-invariant bundle.
  *
  * Surplus instances (index >= count) take the position of a live instance
  * (`index % count`) so that when a denser formation follows they grow out of
  * an existing cube instead of appearing from the void.
  */
-export function buildTargets(kind: FormationId, frame: Frame, capacity: number, keep: number = 1): TargetBundle {
+export function buildModelBundle(kind: FormationId, capacity: number, keep: number = 1): ModelBundle {
   const cfg = FORMATIONS[kind]
   const points = pointsFor(kind, keep)
   const count = Math.min(points.length, capacity)
 
-  const fit = cfg.fit === 'h' ? frame.height : Math.min(frame.width, frame.height)
-  const unit = fit * cfg.scale * frame.worldPerPx
-  const edge = cfg.size * frame.worldPerPx
-  const [ax, ay] = pixelToWorld(frame, frame.width * cfg.cx, frame.height * cfg.cy)
-
   const position = new Float32Array(capacity * 3)
-  const colourT = new Float32Array(capacity)
+  const colT = new Float32Array(capacity)
   const colour = new Float32Array(capacity * 3)
-  const scale = new Float32Array(capacity)
+  const live = new Float32Array(capacity)
 
   for (let i = 0; i < capacity; i += 1) {
-    const live = i < count
-    const [px, py, pz, t] = (count > 0 ? points[live ? i : i % count] : undefined) ?? ORIGIN
-    position[i * 3] = px * unit
-    position[i * 3 + 1] = py * unit
+    const isLive = i < count
+    const [px, py, pz, t] = (count > 0 ? points[isLive ? i : i % count] : undefined) ?? ORIGIN
+    position[i * 3] = px
+    position[i * 3 + 1] = py
     // Painter z runs into the screen; three's runs toward the viewer.
-    position[i * 3 + 2] = -pz * unit
-    colourT[i] = t
+    position[i * 3 + 2] = -pz
+    colT[i] = t
     const [r, g, b] = shade(t)
     colour[i * 3] = srgbToLinear(r)
     colour[i * 3 + 1] = srgbToLinear(g)
     colour[i * 3 + 2] = srgbToLinear(b)
-    scale[i] = live ? edge : 0
+    live[i] = isLive ? 1 : 0
   }
+
+  return { kind, count, capacity, position, colT, colour, live, seed: seedsFor(capacity), rot: cfg.rot, tilt: -cfg.tilt }
+}
+
+/**
+ * Builds one formation's bundle for a viewport — the model bundle scaled by
+ * the frame scalars. Kept for the equivalence test and as the readable form
+ * of what the scene computes per instance per frame.
+ */
+export function buildTargets(kind: FormationId, frame: Frame, capacity: number, keep: number = 1): TargetBundle {
+  const model = buildModelBundle(kind, capacity, keep)
+  const { unit, edge, anchor, spreadX } = frameScalars(FORMATIONS[kind], frame)
+
+  const position = new Float32Array(capacity * 3)
+  const scale = new Float32Array(capacity)
+  for (let i = 0; i < capacity * 3; i += 1) position[i] = (model.position[i] ?? 0) * unit
+  for (let i = 0; i < capacity; i += 1) scale[i] = (model.live[i] ?? 0) * edge
 
   return {
     kind,
-    count,
+    count: model.count,
     capacity,
     position,
-    colourT,
-    colour,
+    colourT: model.colT,
+    colour: model.colour,
     scale,
-    anchor: [ax, ay, 0],
-    rot: cfg.rot,
-    tilt: -cfg.tilt,
-    spreadX: spreadXFor(frame.width, frame.height),
+    anchor,
+    rot: model.rot,
+    tilt: model.tilt,
+    spreadX,
   }
 }
