@@ -72,6 +72,7 @@ Requires Node ≥ 22.11 and pnpm ≥ 9.
 
 ## Roadmap
 
-`M0` foundations ✅ → `M1` API service (NestJS on Cloud Run + Neon Postgres) → `M2` "The
-Assembly" WebGL layer → `M3` case studies and dynamic content → `M4` admin and asset pipeline →
-`M5` polish and launch.
+`M0` foundations ✅ → `M1` API service ✅ → `M2` "The Assembly" WebGL layer (first slice merged) →
+`M3` case studies and dynamic content → `M4` admin and asset pipeline → `M5` polish and launch.
+The phases after the 2026-10-01 iteration, their exit criteria and owner inputs: [`docs/roadmap.md`](docs/roadmap.md);
+the plan per "Coming soon" area: [`docs/superpowers/plans/2026-10-01-coming-soon-areas.md`](docs/superpowers/plans/2026-10-01-coming-soon-areas.md).
