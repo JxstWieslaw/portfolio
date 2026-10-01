@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@repo/contracts": "workspace:^",
-    "next": "^15.5.23",
+    "next": "^15.5.27",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "^3.24.1"
