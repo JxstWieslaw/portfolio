@@ -8,7 +8,7 @@ import { detectDrift, runSeed, type SeedPlan } from './seed'
 import { type ContentBundle, ContentIntegrityError, loadContentFromDir } from './source'
 
 const USAGE = [
-  'Usage: pnpm --filter @repo/api db:seed <mode> [--content-dir <path>] [--git-sha <sha>]',
+  'Usage: npm run db:seed -w @repo/api -- <mode> [--content-dir <path>] [--git-sha <sha>]',
   '  --dry-run   plan against the database; write only the seed_runs record',
   '  --apply     apply the plan in one transaction',
   '  --check     exit 1 if the database differs from git',

@@ -78,7 +78,7 @@ describe('HowILead — copy reconciliation', () => {
     expect(screen.queryByText(/Tested, typed, and shipped with a rollback plan/)).toBeNull()
   })
 
-  it('ships the three reconciled pillar titles', () => {
+  it('ships the three reconciled pillar titles plus the AI-native fourth', () => {
     render(<HowILead />)
     const titles = screen
       .getAllByRole('heading', { level: 3 })
@@ -89,13 +89,25 @@ describe('HowILead — copy reconciliation', () => {
         'Technical direction',
         'Code review & standards',
         'Mentorship & delivery',
+        'AI-native delivery',
       ])
     )
     expect(LEAD_PILLARS.map((pillar) => pillar.title)).toEqual([
       'Technical direction',
       'Code review & standards',
       'Mentorship & delivery',
+      'AI-native delivery',
     ])
+  })
+
+  // The fourth pillar is concrete about what the agents do and what stays human.
+  it('says what the agents do and that decisions, merges and standards stay human', () => {
+    const fourth = LEAD_PILLARS[3]
+    expect(fourth?.title).toBe('AI-native delivery')
+    const body = fourth?.practices.join(' ') ?? ''
+    expect(body).toMatch(/code review, security and performance/)
+    expect(body).toMatch(/Decisions, merges and standards stay with me/)
+    expect(fourth?.practices).toHaveLength(3)
   })
 
   it('carries none of the rejected Habit framing', () => {
@@ -127,12 +139,14 @@ describe('HowILead — copy reconciliation', () => {
     )
   })
 
-  it('stacks pillars to one column below 768 and three from 768 up', () => {
+  it('stacks pillars to one column below 768, two from 768 and four from 1024', () => {
     const { container } = render(<HowILead />)
     const grid = container.querySelector('[data-variant="pillar"]')?.closest('.flex')
       ?.parentElement
     expect(grid?.className).toContain('grid-cols-1')
-    expect(grid?.className).toContain('md:grid-cols-3')
+    // Four cards in three tracks would orphan one; two-by-two until there is room for four.
+    expect(grid?.className).toContain('md:grid-cols-2')
+    expect(grid?.className).toContain('lg:grid-cols-4')
   })
 })
 

@@ -1,3 +1,5 @@
+> Historical note: the commands quoted here are from the pnpm era; the repo now uses npm workspaces (`npm ci`, `npm run <script> -w <workspace>`).
+
 # Task 20 — FieldCanvas LCP fix: verification, alternative-trigger evaluation, and honest gap report
 
 Worktree: `C:/Users/wiesl/OneDrive/Documents/Github/JxstWieslaw/.worktrees/design-layer/portfolio` (branch `feat/m0-design-layer`, based on `d56805b`).

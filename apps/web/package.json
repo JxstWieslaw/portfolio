@@ -18,11 +18,12 @@
   },
   "dependencies": {
     "@react-three/fiber": "^9.8.1",
-    "@repo/contracts": "workspace:^",
+    "@repo/contracts": "*",
     "next": "^15.5.27",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "three": "^0.186.1",
+    "three-custom-shader-material": "^6.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -30,7 +31,7 @@
     "@lhci/cli": "^0.15.1",
     "@next/eslint-plugin-next": "^15.5.23",
     "@playwright/test": "^1.62.1",
-    "@repo/config": "workspace:*",
+    "@repo/config": "*",
     "@size-limit/file": "^13.0.3",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^6.9.1",

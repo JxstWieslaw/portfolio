@@ -16,8 +16,9 @@ import { Reveal } from '@/components/ui/Reveal'
  * editorial pivot.
  *
  * Rejected and never to be reintroduced from `Home.dc.html`:
- * "Software Engineer @ Data Age", "Full Stack Engineer", "I build production
- * software, end to end", and `6+ years`.
+ * "Software Engineer @ Data Age", "Full Stack Engineer" and "I build production
+ * software, end to end". `6+ years` sat on this list while the figure was
+ * unverified; the owner confirmed it on 2026-10-01, so it is now the hero KPI.
  *
  * Server component. The only client code it mounts is `Reveal`, and the scroll
  * cue's reduced-motion behaviour is pure CSS — see `HERO_CSS`.
@@ -74,12 +75,13 @@ export interface HeroProps {
  * never silently render the export's rejected copy.
  */
 export const HERO_COPY = {
-  eyebrow: 'Tech Lead @ Data Age · Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe',
+  eyebrow: 'Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe',
   headline: 'I lead teams that ship production software — and I make the web move.',
   sub:
     'Hospital operations, learning platforms, creator-discovery tooling, procurement systems. ' +
     'Technical direction, code review and mentorship by day; real-time 3D on the web that holds ' +
-    'frame rate on a mid-range phone.',
+    'frame rate on a mid-range phone. An AI agent fleet runs review, security and performance ' +
+    'passes inside the delivery loop; decisions, merges and standards stay with me.',
   primaryCta: { label: 'See the work', href: '#work' },
   secondaryCta: { label: "Let's talk", href: '#contact' },
   scrollCue: { href: '#proof', label: 'Scroll', ariaLabel: 'Scroll to content' },

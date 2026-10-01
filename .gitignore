@@ -20,3 +20,6 @@ playwright-report/
 .env copy
 .env.copy
 .vercel
+
+# Agent worktrees (see ~/.claude/skills/senior-engineer-personas/fleet-protocol.md)
+.claude/worktrees/

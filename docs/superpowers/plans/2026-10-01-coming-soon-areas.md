@@ -315,6 +315,8 @@ Placeholder list, `npm run lint:content` (exit 0 by design, `apps/web/scripts/li
 
 ## 13. Cross-cutting items the security report adds
 
+Owner decisions of 2026-10-01 for these items are recorded in `docs/roadmap.md` §4.1 (lead retention: indefinite; admin: one account with mandatory MFA; analytics: no country; CSP: allowlist; resume: email and LinkedIn only, CV purged; Trivy waiver: dropped).
+
 These are not "Coming soon" affordances but they gate the areas above.
 
 | Item | Where it lands | Owner decision |
