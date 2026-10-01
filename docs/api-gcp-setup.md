@@ -103,7 +103,7 @@ Merge this branch to `main` first — the `workflow_dispatch` and `workflow_run`
 
 `gh workflow run "Deploy API"`, then `gh run watch`. The smoke step prints `/v1/ready`.
 
-**First-deploy caveat.** On a service's very first deploy gcloud ignores `--no-traffic`: revision one
+**First-deploy caveat.** On a service's very first deploy gcloud rejects `--no-traffic`, so the workflow omits it: revision one
 receives 100% of traffic as soon as it is ready, before the smoke step runs. The startup probe on
 `/v1/health` still gates readiness, so an image that cannot boot fails the deploy and never serves, but
 a revision that boots and then misbehaves (for example a wrong `DATABASE_URL`) would serve until you

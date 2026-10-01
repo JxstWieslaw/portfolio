@@ -91,13 +91,20 @@ jobs:
           # still. Each request holds a connection for milliseconds, so 3 per instance serves the 80
           # concurrent requests. Raise it only together with a paid compute size; the app default is 5.
           # ^@^ switches gcloud's list delimiter to @, because CORS_ORIGINS itself contains commas.
+          # gcloud refuses --no-traffic when it would create the service, so the very first deploy omits it:
+          # revision one serves at once, and the smoke test below still runs against it.
+          if gcloud run services describe "$SERVICE" --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" > /dev/null 2>&1; then
+            NO_TRAFFIC="--no-traffic"
+          else
+            NO_TRAFFIC=""
+          fi
           gcloud run deploy "$SERVICE" \
             --project="${{ vars.GCP_PROJECT_ID }}" \
             --region="$REGION" \
             --image="$IMAGE" \
             --service-account="${{ vars.GCP_RUNTIME_SA }}" \
             --allow-unauthenticated \
-            --no-traffic --tag=candidate \
+            $NO_TRAFFIC --tag=candidate \
             --min-instances=0 --max-instances=10 \
             --cpu=1 --memory=512Mi --concurrency=80 --timeout=30 \
             --startup-probe=httpGet.path=/v1/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=1,failureThreshold=15 \
