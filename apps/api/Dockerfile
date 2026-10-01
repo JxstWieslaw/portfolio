@@ -11,15 +11,20 @@
 #    cached across source-only changes; out/full adds the pruned packages' sources.
 FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS prune
 WORKDIR /repo
+# turbo comes from the lockfile (root devDependency), never from an ad-hoc npx fetch: it writes the pruned
+# lockfile that every later stage trusts. --workspaces=false installs the root manifest only.
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --workspaces=false
 COPY . .
-# Same turbo as the root devDependency (package-lock.json); npx fetches it without a full install.
-RUN npx --yes turbo@2.11.6 prune @repo/api --docker
+RUN ./node_modules/.bin/turbo prune @repo/api --docker
 
 # 2. Install, build, then reinstall with production dependencies only.
 FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
 WORKDIR /repo
 COPY --from=prune /repo/out/json/ ./
 RUN npm ci
+# Registry signatures and provenance, so the deploy path checks what CI checks.
+RUN npm audit signatures
 COPY --from=prune /repo/out/full/ ./
 RUN npm run build -w @repo/api
 # Contracts, Zod, Drizzle and ulid are devDependencies because tsup inlined them into dist/main.js, so

@@ -41,7 +41,8 @@ jobs:
       # Reports production advisories and never gates: main carries moderate/high advisories through
       # next's toolchain and NestJS that are not this repo's to fix today. Revisit when they clear.
       - name: Report production dependency advisories (never fails the build)
-        run: npm audit --omit=dev --audit-level=high || true
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
 
   budgets:
     name: Build and budgets
