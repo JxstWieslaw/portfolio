@@ -1,4 +1,5 @@
-import { Color, InstancedBufferAttribute, MeshStandardMaterial, Vector3, type BufferGeometry, type InstancedBufferGeometry } from 'three'
+import { Color, InstancedBufferAttribute, MeshStandardMaterial, Vector2, Vector3, Vector4, type BufferGeometry, type InstancedBufferGeometry } from 'three'
+import { MAX_ATTRACTORS } from '@/lib/assembly/attractors'
 import CustomShaderMaterial from 'three-custom-shader-material/vanilla'
 import type { Slot } from '@/lib/assembly/slots'
 import type { ModelBundle } from '@/lib/assembly/targets'
@@ -30,6 +31,21 @@ export interface AssemblyUniforms {
   readonly uRepelRadius: { value: number }
   readonly uPalette: { value: Color[] }
   readonly uBias: { value: number }
+  /** `uTime` of the craft drop; `-1` until it has triggered (§ 3.5). */
+  readonly uDropAt: { value: number }
+  /** The contact ring's calm, 0..1 (§ 3.7). */
+  readonly uCalm: { value: number }
+  /** Pile shiver amplitude, model units, for the from and to slots. */
+  readonly uShiver: { value: Vector2 }
+  /** `1` staggers the morph by the target's colour `t` instead of the seed (the ring). */
+  readonly uStaggerByT: { value: number }
+  /** Group-space attractor points, `w` = strength 0..1; `w <= 0` is inactive (§ 3.3). */
+  readonly uAttractors: { value: Vector4[] }
+  /** World-unit radius and pull of the attractors. */
+  readonly uAttractRadius: { value: number }
+  readonly uAttractPull: { value: number }
+  /** How many leading entries of `uAttractors` are live; bounds the shader loop. */
+  readonly uAttractCount: { value: number }
 }
 
 /** The 2D painter's ramp, sRGB; the shader converts to linear. */
@@ -55,6 +71,14 @@ export function createAssemblyUniforms(): AssemblyUniforms {
     uRepelRadius: { value: 1 },
     uPalette: { value: PALETTE },
     uBias: { value: 0 },
+    uDropAt: { value: -1 },
+    uCalm: { value: 0 },
+    uShiver: { value: new Vector2(0, 0) },
+    uStaggerByT: { value: 0 },
+    uAttractors: { value: Array.from({ length: MAX_ATTRACTORS }, () => new Vector4(0, 0, 0, 0)) },
+    uAttractRadius: { value: 1 },
+    uAttractPull: { value: 0 },
+    uAttractCount: { value: 0 },
   }
 }
 
@@ -76,6 +100,9 @@ export interface SlotAttributes {
   readonly pos: InstancedBufferAttribute
   readonly live: InstancedBufferAttribute
   readonly colT: InstancedBufferAttribute
+  readonly spin: InstancedBufferAttribute
+  readonly flow: InstancedBufferAttribute
+  readonly fall: InstancedBufferAttribute
 }
 
 export interface AssemblySlots {
@@ -97,10 +124,16 @@ export function attachSlots(geometry: BufferGeometry | InstancedBufferGeometry, 
     const pos = new InstancedBufferAttribute(new Float32Array(capacity * 3), 3)
     const live = new InstancedBufferAttribute(new Float32Array(capacity), 1)
     const colT = new InstancedBufferAttribute(new Float32Array(capacity), 1)
+    const spin = new InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
+    const flow = new InstancedBufferAttribute(new Float32Array(capacity), 1)
+    const fall = new InstancedBufferAttribute(new Float32Array(capacity), 1)
     geometry.setAttribute(`aPos${suffix}`, pos)
     geometry.setAttribute(`aLive${suffix}`, live)
     geometry.setAttribute(`aColT${suffix}`, colT)
-    return { pos, live, colT }
+    geometry.setAttribute(`aSpin${suffix}`, spin)
+    geometry.setAttribute(`aFlow${suffix}`, flow)
+    geometry.setAttribute(`aFall${suffix}`, fall)
+    return { pos, live, colT, spin, flow, fall }
   }
   const a = make('A')
   const b = make('B')
@@ -117,9 +150,15 @@ export function attachSlots(geometry: BufferGeometry | InstancedBufferGeometry, 
       ;(target.pos.array as Float32Array).set(bundle.position)
       ;(target.live.array as Float32Array).set(bundle.live)
       ;(target.colT.array as Float32Array).set(bundle.colT)
+      ;(target.spin.array as Float32Array).set(bundle.spin)
+      ;(target.flow.array as Float32Array).set(bundle.flow)
+      ;(target.fall.array as Float32Array).set(bundle.fall)
       target.pos.needsUpdate = true
       target.live.needsUpdate = true
       target.colT.needsUpdate = true
+      target.spin.needsUpdate = true
+      target.flow.needsUpdate = true
+      target.fall.needsUpdate = true
       slots.writes += 1
     },
   }

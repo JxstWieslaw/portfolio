@@ -10,7 +10,7 @@ import {
   DoubleSide,
   Group,
   HemisphereLight,
-  InstancedMesh,
+  InstancedBufferGeometry,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -23,10 +23,13 @@ import {
   type WebGLRenderer,
 } from 'three'
 import { ARTEFACT_CENTRE, ARTEFACT_LIGHT_INTENSITY, igniteScale } from '@/lib/assembly/artefact'
+import { ATTRACT_PULL_MODEL, ATTRACT_RADIUS, ATTRACT_RISE, attractorStore, boxCentre } from '@/lib/assembly/attractors'
 import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
+import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
-import { pointerRay } from '@/lib/assembly/pointer-ray'
+import { NO_DROP, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
+import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
 import { EMPTY_SLOTS, planSlots, type SlotState } from '@/lib/assembly/slots'
 import {
@@ -48,22 +51,27 @@ import { attachSlots, createAssemblyMaterial, createAssemblyUniforms, type Assem
  * `Artefact`). Loaded through `next/dynamic` from `AssemblyLayer`; never
  * imported by a unit test.
  *
- * One `InstancedMesh` of cubes morphs between the seven formations on the
+ * One instanced mesh of cubes morphs between the seven formations on the
  * GPU — journey spec § 4, § 5.1. Two attribute slots hold the formation the
  * visitor is leaving and the one they are heading to; the vertex program
  * staggers each cube by its seed, swirls it through curl noise mid-flight,
- * tumbles it half a turn and lands it exactly on its measured point. The CPU
- * writes a handful of uniforms per frame and one slot per formation change;
- * the frame loop writes no per-instance data.
+ * tumbles it half a turn and lands it exactly on its measured point. Each
+ * slot also carries its formation's own motion (§ 3): the stream's flow, the
+ * orbit rings' and the grid's spin, the scatter's fall. The CPU writes a
+ * handful of uniforms per frame and one slot per formation change; the frame
+ * loop writes no per-instance data.
  *
  * On load the monolith assembles from a seeded cloud around the hero artefact
- * (§ 3.1). Lighting: hemisphere + sun for the flat top-face read, plus a
- * five-plane lightformer environment baked through PMREM one frame after the
- * first draw (§ 5.3).
+ * (§ 3.1). The camera follows the rig table (§ 3.8), damped at 4/s, and the
+ * frame scalars are recomputed from the live distance every frame so each
+ * formation's anchor stays on its measured pixel through a dolly. Lighting:
+ * hemisphere + sun for the flat top-face read, plus a five-plane lightformer
+ * environment baked through PMREM before the programs compile (§ 5.3).
  *
- * Frame loop is `demand`: scroll, pointer and resize invalidate; a 30 fps
- * ticker invalidates for the idle breathing while the tab is visible and the
- * layer is not faded out. Nothing runs while `document.hidden`.
+ * Frame loop is `demand`: scroll, pointer, resize and the attractor
+ * invalidate; a 30 fps ticker invalidates for the idle motion while the tab
+ * is visible and the layer is not faded out. Nothing runs while
+ * `document.hidden`.
  */
 
 export interface AssemblyCanvasProps {
@@ -91,8 +99,8 @@ const REPEL_STRENGTH = 0.6
 const REPEL_RISE = 8
 const REPEL_FALL = 4
 
-/** Group parallax toward the pointer, radians (3 degrees). */
-const PARALLAX = (3 * Math.PI) / 180
+/** The artefact's scale as the orbit's core (§ 3.4). */
+const ORBIT_ARTEFACT_SCALE = 0.6
 
 /**
  * 20 on touch devices (the 2D hero this replaces ran at 20), 30 on pointer
@@ -113,6 +121,11 @@ interface AssemblyStore {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const u = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
+  return u * u * (3 - 2 * u)
 }
 
 function measureSections(): SectionBox[] {
@@ -170,7 +183,8 @@ function useAssemblyScroll(apply: (state: ScrollState) => void): void {
 
 interface Rig {
   readonly group: Group
-  readonly mesh: InstancedMesh
+  readonly mesh: Mesh
+  readonly geometry: InstancedBufferGeometry
   readonly slots: AssemblySlots
   readonly uniforms: AssemblyUniforms
   readonly artefact: Artefact
@@ -181,23 +195,19 @@ interface Rig {
 }
 
 function createRig(capacity: number): Rig {
-  const geometry = new BoxGeometry(1, 1, 1)
+  // A plain Mesh over an InstancedBufferGeometry: position, scale and rotation
+  // live in the vertex program, so there is no instance matrix to upload
+  // (an InstancedMesh would carry 192 kB of identity matrices for nothing).
+  const box = new BoxGeometry(1, 1, 1)
+  const geometry = new InstancedBufferGeometry()
+  geometry.index = box.index
+  for (const name of ['position', 'normal', 'uv']) geometry.setAttribute(name, box.getAttribute(name))
+  geometry.instanceCount = capacity
   const slots = attachSlots(geometry, capacity, seedsFor(capacity))
   const uniforms = createAssemblyUniforms()
   const material = createAssemblyMaterial(uniforms)
-  const mesh = new InstancedMesh(geometry, material, capacity)
+  const mesh = new Mesh(geometry, material)
   mesh.frustumCulled = false
-  // Position, scale and rotation live in the vertex program; the instance
-  // matrices are identity, written once here and never again.
-  const matrices = mesh.instanceMatrix.array as Float32Array
-  for (let i = 0; i < capacity; i += 1) {
-    matrices.fill(0, i * 16, i * 16 + 16)
-    matrices[i * 16] = 1
-    matrices[i * 16 + 5] = 1
-    matrices[i * 16 + 10] = 1
-    matrices[i * 16 + 15] = 1
-  }
-  mesh.instanceMatrix.needsUpdate = true
 
   const artefact = createArtefact()
   artefact.group.scale.setScalar(0)
@@ -214,6 +224,7 @@ function createRig(capacity: number): Rig {
   return {
     group,
     mesh,
+    geometry,
     slots,
     uniforms,
     artefact,
@@ -223,7 +234,6 @@ function createRig(capacity: number): Rig {
     dispose() {
       geometry.dispose()
       material.dispose()
-      mesh.dispose()
       artefact.dispose()
     },
   }
@@ -260,6 +270,19 @@ interface SceneProps {
   readonly bindInvalidate: (invalidate: () => void) => void
 }
 
+/** The camera's damped state and the per-frame motion memory. */
+interface Motion {
+  parallaxX: number
+  parallaxY: number
+  repel: number
+  attract: number
+  rig: CameraRig
+  orbit: number
+  drop: DropState
+  /** `uTime` at which the ring fully landed; `-1` otherwise. */
+  settledAt: number
+}
+
 function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   const { gl, scene, camera, size, invalidate } = useThree()
 
@@ -269,6 +292,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
 
   const capacity = useMemo(() => instanceCount(keep), [keep])
   const frame = useMemo(() => frameFor(size.width, size.height), [size.width, size.height])
+  const portrait = size.height > size.width
   // Frame-invariant bundles, built on first use. Mount primes the cloud and
   // the hero only; the next formation is built the first time the scroll
   // store names it.
@@ -282,18 +306,6 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     cache.get('monolith')
     return cache
   }, [capacity, keep])
-  // The O(1) per-frame scalars, memoised per viewport so a frame does no `tan`.
-  const scalars = useMemo(() => {
-    const map = new Map<BundleKind, FrameScalars>()
-    return (kind: BundleKind): FrameScalars => {
-      let s = map.get(kind)
-      if (!s) {
-        s = frameScalars(FORMATIONS[kind === 'cloud' ? 'monolith' : kind], frame)
-        map.set(kind, s)
-      }
-      return s
-    }
-  }, [frame])
 
   const rig = useMemo(() => createRig(capacity), [capacity])
   const slotState = useRef<SlotState>(EMPTY_SLOTS)
@@ -340,17 +352,16 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     }
   }, [scene, rig, prepare, invalidate])
 
-  // The camera and the framing maths share `frame`, so the anchor lands on the pixel.
+  // The camera and the framing maths share `frame`'s FOV; its distance and
+  // pitch follow the rig table per frame (§ 3.8).
   useEffect(() => {
     const perspective = camera as PerspectiveCamera
     perspective.fov = frame.fov
-    perspective.position.set(0, 0, frame.distance)
-    perspective.lookAt(0, 0, 0)
     perspective.updateProjectionMatrix()
     invalidate()
   }, [camera, frame, invalidate])
 
-  // Breathing ticker: only while visible and not faded out.
+  // Idle ticker: breathing, flow, spins, calm — only while visible and not faded out.
   useEffect(() => {
     const id = window.setInterval(() => {
       if (document.hidden || store.current.scroll.opacity <= 0) return
@@ -380,6 +391,9 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       document.documentElement.removeEventListener('pointerleave', leave)
     }
   }, [invalidate, store])
+
+  // The hovered (or centred) project card: a change wakes the loop; the frame reads its box.
+  useEffect(() => attractorStore.subscribe(() => invalidate()), [invalidate])
 
   // Context loss: fade the 2D layer back in; give up for the session on the second loss.
   // A restore re-bakes the environment; the attribute slots re-upload themselves.
@@ -421,11 +435,31 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     },
     [],
   )
-  const motion = useRef({ parallaxX: 0, parallaxY: 0, repel: 0 })
+  const motion = useRef<Motion>({
+    parallaxX: 0,
+    parallaxY: 0,
+    repel: 0,
+    attract: 0,
+    rig: rigFor('monolith', portrait),
+    orbit: 0,
+    drop: NO_DROP,
+    settledAt: -1,
+  })
   /** The on-load assembly clock; `-1` until the first drawn frame. */
   const assemblyStart = useRef(-1)
-  const pointerLocal = useMemo(() => new Vector3(), [])
-  const viewLocal = useMemo(() => new Vector3(), [])
+  const scratch = useMemo(() => ({ origin: new Vector3(), dir: new Vector3(), point: new Vector3(), ndc: new Vector3() }), [])
+
+  /** The line from the camera through a CSS pixel, world space — correct under any tilt or orbit. */
+  const rayThrough = useCallback(
+    (px: number, py: number): Ray => {
+      const { origin, dir, ndc } = scratch
+      ndc.set((px / size.width) * 2 - 1, 1 - (py / size.height) * 2, 0.5).unproject(camera)
+      origin.copy(camera.position)
+      dir.copy(ndc).sub(origin).normalize()
+      return { origin: [origin.x, origin.y, origin.z], direction: [dir.x, dir.y, dir.z] }
+    },
+    [camera, scratch, size.width, size.height],
+  )
 
   // Priority 1: R3F skips its own render when a subscriber has priority > 0,
   // so nothing is drawn (and nothing links synchronously) until `compileAsync`
@@ -437,14 +471,36 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
 
     const t = state.clock.elapsedTime
     const dt = Math.min(delta, 0.1)
-    const { group, mesh, uniforms, slots, artefact, inverse } = rig
+    const { group, geometry, uniforms, slots, artefact, inverse } = rig
     const pointer = store.current.pointer
+    const m = motion.current
 
     // The on-load assembly: cloud -> monolith on a clock from the first drawn
     // frame, then the scroll state settles in without a step (`resolveAssembly`).
     if (assemblyStart.current < 0) assemblyStart.current = t
     const elapsed = t - assemblyStart.current
     const { from, to, mix } = resolveAssembly(scroll, elapsed)
+
+    // Camera: the rig table lerped by the mix, damped at 4/s; the orbit angle accumulates.
+    const target = lerpRig(rigFor(from, portrait), rigFor(to, portrait), mix)
+    m.rig = {
+      distance: damp(m.rig.distance, target.distance, CAMERA_DAMP, dt),
+      tiltDeg: damp(m.rig.tiltDeg, target.tiltDeg, CAMERA_DAMP, dt),
+      parallaxDeg: damp(m.rig.parallaxDeg, target.parallaxDeg, CAMERA_DAMP, dt),
+      orbitRate: target.orbitRate,
+    }
+    m.orbit += target.orbitRate * dt
+    const [cx, cy, cz] = cameraPosition(m.rig.distance, m.rig.tiltDeg, m.orbit)
+    camera.position.set(cx, cy, cz)
+    camera.lookAt(0, 0, 0)
+    camera.updateMatrixWorld()
+
+    // Per-frame scalars from the live distance: one tan, so the anchor stays
+    // on its measured pixel at any dolly (§ 3.8).
+    const view = frameFor(size.width, size.height, m.rig.distance)
+    const scalars = (kind: BundleKind): FrameScalars => frameScalars(FORMATIONS[kind === 'cloud' ? 'monolith' : kind], view)
+    const sFrom = scalars(from)
+    const sTo = scalars(to)
 
     // Formation change: write the slot that is not holding `from`, flip uSwap.
     const plan = planSlots(slotState.current, from, to)
@@ -453,63 +509,109 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     uniforms.uSwap.value = plan.swap
     const a = bundles.get(plan.state.a ?? from)
     const b = bundles.get(plan.state.b ?? to)
-    const sa = scalars(plan.state.a ?? from)
-    const sb = scalars(plan.state.b ?? to)
-    const sFrom = scalars(from)
-    const sTo = scalars(to)
+    const sa = plan.state.a === to ? sTo : sFrom
+    const sb = plan.state.b === from ? sFrom : sTo
     const bFrom = bundles.get(from)
     const bTo = bundles.get(to)
 
+    // The section's own motion rule (§ 3 table), lerped across the band.
+    const rule = lerpMotion(motionFor(from), motionFor(to), mix)
+    // The contact ring's calm (§ 3.7): starts once the visitor is at rest on the ring.
+    const settled = settledFormation(from, to, mix)
+    if (settled === 'ring') {
+      if (m.settledAt < 0) m.settledAt = t
+    } else m.settledAt = -1
+    const calm = calmAt(settled, m.settledAt < 0 ? 0 : t - m.settledAt)
+
     // Group: anchor, formation rotation, idle wobble, pointer parallax, breath, ultrawide spread.
-    const wobble = Math.sin(t * WOBBLE_RATE) * WOBBLE_AMPLITUDE
-    const breath = 1 + BREATH_AMPLITUDE * Math.sin(t * BREATH_RATE)
+    const wobble = Math.sin(t * WOBBLE_RATE) * WOBBLE_AMPLITUDE * rule.wobble
+    const breath = 1 + BREATH_AMPLITUDE * Math.sin(t * BREATH_RATE) * rule.breath * (1 - 0.7 * calm)
     const nx = pointer.active ? (pointer.x / size.width) * 2 - 1 : 0
     const ny = pointer.active ? (pointer.y / size.height) * 2 - 1 : 0
-    const m = motion.current
+    const parallax = (m.rig.parallaxDeg * Math.PI) / 180
     const ease = 1 - Math.exp(-dt * 6)
-    m.parallaxX += (ny * PARALLAX - m.parallaxX) * ease
-    m.parallaxY += (nx * PARALLAX - m.parallaxY) * ease
+    m.parallaxX += (ny * parallax - m.parallaxX) * ease
+    m.parallaxY += (nx * parallax - m.parallaxY) * ease
     group.position.set(lerp(sFrom.anchor[0], sTo.anchor[0], mix), lerp(sFrom.anchor[1], sTo.anchor[1], mix), 0)
     group.rotation.set(lerp(bFrom.tilt, bTo.tilt, mix) + m.parallaxX, lerp(bFrom.rot, bTo.rot, mix) + wobble + m.parallaxY, 0)
     group.scale.set(breath * lerp(sFrom.spreadX, sTo.spreadX, mix), breath, breath)
     group.updateMatrixWorld()
+    inverse.copy(group.matrixWorld).invert()
 
     // The pointer as a perspective ray (camera through the pixel) in the group's local space.
-    const radius = size.height * REPEL_RADIUS * frame.worldPerPx
-    const repelTarget = pointer.active && radius > 0 ? REPEL_STRENGTH : 0
+    const radius = size.height * REPEL_RADIUS * view.worldPerPx * rule.repelRadius
+    const repelTarget = pointer.active && radius > 0 ? REPEL_STRENGTH * rule.repel * (1 - 0.5 * calm) : 0
     const repelEase = 1 - Math.exp(-dt * (repelTarget > m.repel ? REPEL_RISE : REPEL_FALL))
     m.repel += (repelTarget - m.repel) * repelEase
     if (m.repel > 1e-4) {
-      const ray = pointerRay(frame, pointer.x, pointer.y)
-      inverse.copy(group.matrixWorld).invert()
-      pointerLocal.set(ray.origin[0], ray.origin[1], ray.origin[2]).applyMatrix4(inverse)
-      viewLocal.set(ray.direction[0], ray.direction[1], ray.direction[2]).transformDirection(inverse)
-      uniforms.uPointerOrigin.value.copy(pointerLocal)
-      uniforms.uPointerDir.value.copy(viewLocal)
+      const ray = rayThrough(pointer.x, pointer.y)
+      scratch.origin.set(ray.origin[0], ray.origin[1], ray.origin[2]).applyMatrix4(inverse)
+      scratch.dir.set(ray.direction[0], ray.direction[1], ray.direction[2]).transformDirection(inverse)
+      uniforms.uPointerOrigin.value.copy(scratch.origin)
+      uniforms.uPointerDir.value.copy(scratch.dir)
     }
     uniforms.uRepel.value = m.repel > 1e-4 ? m.repel : 0
     uniforms.uRepelRadius.value = radius
 
+    // Attractors (§ 3.3): the card's box (measured by the DOM hook, never
+    // here) through the same ray maths onto z = 0, into group space; strength
+    // eases 0 -> 1 at 6/s. One attractor: uAttractCount bounds the loop.
+    const card = attractorStore.get()
+    const attractTarget = card && rule.attract > 0 ? rule.attract : 0
+    m.attract += (attractTarget - m.attract) * (1 - Math.exp(-dt * ATTRACT_RISE))
+    const slot0 = uniforms.uAttractors.value[0]
+    if (card && m.attract > 1e-3 && slot0) {
+      const [px, py] = boxCentre(card)
+      const [wx, wy, wz] = rayAtPlane(rayThrough(px, py))
+      scratch.point.set(wx, wy, wz).applyMatrix4(inverse)
+      slot0.set(scratch.point.x, scratch.point.y, scratch.point.z, m.attract)
+    } else if (slot0) slot0.w = 0
+    uniforms.uAttractCount.value = slot0 && slot0.w > 0 ? 1 : 0
+    uniforms.uAttractRadius.value = ATTRACT_RADIUS * sTo.unit
+    uniforms.uAttractPull.value = m.attract > 1e-3 ? ATTRACT_PULL_MODEL * sTo.unit : 0
+
+    // The craft drop (§ 3.5): once per visit, when half the scatter is on screen from either side.
+    m.drop = dropTrigger(m.drop, from, to, mix, t)
+    const shiver = m.drop.dropAt >= 0 ? shiverAt(t - m.drop.dropAt) : 0
+    uniforms.uDropAt.value = m.drop.dropAt
+    uniforms.uShiver.value.set(from === 'scatter' ? shiver : 0, to === 'scatter' ? shiver : 0)
+
     // Per-frame scalars: the only viewport-dependent numbers the GPU sees.
     uniforms.uMix.value = mix
     uniforms.uTime.value = t
-    uniforms.uBob.value = size.height * BOB * frame.worldPerPx
+    uniforms.uBob.value = size.height * BOB * view.worldPerPx * rule.bob
     uniforms.uUnitA.value = sa.unit
     uniforms.uUnitB.value = sb.unit
     uniforms.uEdgeA.value = sa.edge
     uniforms.uEdgeB.value = sb.edge
-    mesh.count = Math.max(a.count, b.count)
+    uniforms.uBias.value = lerp(biasFor(from), biasFor(to), mix)
+    uniforms.uCalm.value = calm
+    uniforms.uStaggerByT.value = to === 'ring' ? 1 : 0
+    geometry.instanceCount = Math.max(a.count, b.count)
 
-    // The artefact: ignites 0.6 s into the assembly; belongs to the hero, so it
-    // fades with the monolith's share of the morph.
+    // The artefact: ignites 0.6 s into the assembly and belongs to the hero,
+    // so it fades with the monolith's share of the morph; it returns as the
+    // orbit's core at 0.6 scale, rings off, over the second half of the band.
     const heroWeight = from === 'cloud' || from === 'monolith' ? 1 - (to === 'monolith' ? 0 : mix) : to === 'monolith' ? mix : 0
+    const orbitWeight = to === 'orbit' ? smoothstep(0.5, 1, mix) : from === 'orbit' ? 1 - smoothstep(0, 0.5, mix) : 0
     const heroUnit = scalars('monolith').unit
-    const artefactScale = heroUnit * igniteScale(elapsed) * heroWeight
-    artefact.group.position.set(ARTEFACT_CENTRE[0] * heroUnit, ARTEFACT_CENTRE[1] * heroUnit, ARTEFACT_CENTRE[2] * heroUnit)
+    const ignite = igniteScale(elapsed)
+    const hero = heroUnit * ignite * heroWeight
+    const asCore = sTo.unit * ORBIT_ARTEFACT_SCALE * orbitWeight
+    if (hero >= asCore) {
+      artefact.group.position.set(ARTEFACT_CENTRE[0] * heroUnit, ARTEFACT_CENTRE[1] * heroUnit, ARTEFACT_CENTRE[2] * heroUnit)
+      artefact.group.scale.setScalar(Math.max(0, hero))
+      artefact.setRings(1)
+    } else {
+      artefact.group.position.set(0, 0, 0)
+      artefact.group.scale.setScalar(asCore)
+      artefact.setRings(0)
+    }
     // Scale and light intensity, never `visible`: toggling a point light would
     // change the program's light count and force a recompile.
-    artefact.group.scale.setScalar(Math.max(0, artefactScale))
-    artefact.light.intensity = ARTEFACT_LIGHT_INTENSITY * igniteScale(elapsed) * heroWeight
+    // TODO(slice 3): drive the light by tier as well — off at tier 1, where
+    // the environment is skipped too (§ 5.6); it stays on for every tier now.
+    artefact.light.intensity = ARTEFACT_LIGHT_INTENSITY * Math.max(ignite * heroWeight, orbitWeight)
     artefact.tick(t)
 
     if (!live.current) {
@@ -523,12 +625,18 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
 
     state.gl.render(scene, camera)
 
-    // Keep stepping while the assembly, the repulsion or the parallax is still settling.
+    // Keep stepping while the assembly, the camera, the repulsion, the
+    // attractor, the drop or the parallax is still settling.
     const settling =
       elapsed < ASSEMBLY_SECONDS + SETTLE_SECONDS ||
+      Math.abs(target.distance - m.rig.distance) > 1e-3 ||
+      Math.abs(target.tiltDeg - m.rig.tiltDeg) > 1e-3 ||
       Math.abs(repelTarget - m.repel) > 1e-3 ||
-      Math.abs(ny * PARALLAX - m.parallaxX) > 1e-4 ||
-      Math.abs(nx * PARALLAX - m.parallaxY) > 1e-4
+      Math.abs(attractTarget - m.attract) > 1e-3 ||
+      shiver > 0 ||
+      (calm > 0 && calm < 1) ||
+      Math.abs(ny * parallax - m.parallaxX) > 1e-4 ||
+      Math.abs(nx * parallax - m.parallaxY) > 1e-4
     if (settling) invalidate()
   }, 1)
 
@@ -569,7 +677,6 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp }: AssemblyCanva
     invalidateRef.current()
   }, [])
   useAssemblyScroll(apply)
-
 
   return (
     <div ref={wrapper} className="absolute inset-0">

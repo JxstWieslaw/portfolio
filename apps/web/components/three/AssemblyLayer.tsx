@@ -3,8 +3,8 @@
 import dynamic from 'next/dynamic'
 import { Component, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { hasNoGlFlag, probeWebGL2, shouldMountWebGL } from '@/lib/assembly/capabilities'
+import { afterLcp } from '@/lib/assembly/lcp'
 import { instanceKeep, readCapabilities, resolveRung } from '@/lib/formations/fallback'
-import { scheduleIdle } from '@/lib/schedule-idle'
 
 const LIVE_ATTRIBUTE = 'data-gl'
 
@@ -70,10 +70,12 @@ class AssemblyBoundary extends Component<BoundaryProps, { failed: boolean }> {
  * The Assembly — spec § 4.4. One fixed, full-viewport, decorative WebGL layer
  * behind the whole home page.
  *
- * Mounts nothing until the 2D ladder says the device may animate, WebGL2 is
- * available and `?nogl=1` is absent — and even then only after an idle
- * callback, so hydration finishes first. Every "no" leaves the per-section 2D
- * canvases exactly as they were: they are the fallback on every path.
+ * Mounts nothing until the largest contentful paint has happened and the
+ * thread is idle (`afterLcp`, journey spec § 5.7), and then only if the 2D
+ * ladder says the device may animate, WebGL2 is available and `?nogl=1` is
+ * absent. The probes run inside that callback, so nothing here touches a
+ * canvas before the LCP. Every "no" leaves the per-section 2D canvases
+ * exactly as they were: they are the fallback on every path.
  *
  * Once the first WebGL frame has drawn, `html[data-gl="live"]` cross-fades the
  * 2D washes and canvases out (see `globals.css`); a lost context removes the
@@ -89,19 +91,18 @@ export function AssemblyLayer() {
   useEffect(() => {
     if (gaveUp) return undefined
 
-    // Two probes: a canvas can hold one context kind only, so the 2D probe
-    // inside readCapabilities would make a WebGL2 probe on the same element
-    // return null by spec.
-    const caps = readCapabilities(document.createElement('canvas'))
-    const mount = shouldMountWebGL({
-      rung: resolveRung(caps),
-      webgl2: probeWebGL2(document.createElement('canvas')),
-      noGl: hasNoGlFlag(window.location.search),
+    const cancel = afterLcp(() => {
+      // Two probes: a canvas can hold one context kind only, so the 2D probe
+      // inside readCapabilities would make a WebGL2 probe on the same element
+      // return null by spec.
+      const caps = readCapabilities(document.createElement('canvas'))
+      const mount = shouldMountWebGL({
+        rung: resolveRung(caps),
+        webgl2: probeWebGL2(document.createElement('canvas')),
+        noGl: hasNoGlFlag(window.location.search),
+      })
+      if (mount) setKeep(instanceKeep(caps))
     })
-    if (!mount) return undefined
-
-    const fraction = instanceKeep(caps)
-    const cancel = scheduleIdle(() => setKeep(fraction))
     return () => {
       cancel()
       setLive(false)
