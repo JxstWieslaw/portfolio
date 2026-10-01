@@ -231,6 +231,8 @@ export function ProjectCard({
          no arrow promising navigation. § 6a — a designed affordance may only be
          shown once the thing it points at exists. */
       href={href}
+      /* The Assembly's lattice drifts toward the hovered card (journey spec § 3.3). */
+      data-attract=""
       /* When the card IS a link the base layer paints links cyan; the utility
          layer wins over it, so body copy stays `--fg-1` at rest AND on hover —
          only the border and the glow move. */
