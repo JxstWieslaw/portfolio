@@ -227,6 +227,18 @@ when an asset exists to push through it (an owner decision, §4).
 | GLB hero artefact and licence, or stay procedural | 4 | Procedural; Phase 4 skipped |
 | Domain name; CSP choice (allowlist versus nonce) | 5 | Vercel domain; no CSP |
 
+### 4.1 Decisions taken by the owner on 2026-10-01
+
+| Decision | Choice | Consequence |
+|---|---|---|
+| Lead retention | Keep name, email and message indefinitely | The contact form's privacy sentence must say so; no anonymisation job in 2b; leads inbox exports stay admin-only |
+| Admin access | One allow-listed account (the public contact email), TOTP MFA mandatory | No recovery flow to build; Firebase project limited to that account |
+| Analytics country | Dropped | The beacon stays cookieless and IP-free; no consent banner |
+| CSP mode | Allowlist CSP, static generation kept | Strict `connect-src`, `frame-ancestors`, `object-src`, `worker-src`; inline scripts allowed; shipped with the Phase 1 headers work |
+| Resume PII | Email and LinkedIn only on `/resume` and the PDF; the tracked CV removed from the tree and purged from history | Tree removal in this change; the history purge is a force push the owner runs (commands in the mission log) |
+| Trivy waiver | Dropped now; the image job stays red until distroless republishes a fixed base | PRs cannot pass the merge gate until then; the owner merges by exception or waits for the base |
+| Vercel SSO protection | Left on for now | Production URL still asks visitors to log in until a custom domain is added |
+
 ## 5. How to read this with the plans
 
 The companion plan gives each "Coming soon" area its current state with `file:line`, its data and
