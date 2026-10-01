@@ -1,3 +1,4 @@
+import { AssemblyLayer } from '@/components/three/AssemblyLayer'
 import { DecorativeLayerNote } from '@/components/three/SectionBackdrop'
 import { Contact } from '@/components/sections/Contact'
 import { Craft } from '@/components/sections/Craft'
@@ -85,6 +86,10 @@ export default function HomePage() {
 
   return (
     <>
+      {/* The persistent WebGL layer (spec section 4.4). Fixed, aria-hidden, behind every section;
+          mounts nothing until the device qualifies, so the 2D canvases remain the fallback. */}
+      <AssemblyLayer />
+
       {/*
         Mounted exactly once for the page. Seven copies — one per SectionBackdrop — would be
         worse than none: a screen reader would announce the same disclaimer at every section.
