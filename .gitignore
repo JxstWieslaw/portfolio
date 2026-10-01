@@ -20,4 +20,3 @@ playwright-report/
 .env copy
 .env.copy
 .vercel
-.env*
