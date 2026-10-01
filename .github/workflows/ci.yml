@@ -191,6 +191,9 @@ jobs:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           branch_name: preview/pr-${{ github.event.number }}
           api_key: ${{ secrets.NEON_API_KEY }}
+          # The action defaults to Neon's `neondb` / `neondb_owner`; this project's names differ.
+          database: portfolio
+          role: portfolio_owner
       - name: Dry-run, apply, seed and check against the real data shape
         env:
           DATABASE_URL: ${{ steps.branch.outputs.db_url }}
