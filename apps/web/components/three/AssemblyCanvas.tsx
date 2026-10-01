@@ -22,9 +22,9 @@ import {
   type WebGLRenderTarget,
   type WebGLRenderer,
 } from 'three'
-import { ARTEFACT_CENTRE, igniteScale } from '@/lib/assembly/artefact'
+import { ARTEFACT_CENTRE, ARTEFACT_LIGHT_INTENSITY, igniteScale } from '@/lib/assembly/artefact'
 import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
-import { ASSEMBLY_SECONDS, easeOutQuint } from '@/lib/assembly/cloud'
+import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { pointerRay } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
@@ -244,7 +244,8 @@ function bakeEnvironment(gl: WebGLRenderer): WebGLRenderTarget {
     scene.add(plane)
   }
   const generator = new PMREMGenerator(gl)
-  const target = generator.fromScene(scene, 0.04)
+  // 64 px faces: five soft planes need no detail, and 256 would allocate a 6.3 MB target.
+  const target = generator.fromScene(scene, 0.04, 0.1, 100, { size: 64 })
   generator.dispose()
   geometry.dispose()
   for (const material of materials) material.dispose()
@@ -295,39 +296,49 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   }, [frame])
 
   const rig = useMemo(() => createRig(capacity), [capacity])
+  const slotState = useRef<SlotState>(EMPTY_SLOTS)
+  // The environment is baked *before* the programs are compiled so the variant
+  // that links is the final one (the envMap define is part of the program key).
+  const environment = useRef<WebGLRenderTarget | null>(null)
   // Shaders link before the first visible frame: `compileAsync` resolves once
   // the programs are ready (KHR_parallel_shader_compile where available), so
-  // the first drawn frame has no link stall. The 2D canvases paint until then.
+  // the first drawn frame has no link stall. Until then the priority-1 frame
+  // below draws nothing, and the 2D canvases keep painting.
   const compiled = useRef(false)
+  const prepare = useCallback(
+    (onReady: () => void): (() => void) => {
+      compiled.current = false
+      environment.current?.dispose()
+      environment.current = bakeEnvironment(gl)
+      scene.environment = environment.current.texture
+      scene.environmentIntensity = ENVIRONMENT_INTENSITY
+      let cancelled = false
+      const ready = (): void => {
+        if (cancelled) return
+        compiled.current = true
+        onReady()
+      }
+      gl.compileAsync(scene, camera).then(ready, ready)
+      return () => {
+        cancelled = true
+      }
+    },
+    [gl, scene, camera],
+  )
   useEffect(() => {
     scene.add(rig.group, rig.hemisphere, rig.sun)
-    compiled.current = false
-    let cancelled = false
-    const ready = (): void => {
-      if (cancelled) return
-      compiled.current = true
-      invalidate()
-    }
-    gl.compileAsync(scene, camera).then(ready, ready)
+    // Fresh buffers on the GPU: the slots hold nothing until written.
+    slotState.current = EMPTY_SLOTS
+    const cancel = prepare(invalidate)
     return () => {
-      cancelled = true
+      cancel()
       scene.remove(rig.group, rig.hemisphere, rig.sun)
+      scene.environment = null
+      environment.current?.dispose()
+      environment.current = null
       rig.dispose()
     }
-  }, [gl, scene, camera, rig, invalidate])
-
-  // The environment is baked one frame after the first draw, off the LCP path.
-  const environment = useRef<{ target: WebGLRenderTarget | null; scheduled: number }>({ target: null, scheduled: 0 })
-  useEffect(() => {
-    const env = environment.current
-    return () => {
-      if (env.scheduled) cancelAnimationFrame(env.scheduled)
-      env.scheduled = 0
-      scene.environment = null
-      env.target?.dispose()
-      env.target = null
-    }
-  }, [scene])
+  }, [scene, rig, prepare, invalidate])
 
   // The camera and the framing maths share `frame`, so the anchor lands on the pixel.
   useEffect(() => {
@@ -381,21 +392,24 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       onLive(false)
       if (losses >= 2) onGiveUp()
     }
+    let cancelPrepare = (): void => {}
     const restored = (): void => {
       if (losses >= 2) return
-      scene.environment = null
-      environment.current.target?.dispose()
-      environment.current.target = null
-      onLive(true)
-      invalidate()
+      // Re-bake, re-link, then draw: the same order as the mount.
+      cancelPrepare()
+      cancelPrepare = prepare(() => {
+        onLive(true)
+        invalidate()
+      })
     }
     element.addEventListener('webglcontextlost', lost)
     element.addEventListener('webglcontextrestored', restored)
     return () => {
+      cancelPrepare()
       element.removeEventListener('webglcontextlost', lost)
       element.removeEventListener('webglcontextrestored', restored)
     }
-  }, [gl, scene, onLive, onGiveUp, invalidate])
+  }, [gl, prepare, onLive, onGiveUp, invalidate])
 
   const live = useRef(false)
   const liveFrame = useRef(0)
@@ -408,16 +422,18 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     [],
   )
   const motion = useRef({ parallaxX: 0, parallaxY: 0, repel: 0 })
-  const slotState = useRef<SlotState>(EMPTY_SLOTS)
   /** The on-load assembly clock; `-1` until the first drawn frame. */
   const assemblyStart = useRef(-1)
   const pointerLocal = useMemo(() => new Vector3(), [])
   const viewLocal = useMemo(() => new Vector3(), [])
 
+  // Priority 1: R3F skips its own render when a subscriber has priority > 0,
+  // so nothing is drawn (and nothing links synchronously) until `compileAsync`
+  // has resolved. Every frame that gets past the gates ends in `gl.render`.
   useFrame((state, delta) => {
     const scroll = store.current.scroll
-    if (scroll.opacity <= 0 && live.current) return
     if (!compiled.current) return
+    if (scroll.opacity <= 0 && live.current) return
 
     const t = state.clock.elapsedTime
     const dt = Math.min(delta, 0.1)
@@ -425,13 +441,10 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     const pointer = store.current.pointer
 
     // The on-load assembly: cloud -> monolith on a clock from the first drawn
-    // frame; a scroll during it simply takes over `to`.
+    // frame, then the scroll state settles in without a step (`resolveAssembly`).
     if (assemblyStart.current < 0) assemblyStart.current = t
     const elapsed = t - assemblyStart.current
-    const assembling = elapsed < ASSEMBLY_SECONDS && scroll.from === 'monolith'
-    const from: BundleKind = assembling ? 'cloud' : scroll.from
-    const to: BundleKind = assembling ? scroll.to : scroll.to
-    const mix = assembling ? Math.max(easeOutQuint(elapsed / ASSEMBLY_SECONDS), scroll.mix) : scroll.mix
+    const { from, to, mix } = resolveAssembly(scroll, elapsed)
 
     // Formation change: write the slot that is not holding `from`, flip uSwap.
     const plan = planSlots(slotState.current, from, to)
@@ -493,8 +506,10 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     const heroUnit = scalars('monolith').unit
     const artefactScale = heroUnit * igniteScale(elapsed) * heroWeight
     artefact.group.position.set(ARTEFACT_CENTRE[0] * heroUnit, ARTEFACT_CENTRE[1] * heroUnit, ARTEFACT_CENTRE[2] * heroUnit)
+    // Scale and light intensity, never `visible`: toggling a point light would
+    // change the program's light count and force a recompile.
     artefact.group.scale.setScalar(Math.max(0, artefactScale))
-    artefact.group.visible = artefactScale > 1e-4
+    artefact.light.intensity = ARTEFACT_LIGHT_INTENSITY * igniteScale(elapsed) * heroWeight
     artefact.tick(t)
 
     if (!live.current) {
@@ -506,27 +521,16 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       })
     }
 
-    // The environment bakes one frame after the first draw, never on the LCP path.
-    const env = environment.current
-    if (!env.target && !env.scheduled) {
-      env.scheduled = requestAnimationFrame(() => {
-        env.scheduled = 0
-        if (env.target) return
-        env.target = bakeEnvironment(gl)
-        scene.environment = env.target.texture
-        scene.environmentIntensity = ENVIRONMENT_INTENSITY
-        invalidate()
-      })
-    }
+    state.gl.render(scene, camera)
 
     // Keep stepping while the assembly, the repulsion or the parallax is still settling.
     const settling =
-      elapsed < ASSEMBLY_SECONDS ||
+      elapsed < ASSEMBLY_SECONDS + SETTLE_SECONDS ||
       Math.abs(repelTarget - m.repel) > 1e-3 ||
       Math.abs(ny * PARALLAX - m.parallaxX) > 1e-4 ||
       Math.abs(nx * PARALLAX - m.parallaxY) > 1e-4
     if (settling) invalidate()
-  })
+  }, 1)
 
   return null
 }

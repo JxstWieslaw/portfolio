@@ -23,6 +23,8 @@ export const ARTEFACT_DETAIL = 1
 /** Inner glow radius as a fraction of the shell. */
 export const GLOW_SCALE = 0.55
 export const GLOW_OPACITY = [0.35, 0.6] as const
+/** The glow's point light at full ignition. */
+export const ARTEFACT_LIGHT_INTENSITY = 2
 /** Artefact centre in monolith model space. */
 export const ARTEFACT_CENTRE = [0, 0.1, 0] as const
 /** Cubes inside the shell move out to this radius (clearance post-pass). */

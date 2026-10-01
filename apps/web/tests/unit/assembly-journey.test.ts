@@ -10,7 +10,7 @@ import {
   igniteScale,
 } from '@/lib/assembly/artefact'
 import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
-import { ASSEMBLY_SECONDS, CLOUD_RADIUS, buildCloudBundle, easeOutQuint } from '@/lib/assembly/cloud'
+import { ASSEMBLY_SECONDS, CLOUD_RADIUS, SETTLE_SECONDS, buildCloudBundle, easeOutQuint, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { EMPTY_SLOTS, planSlots } from '@/lib/assembly/slots'
 import { INSTANCE_CAPACITY, buildModelBundle, clearArtefact } from '@/lib/assembly/targets'
@@ -24,10 +24,14 @@ function icosahedron(): Float32Array {
   return new Float32Array(raw)
 }
 
+/** Pinned: a change here means the artefact's silhouette changed. */
+const ARTEFACT_CHECKSUM = -340230143
+
 describe('artefact', () => {
   it('is deterministic (checksum pinned) and every vertex fits inside radius 0.42', () => {
     const shell = displaceShell(icosahedron())
     expect(checksum(shell)).toBe(checksum(displaceShell(icosahedron())))
+    expect(checksum(shell)).toBe(ARTEFACT_CHECKSUM)
     for (let i = 0; i < shell.length; i += 3) {
       const r = Math.hypot(shell[i] ?? 0, shell[i + 1] ?? 0, shell[i + 2] ?? 0)
       expect(r).toBeLessThanOrEqual(ARTEFACT_RADIUS + 1e-9)
@@ -114,6 +118,51 @@ describe('cloud pseudo-formation', () => {
     cache.get('monolith')
     expect(cache.builds).toBe(2)
     expect(reported).toBeGreaterThan(0)
+  })
+})
+
+describe('on-load assembly resolver', () => {
+  const atTop = { from: 'monolith', to: 'stream', mix: 0, opacity: 1 } as const
+
+  it('assembles into the monolith even though the scroll store already names the next section', () => {
+    const state = resolveAssembly(atTop, 0.5)
+    expect(state.from).toBe('cloud')
+    expect(state.to).toBe('monolith')
+    expect(state.mix).toBeCloseTo(easeOutQuint(0.5 / ASSEMBLY_SECONDS), 9)
+  })
+
+  it('is continuous across the end of the assembly', () => {
+    const before = resolveAssembly(atTop, ASSEMBLY_SECONDS - 1e-6)
+    const after = resolveAssembly(atTop, ASSEMBLY_SECONDS)
+    expect(before).toMatchObject({ from: 'cloud', to: 'monolith' })
+    expect(before.mix).toBeCloseTo(1, 6)
+    // Landed on the monolith; the scroll's mix starts from zero, not from its current value.
+    expect(after).toEqual({ from: 'monolith', to: 'stream', mix: 0 })
+    expect(resolveAssembly(atTop, ASSEMBLY_SECONDS + SETTLE_SECONDS)).toEqual(atTop)
+  })
+
+  it('a scroll during the assembly produces no discontinuity', () => {
+    const scrolled = { ...atTop, mix: 0.4 }
+    expect(resolveAssembly(scrolled, 1.0).to).toBe('monolith')
+    const landed = resolveAssembly(scrolled, ASSEMBLY_SECONDS)
+    expect(landed.mix).toBe(0)
+    let previous = landed.mix
+    for (let t = ASSEMBLY_SECONDS; t <= ASSEMBLY_SECONDS + SETTLE_SECONDS + 0.1; t += 0.016) {
+      const { mix, from, to } = resolveAssembly(scrolled, t)
+      expect(from).toBe('monolith')
+      expect(to).toBe('stream')
+      expect(mix - previous).toBeGreaterThanOrEqual(0)
+      expect(mix - previous).toBeLessThan(0.1)
+      previous = mix
+    }
+    expect(previous).toBeCloseTo(0.4, 9)
+  })
+
+  it('ramps from the monolith when the visitor is already past the hero', () => {
+    const far = { from: 'stream', to: 'lattice', mix: 0.2, opacity: 1 } as const
+    const landed = resolveAssembly(far, ASSEMBLY_SECONDS)
+    expect(landed).toEqual({ from: 'monolith', to: 'stream', mix: 0 })
+    expect(resolveAssembly(far, ASSEMBLY_SECONDS + SETTLE_SECONDS / 2).to).toBe('stream')
   })
 })
 

@@ -15,8 +15,8 @@
   },
   {
     "name": "assembly core (three + R3F + CSM + scene, lazy)",
-    "path": [".next/static/chunks/*.*.js"],
-    "limit": "280 kB",
+    "path": [".next/static/chunks/*.*.js", "!.next/static/chunks/655.*.js", "!.next/static/chunks/826.*.js"],
+    "limit": "275 kB",
     "gzip": true
   }
 ]

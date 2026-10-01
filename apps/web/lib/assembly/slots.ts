@@ -25,7 +25,12 @@ export interface SlotPlan {
 
 export const EMPTY_SLOTS: SlotState = { a: null, b: null }
 
+const NO_WRITES: SlotPlan['writes'] = []
+
 export function planSlots(state: SlotState, from: BundleKind, to: BundleKind): SlotPlan {
+  // Fast path for the common frame: the slots already hold from and to.
+  if (state.a === from && state.b === to) return { state, writes: NO_WRITES, swap: 0 }
+  if (state.b === from && state.a === to) return { state, writes: NO_WRITES, swap: 1 }
   if (state.a === from) {
     const writes = state.b === to ? [] : [{ slot: 'b' as const, kind: to }]
     return { state: { a: from, b: to }, writes, swap: 0 }

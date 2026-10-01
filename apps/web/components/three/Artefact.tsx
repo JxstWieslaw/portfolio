@@ -16,6 +16,7 @@ import {
   ARTEFACT_DETAIL,
   GLOW_OPACITY,
   GLOW_SCALE,
+  ARTEFACT_LIGHT_INTENSITY,
   RINGS,
   displaceShell,
 } from '@/lib/assembly/artefact'
@@ -33,6 +34,8 @@ import {
 export interface Artefact {
   readonly group: Group
   readonly glowMaterial: MeshBasicMaterial
+  /** The glow's point light; the scene drives its intensity (never `visible`). */
+  readonly light: PointLight
   /** Advances the rings and the glow pulse. */
   tick(time: number): void
   dispose(): void
@@ -76,7 +79,7 @@ export function createArtefact(): Artefact {
   })
   group.add(new Mesh(glowGeometry, glowMaterial))
 
-  const light = new PointLight(VIOLET, 2, 2.5)
+  const light = new PointLight(VIOLET, ARTEFACT_LIGHT_INTENSITY, 2.5)
   group.add(light)
 
   // Rings on their own tilted axes.
@@ -94,6 +97,7 @@ export function createArtefact(): Artefact {
   return {
     group,
     glowMaterial,
+    light,
     tick(time) {
       for (const { ring, rate } of rings) ring.rotation.y = time * rate
       glowMaterial.opacity = GLOW_OPACITY[0] + (GLOW_OPACITY[1] - GLOW_OPACITY[0]) * (0.5 + 0.5 * Math.sin(time * 0.8))

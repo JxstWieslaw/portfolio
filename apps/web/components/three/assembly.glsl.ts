@@ -111,7 +111,7 @@ vec3 shade(float t) {
 }
 
 vec3 hashAxis(float s) {
-  vec3 a = fract(vec3(s * 127.1, s * 311.7, s * 74.7) * 43758.5453) * 2.0 - 1.0;
+  vec3 a = fract(sin(s * vec3(12.9898, 78.233, 37.719)) * 43758.5453) * 2.0 - 1.0;
   return normalize(a + vec3(0.001, 0.002, 0.003));
 }
 
@@ -123,8 +123,11 @@ vec3 rotateAxis(vec3 v, vec3 axis, float angle) {
 
 void main() {
   // Which slot is "from": uSwap = 0 -> A, 1 -> B.
-  vec3 fromPos = mix(aPosA * uUnitA, aPosB * uUnitB, uSwap);
-  vec3 toPos = mix(aPosB * uUnitB, aPosA * uUnitA, uSwap);
+  float fromUnit = mix(uUnitA, uUnitB, uSwap);
+  float toUnit = mix(uUnitB, uUnitA, uSwap);
+  vec3 fromModel = mix(aPosA, aPosB, uSwap);
+  vec3 fromPos = fromModel * fromUnit;
+  vec3 toPos = mix(aPosB, aPosA, uSwap) * toUnit;
   float fromEdge = mix(aLiveA * uEdgeA, aLiveB * uEdgeB, uSwap);
   float toEdge = mix(aLiveB * uEdgeB, aLiveA * uEdgeA, uSwap);
   float fromT = mix(aColTA, aColTB, uSwap);
@@ -135,8 +138,11 @@ void main() {
   float envelope = sin(3.14159265 * m);
 
   vec3 centre = mix(fromPos, toPos, m);
-  // Curl-noise swirl mid-morph; zero at both ends so formations land exactly.
-  centre += curl(fromPos * 0.6 + uTime * 0.2) * uNoiseAmp * envelope;
+  // Curl-noise swirl mid-morph, sampled in model space so the amplitude is
+  // uNoiseAmp model units and the frequency is viewport-independent; zero at
+  // both ends so formations land exactly. Idle frames skip the simplex taps.
+  float swirl = uNoiseAmp * envelope * mix(fromUnit, toUnit, m);
+  if (swirl > 1e-4) centre += curl(fromModel * 0.6 + uTime * 0.2) * swirl;
   // Idle bob.
   centre.y += uBob * sin(uTime * 1.1 + aSeed * 20.0);
 
