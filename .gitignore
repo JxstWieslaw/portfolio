@@ -13,3 +13,11 @@ playwright-report/
 
 # Subagent-driven-development scratch (ledgers, briefs, review packages)
 .superpowers/
+
+# Env files hold secrets; only the example templates are committed
+.env.*
+!.env.example
+.env copy
+.env.copy
+.vercel
+.env*
