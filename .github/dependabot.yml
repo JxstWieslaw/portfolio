@@ -6,6 +6,7 @@ updates:
   # GitHub Actions are pinned by SHA but deliberately not tracked here; bump them by hand when needed.
   - package-ecosystem: docker
     directory: /apps/api
+    target-branch: develop
     schedule:
       interval: monthly
     ignore:
@@ -13,11 +14,19 @@ updates:
       - dependency-name: node
         update-types: ['version-update:semver-major']
   # npm dependencies: one monthly PR grouping minor and patch bumps, so routine updates arrive through
-  # the same reviewed path as the base-image pins. Majors still open their own PR.
+  # the same reviewed path as the base-image pins. Majors are deliberate upgrades, not bumps: they are
+  # ignored here and done by hand with their migration notes (the first run opened TypeScript 7,
+  # NestJS 12 and jest-dom 7 unprompted). jsdom is held at 30.0.1 by a root override because 30.1
+  # breaks the scrim probe test; a bump PR would only fight the override.
   - package-ecosystem: npm
     directory: /
+    target-branch: develop
     schedule:
       interval: monthly
     groups:
       minor-and-patch:
         update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: jsdom
