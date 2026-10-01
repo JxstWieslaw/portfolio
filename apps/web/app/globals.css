@@ -1095,3 +1095,21 @@
     animation: none;
   }
 }
+
+/* The Assembly (spec section 4.4). Once the fixed WebGL layer has drawn its
+   first frame, `AssemblyLayer` sets `data-gl="live"` on <html> and each
+   section's 2D wash and canvas cross-fade out over --d-crossfade. The scrim
+   above them stays, so panel copy keeps its contrast either way. A lost
+   context removes the attribute and the same transition brings them back.
+   `!important` beats the inline opacity `FieldCanvas` manages for its own
+   fade-in; the WebGL layer never mounts under reduced motion, so this never
+   fights that design. */
+[data-wash] {
+  transition: opacity var(--d-crossfade) var(--ease);
+}
+
+html[data-gl='live'] [data-wash],
+html[data-gl='live'] canvas[data-f] {
+  opacity: 0 !important;
+  transition: opacity var(--d-crossfade) var(--ease) !important;
+}

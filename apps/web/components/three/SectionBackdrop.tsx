@@ -40,7 +40,7 @@ export function SectionBackdrop({ formation, scrim = formation, animate = format
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="sticky top-0 h-screen max-h-full w-full overflow-hidden">
         {/* Rung 5 — the section's radial accent wash, pure CSS, always painted. */}
-        <div className="absolute inset-0" style={{ background: washCss(formation) }} />
+        <div data-wash={formation} className="absolute inset-0" style={{ background: washCss(formation) }} />
         <FieldCanvas formation={formation} animate={animate} />
         <div className="absolute inset-0" style={{ background: SCRIMS[scrim] }} />
       </div>
