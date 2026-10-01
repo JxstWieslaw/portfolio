@@ -173,11 +173,13 @@ jobs:
 
   api-neon-branch:
     name: API — migrations against a Neon branch of production
-    # Runs once the Neon project exists, and never for forks (no secrets there).
+    # Runs once the Neon project exists, and never for forks or Dependabot (neither gets the secrets:
+    # Dependabot PRs opened on 2026-10-01 all failed here before any of their own checks ran).
     if: >-
       github.event_name == 'pull_request' &&
       vars.NEON_PROJECT_ID != '' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
