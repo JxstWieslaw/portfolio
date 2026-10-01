@@ -10,14 +10,16 @@
  */
 
 import {
+  countDomainsShipped as countDomainsShippedIn,
   domainSchema,
   experienceSchema,
   profileSchema,
   projectSchema,
+  resolveDerivedKpis,
   skillGroupSchema,
   writingSchema,
 } from '@repo/contracts'
-import type { Domain, Experience, Project, SkillGroup, Writing } from '@repo/contracts'
+import type { Domain, Experience, KpiGroup, Profile, Project, SkillGroup, Writing } from '@repo/contracts'
 import { z } from 'zod'
 
 import domainsJson from '../../../content/domains.json'
@@ -33,47 +35,12 @@ export type { SkillLevel, Visibility } from '@repo/contracts'
 /** The accent pair the contract carries. Brand tints live in `lib/accent.ts` — see OD-2. */
 export type SemanticAccent = Domain['accent']
 
-/**
- * `group` splits the single `kpis` array into the hero trio and the proof-strip tiles.
- *
- * Spec section 5.5 defines two distinct KPI sets and the design renders them as two different
- * components (KpiTile's `hero` and `proof` variants). The shared schema currently has one flat
- * array with no discriminator — requested as OD-7. Until it lands, the field is present in the
- * JSON and read here; it survives because this loader reads the raw JSON rather than parsing
- * through Zod, which would strip unknown keys.
- *
- * Deliberately NOT positional (`kpis[0..2]`): a positional split breaks silently the first time
- * anyone reorders the array, and content is edited by hand.
- */
-const kpiGroupSchema = z.enum(['hero', 'proof'])
-export type KpiGroupName = z.infer<typeof kpiGroupSchema>
+export type { Profile }
 
-/**
- * The contract's profile plus the two fields it does not yet declare (OD-7, OD-5).
- *
- * Extending the schema keeps them validated instead of merely asserted: a KPI missing its
- * `group` fails the build rather than silently vanishing from both the hero and the proof strip.
- */
-const localProfileSchema = profileSchema.extend({
-  emailPlaceholder: z.boolean().optional(),
-  kpis: z.array(profileSchema.shape.kpis.element.extend({ group: kpiGroupSchema })).min(1),
-})
+/** The hero trio or the proof strip — the contract's `KpiGroup`, under this module's old name. */
+export type KpiGroupName = KpiGroup
 
-export type Kpi = z.infer<typeof localProfileSchema>['kpis'][number]
-
-/**
- * The contract's `Profile`, plus the two fields it does not yet declare.
- *
- * `group` is requested as OD-7 — spec section 5.5 defines two distinct KPI sets and the design
- * renders them through two different components, so the flat array needs a discriminator.
- * `emailPlaceholder` marks an address as provisional. Currently unset — the contact address
- * is confirmed — but kept as the mechanism for any future unverified address.
- *
- * They are declared by extending the contract's own schema rather than bolted on afterwards,
- * so they are validated too. When the contract absorbs them, delete the extension — nothing
- * else changes.
- */
-export type Profile = z.infer<typeof localProfileSchema>
+export type Kpi = Profile['kpis'][number]
 
 /**
  * Content is PARSED, not cast.
@@ -87,7 +54,7 @@ export type Profile = z.infer<typeof localProfileSchema>
  * It also means the defaults in the schema (`placeholder: false`, `outcome: []`) are applied
  * rather than assumed, which is why the raw JSON can omit them.
  */
-const profile = localProfileSchema.parse(profileJson)
+const profile = profileSchema.parse(profileJson)
 const domains = z.array(domainSchema).parse(domainsJson)
 const projects = z.array(projectSchema).parse(projectsJson)
 const experience = z.array(experienceSchema).parse(experienceJson)
@@ -147,15 +114,11 @@ export function getBentoProjects(): Project[] {
  * written down, so it can never drift from the content.
  */
 export function countDomainsShipped(): number {
-  return new Set(projects.filter((p) => !p.placeholder).map((p) => p.domain)).size
-}
-
-function resolveKpi(kpi: Kpi): Kpi {
-  return kpi.derived === 'domainsShipped' ? { ...kpi, value: String(countDomainsShipped()) } : kpi
+  return countDomainsShippedIn(projects)
 }
 
 export function getKpis(group: KpiGroupName): Kpi[] {
-  return profile.kpis.filter((k) => k.group === group).map(resolveKpi)
+  return resolveDerivedKpis(profile, projects).kpis.filter((k) => k.group === group)
 }
 
 /** Convenience: the domain record for a project, or undefined if the id does not resolve. */

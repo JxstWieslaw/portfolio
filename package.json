@@ -2,13 +2,17 @@
   "name": "portfolio",
   "private": true,
   "packageManager": "pnpm@9.15.0",
-  "engines": { "node": ">=22.11.0", "pnpm": ">=9" },
+  "engines": {
+    "node": ">=22.11.0",
+    "pnpm": ">=9"
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
     "lint:content": "turbo run lint:content"
   },
@@ -16,5 +20,10 @@
     "turbo": "^2.3.0",
     "typescript": "^5.7.2",
     "prettier": "^3.4.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "multer": "^2.4.0"
+    }
   }
 }

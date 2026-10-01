@@ -1,0 +1,122 @@
+name: Deploy API
+
+# Deploys only a commit that CI already passed on main. No service-account keys exist anywhere:
+# GitHub's OIDC token is exchanged for short-lived GCP credentials (Workload Identity Federation).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build, migrate, seed, deploy
+    if: >-
+      vars.GCP_PROJECT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SERVICE: portfolio-api
+      REGION: ${{ vars.GCP_REGION }}
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/portfolio/api:${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Build and push the image
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -f apps/api/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Read the migration database URL from Secret Manager
+        run: |
+          url_direct=$(gcloud secrets versions access latest --secret=api-database-url-direct --project="${{ vars.GCP_PROJECT_ID }}")
+          echo "::add-mask::$url_direct"
+          echo "DATABASE_URL_DIRECT=$url_direct" >> "$GITHUB_ENV"
+
+      # Expand/contract (spec §6) is what makes migrating before the new revision serves safe:
+      # the old revision keeps working against the expanded schema.
+      - name: Migrate
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_DIRECT }}
+        run: |
+          pnpm --filter @repo/api db:migrate --dry-run
+          pnpm --filter @repo/api db:migrate --apply
+      # Seeds BEFORE promotion on purpose: the API parses every row through the contract on the way out,
+      # so seeding after promotion would make the new revision fail on old content (and fail its own
+      # smoke test, which could then never pass). Content contract changes therefore follow the same
+      # expand/contract rule as migrations; see "Seed ordering" in docs/m1-status.md.
+      - name: Seed content from git
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_DIRECT }}
+        run: pnpm --filter @repo/api db:seed --apply --git-sha "${{ github.event.workflow_run.head_sha || github.sha }}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          # Deploy as a candidate revision with no traffic; only promote if smoke passes.
+          # Probes (spec �12). Startup hits /v1/health, which needs no database: a revision that cannot boot
+          # never becomes ready, so a bad image fails the deploy instead of reaching traffic (30 s budget).
+          # Liveness hits /v1/ready, which checks Postgres: three failures in a row (~90 s) restart the
+          # instance. The lenient period and the 5 s timeout ride out a Neon cold start or a brief blip
+          # without flapping; timeoutSeconds must not exceed periodSeconds.
+          # DB_POOL_MAX=3 x --max-instances=10 = at most 30 Postgres connections from the API. Neon's free
+          # tier starts at 0.25 CU (about 112 max_connections, some reserved), and the migrate and seed
+          # steps, PR-branch CI and console sessions use direct connections on top. 30 leaves roughly 3x
+          # headroom; the runtime URL is the pooled (PgBouncer) one, so real server connections are lower
+          # still. Each request holds a connection for milliseconds, so 3 per instance serves the 80
+          # concurrent requests. Raise it only together with a paid compute size; the app default is 5.
+          # ^@^ switches gcloud's list delimiter to @, because CORS_ORIGINS itself contains commas.
+          gcloud run deploy "$SERVICE" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="$REGION" \
+            --image="$IMAGE" \
+            --service-account="${{ vars.GCP_RUNTIME_SA }}" \
+            --allow-unauthenticated \
+            --no-traffic --tag=candidate \
+            --min-instances=0 --max-instances=10 \
+            --cpu=1 --memory=512Mi --concurrency=80 --timeout=30 \
+            --startup-probe=httpGet.path=/v1/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=1,failureThreshold=15 \
+            --liveness-probe=httpGet.path=/v1/ready,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3 \
+            --set-secrets=DATABASE_URL=api-database-url:latest \
+            --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${{ vars.API_PUBLIC_BASE_URL }}@CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}@CORS_PREVIEW_ORIGIN_PATTERN=${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}@DB_POOL_MAX=3"
+
+      - name: Smoke test the new revision
+        run: |
+          url=$(gcloud run services describe "$SERVICE" --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --format=json | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf-8')); const traffic = data.status.traffic.find(t => t.tag === 'candidate'); console.log(traffic.url)")
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 "$url/v1/ready"
+          curl -fsS "$url/v1/profile" > /dev/null
+          curl -fsS "$url/v1/openapi.json" > /dev/null
+
+      # Also drops the candidate tag, so the pre-promotion URL stops resolving publicly.
+      - name: Send traffic to the new revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="$REGION" \
+            --to-latest \
+            --remove-tags=candidate

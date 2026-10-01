@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
-const slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'must be kebab-case')
+export const slugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'must be kebab-case')
+const slug = slugSchema
 const yearMonth = z.string().regex(/^\d{4}-\d{2}$/, 'must be YYYY-MM')
 
 export const visibilitySchema = z.enum(['public', 'private', 'client'])
@@ -75,12 +76,21 @@ export const writingSchema = z.object({
 })
 export type Writing = z.infer<typeof writingSchema>
 
+/**
+ * Which KPI set a tile belongs to. Spec §5.5 defines two — the hero trio and the proof strip —
+ * rendered by different components, so the flat array needs a discriminator (was OD-7).
+ */
+export const kpiGroupSchema = z.enum(['hero', 'proof'])
+export type KpiGroup = z.infer<typeof kpiGroupSchema>
+
 export const profileSchema = z.object({
   name: z.string().min(1),
   headline: z.string().min(1),
   sub: z.string().min(1),
   location: z.string().min(1),
   email: z.string().email(),
+  /** Marks the address as provisional; it then renders with the placeholder treatment. */
+  emailPlaceholder: z.boolean().optional(),
   availability: z.string().min(1),
   roles: z.array(z.object({
     org: z.string().min(1),
@@ -97,6 +107,30 @@ export const profileSchema = z.object({
     value: z.string().min(1),
     derived: z.enum(['domainsShipped']).optional(),
     placeholder: z.boolean().default(false),
+    group: kpiGroupSchema,
   })).min(1),
 })
 export type Profile = z.infer<typeof profileSchema>
+
+/**
+ * Distinct domains across NON-placeholder projects. Placeholder work is excluded so the figure
+ * never claims a domain that is not yet real (spec §5.5: derived, never written down).
+ */
+export function countDomainsShipped(
+  projects: readonly Pick<Project, 'domain' | 'placeholder'>[],
+): number {
+  return new Set(projects.filter((p) => !p.placeholder).map((p) => p.domain)).size
+}
+
+/** Returns a copy of `profile` with every derived KPI's value computed from `projects`. */
+export function resolveDerivedKpis(
+  profile: Profile,
+  projects: readonly Pick<Project, 'domain' | 'placeholder'>[],
+): Profile {
+  return {
+    ...profile,
+    kpis: profile.kpis.map((kpi) =>
+      kpi.derived === 'domainsShipped' ? { ...kpi, value: String(countDomainsShipped(projects)) } : kpi,
+    ),
+  }
+}
