@@ -34,8 +34,26 @@ vi.mock('@/components/three/AssemblyCanvas', () => {
 
 import { AssemblyLayer, resetAssemblyForTests } from '@/components/three/AssemblyLayer'
 
-/** Past the `scheduleIdle` macrotask fallback and the rejected import. */
+/** Past the idle macrotask fallback and the rejected import. */
 const AFTER_IDLE_MS = 60
+
+/**
+ * The layer mounts after the largest contentful paint (`afterLcp`); jsdom
+ * paints nothing, so this observer reports one buffered entry at once.
+ */
+function stubLcp(): void {
+  vi.stubGlobal(
+    'PerformanceObserver',
+    class {
+      static supportedEntryTypes = ['largest-contentful-paint']
+      constructor(private readonly callback: () => void) {}
+      observe(): void {
+        this.callback()
+      }
+      disconnect(): void {}
+    },
+  )
+}
 
 let webgl2 = false
 
@@ -90,6 +108,7 @@ beforeEach(() => {
   stubContexts()
   Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 8 })
   stubMatchMedia([])
+  stubLcp()
   vi.stubGlobal(
     'IntersectionObserver',
     class {
