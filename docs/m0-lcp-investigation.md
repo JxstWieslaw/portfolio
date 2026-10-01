@@ -315,3 +315,84 @@ repo or the commit.
    more trustworthy in CI.
 4. Size-limit headroom is now ~0.99 kB (119.01 kB / 120 kB budget) — any
    further FieldCanvas-adjacent work should watch this closely.
+
+
+---
+
+## Addendum, 2026-10-01 — Roadmap Phase 1: the Craft client-boundary split (measured, no LCP change)
+
+Branch `perf/lcp-craft-client-boundary` from `develop` at `de9c95e`. Same method as above:
+`npm run build -w @repo/web`, then `npm run lighthouse -w @repo/web` (lhci 0.15, 3 runs, mobile
+emulation, `simulate` throttling, `npm start` on :3000), on the same developer laptop. The
+2 000 ms LCP / 0.95 performance assertions remained at `warn` throughout.
+
+### What was tried
+
+`components/sections/Craft.tsx` was the one section still marked `'use client'` as a whole
+(`docs/m0-status.md` §3). It is now a server shell on the `Contact.tsx` → `ContactForm.tsx`
+pattern: the section, backdrop, mobile scrim, `Reveal` panel, `GlassCard`, eyebrow, `h2`, body
+and the `LabLink` affordance render on the server; a new `CraftControls.tsx` (`'use client'`)
+holds only what owns state or runs an effect — the physics toggle and Reset, the HUD disclosure,
+`usePerfSample` and `PerfHud` — and receives the static lab link as a rendered slot. The
+measured inline-style constants moved to `craft-styles.ts` (no directive) so both halves share
+them. Every string, attribute and the a11y contract are unchanged;
+`tests/unit/sections-craft-stack.test.tsx` passes without modification (34 tests).
+
+### Hydration-relevant numbers
+
+| Measure | Before | After |
+|---|---|---|
+| Route `/` chunk (`next build`) | 12 kB, First Load 115 kB | 10.7 kB, First Load 113 kB |
+| `size-limit` initial JS (non-3D), gzip | 118.77 kB / 120 kB | 117.35 kB / 120 kB |
+| `size-limit` assembly core (lazy), gzip | 259.38 kB / 275 kB | 259.38 kB / 275 kB |
+| `'use client'` modules reachable from `app/page.tsx` | 7 (Craft, ContactForm, Reveal, ChipScrollerList, FieldCanvas, AssemblyLayer, AssemblyCanvas lazy) | 7 (CraftControls replaces Craft) |
+| HTML of `/` (gzip) | 27.5 kB, of which inlined RSC payload 15.2 kB (98 kB raw); ~708 elements, 157 inline `style` attributes | not re-measured (markup identical) |
+
+### Lighthouse, three runs each
+
+| Run | LCP before | LCP after | Perf before | Perf after | TBT before | TBT after |
+|---|---|---|---|---|---|---|
+| 1 | 4 323 ms | 4 480 ms | 0.54 | 0.53 | 3 613 ms | 3 663 ms |
+| 2 | 2 636 ms | 4 561 ms | 0.66 | 0.53 | 3 733 ms | 3 578 ms |
+| 3 | 2 634 ms | 2 620 ms | 0.66 | 0.66 | 3 434 ms | 3 115 ms |
+
+The LCP element is now `<p class="hero-sub">` (the hero lede), not the `h1`, in every run of
+both sets; TTFB is 454–461 ms in all six runs and the whole gap is Lantern's **Render Delay**:
+2 165–2 181 ms in the "good" runs and 3 862–4 105 ms in the "bad" ones. The split did not move
+LCP: 2 620 ms vs 2 634–2 636 ms is inside run-to-run noise, and the 4.5 s runs reproduce the
+baseline's own 4.3 s run. The result is bimodal, not slow-and-noisy — a CPU task either lands
+before Lantern's observed-LCP cutoff or it does not.
+
+### Where the time is (Lighthouse `bootup-time`, simulated ms, per run)
+
+| Script | Before (runs 1/2/3) | After (runs 1/2/3) |
+|---|---|---|
+| `chunks/18-*.js` (46.4 kB: React DOM + Next runtime, i.e. hydration itself) | 3 519 / 3 211 / 3 172 | 3 557 / 3 312 / 2 770 |
+| `chunks/app/page-*.js` (route chunk) | 657 / 1 021 / 892 | 632 / 684 / 749 |
+| `chunks/c50242f1.*.js` (lazy three + R3F Assembly chunk) | 715 / 1 137 / 969 | 817 / 981 / 747 |
+
+Main-thread "Script Evaluation" totals 4.9–5.9 s in every run. The route chunk is 11–17 % of
+scripting; the React/Next runtime chunk is 55–65 %. A server/client boundary removes the
+component's *code* and *render* from the client, but React still walks every DOM node under
+`hydrateRoot` — the Craft markup is in the RSC payload either way — so moving one section's
+~40 elements out of a client component cannot shift a number dominated by chunk 18. That is
+what the measurement says, and it is consistent with the earlier finding that disabling all
+canvas painting changed nothing.
+
+### What this rules in for the next attempt (not done here — out of this task's bounds)
+
+1. **The Assembly chunk evaluates before TTI in Lighthouse's run** (`c50242f1.*.js`,
+   0.7–1.1 s simulated) because `AssemblyLayer` mounts on a 300 ms idle timeout
+   (`lib/schedule-idle.ts`). The roadmap's Phase 1 item "gate the Assembly mount on LCP rather
+   than the 300 ms idle timeout" is the one remaining lead with a plausible 0.7–1.1 s of
+   pre-LCP CPU attached; it is the likeliest cause of the bimodal 2.6 s / 4.5 s outcome
+   (whether that evaluation starts before or after Lantern's observed-LCP cutoff). It belongs to
+   the Assembly owner.
+2. **Hydration surface, not boundaries.** ~708 elements and 157 inline `style` attributes are
+   hydrated on `/`. The next structural lever is fewer hydrated nodes above the fold (e.g.
+   defer the below-fold sections' hydration or markup), not more `'use client'` surgery.
+3. **Measure on the CI runner.** The performance score swung 0.53–0.66 here on identical
+   builds; the laptop cannot resolve a 100 ms change. The roadmap's exit criterion (12 runs on
+   the runner) is the right instrument.
+
+Assertions in `apps/web/lighthouserc.cjs` therefore stay at `warn`, thresholds unchanged.
