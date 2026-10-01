@@ -7,41 +7,59 @@ import {
   BoxGeometry,
   Color,
   DirectionalLight,
-  DynamicDrawUsage,
+  DoubleSide,
   Group,
   HemisphereLight,
-  InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
-  MeshStandardMaterial,
+  Mesh,
+  MeshBasicMaterial,
+  PMREMGenerator,
+  PlaneGeometry,
+  Scene as ThreeScene,
   Vector3,
   type PerspectiveCamera,
+  type WebGLRenderTarget,
+  type WebGLRenderer,
 } from 'three'
-import { createBundleCache, formationBuilder } from '@/lib/assembly/bundle-cache'
+import { ARTEFACT_CENTRE, igniteScale } from '@/lib/assembly/artefact'
+import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
+import { ASSEMBLY_SECONDS, easeOutQuint } from '@/lib/assembly/cloud'
+import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { pointerRay } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
+import { EMPTY_SLOTS, planSlots, type SlotState } from '@/lib/assembly/slots'
 import {
   CAMERA_DISTANCE,
   FOV_LANDSCAPE,
   frameFor,
   frameScalars,
   instanceCount,
+  seedsFor,
   type BundleKind,
   type FrameScalars,
 } from '@/lib/assembly/targets'
 import { FORMATIONS, washCss, type FormationId } from '@/lib/formations/config'
+import { createArtefact, type Artefact } from './Artefact'
+import { attachSlots, createAssemblyMaterial, createAssemblyUniforms, type AssemblySlots, type AssemblyUniforms } from './AssemblyMaterial'
 
 /**
- * The only module that imports three. Loaded through `next/dynamic` from
- * `AssemblyLayer`; never imported by a unit test.
+ * The only module that imports three (through `AssemblyMaterial` and
+ * `Artefact`). Loaded through `next/dynamic` from `AssemblyLayer`; never
+ * imported by a unit test.
  *
- * One `InstancedMesh` of cubes morphs between the seven formations on the CPU
- * — each frame lerps position and scale between the bundle the visitor is
- * leaving and the one they are heading to, writes `instanceMatrix` once and
- * flags it. Bundles are frame-invariant and built on demand (`bundle-cache`);
- * the viewport only contributes three scalars per formation per frame, so a
- * resize rebuilds nothing. Colours are written only when `from`, `to` or
- * `mix` change.
+ * One `InstancedMesh` of cubes morphs between the seven formations on the
+ * GPU — journey spec § 4, § 5.1. Two attribute slots hold the formation the
+ * visitor is leaving and the one they are heading to; the vertex program
+ * staggers each cube by its seed, swirls it through curl noise mid-flight,
+ * tumbles it half a turn and lands it exactly on its measured point. The CPU
+ * writes a handful of uniforms per frame and one slot per formation change;
+ * the frame loop writes no per-instance data.
+ *
+ * On load the monolith assembles from a seeded cloud around the hero artefact
+ * (§ 3.1). Lighting: hemisphere + sun for the flat top-face read, plus a
+ * five-plane lightformer environment baked through PMREM one frame after the
+ * first draw (§ 5.3).
  *
  * Frame loop is `demand`: scroll, pointer and resize invalidate; a 30 fps
  * ticker invalidates for the idle breathing while the tab is visible and the
@@ -65,11 +83,13 @@ const BREATH_AMPLITUDE = 0.012
 
 /** Per-instance vertical bob, as a fraction of viewport height. */
 const BOB = 0.004
-const BOB_RATE = 1.1
 
 /** Pointer repulsion radius as a fraction of viewport height, and its push. */
 const REPEL_RADIUS = 0.12
 const REPEL_STRENGTH = 0.6
+/** The push is stateless on the GPU; its softness is this damping on the CPU (§ 5.1). */
+const REPEL_RISE = 8
+const REPEL_FALL = 4
 
 /** Group parallax toward the pointer, radians (3 degrees). */
 const PARALLAX = (3 * Math.PI) / 180
@@ -151,32 +171,39 @@ function useAssemblyScroll(apply: (state: ScrollState) => void): void {
 interface Rig {
   readonly group: Group
   readonly mesh: InstancedMesh
-  readonly colour: InstancedBufferAttribute
+  readonly slots: AssemblySlots
+  readonly uniforms: AssemblyUniforms
+  readonly artefact: Artefact
   readonly hemisphere: HemisphereLight
   readonly sun: DirectionalLight
-  /** Per-instance pointer displacement, springing back to zero. */
-  readonly offsets: Float32Array
   readonly inverse: Matrix4
   dispose(): void
 }
 
 function createRig(capacity: number): Rig {
   const geometry = new BoxGeometry(1, 1, 1)
-  const material = new MeshStandardMaterial({ flatShading: true, roughness: 0.45, metalness: 0.25 })
+  const slots = attachSlots(geometry, capacity, seedsFor(capacity))
+  const uniforms = createAssemblyUniforms()
+  const material = createAssemblyMaterial(uniforms)
   const mesh = new InstancedMesh(geometry, material, capacity)
   mesh.frustumCulled = false
-  mesh.instanceMatrix.setUsage(DynamicDrawUsage)
+  // Position, scale and rotation live in the vertex program; the instance
+  // matrices are identity, written once here and never again.
   const matrices = mesh.instanceMatrix.array as Float32Array
   for (let i = 0; i < capacity; i += 1) {
     matrices.fill(0, i * 16, i * 16 + 16)
+    matrices[i * 16] = 1
+    matrices[i * 16 + 5] = 1
+    matrices[i * 16 + 10] = 1
     matrices[i * 16 + 15] = 1
   }
-  const colour = new InstancedBufferAttribute(new Float32Array(capacity * 3), 3)
-  colour.setUsage(DynamicDrawUsage)
-  mesh.instanceColor = colour
+  mesh.instanceMatrix.needsUpdate = true
+
+  const artefact = createArtefact()
+  artefact.group.scale.setScalar(0)
 
   const group = new Group()
-  group.add(mesh)
+  group.add(mesh, artefact.group)
 
   // Sky a dim violet, ground near-black; one key light from above-left so the
   // top faces read lit, like the 2D painter's highlight band.
@@ -187,17 +214,41 @@ function createRig(capacity: number): Rig {
   return {
     group,
     mesh,
-    colour,
+    slots,
+    uniforms,
+    artefact,
     hemisphere,
     sun,
-    offsets: new Float32Array(capacity * 3),
     inverse: new Matrix4(),
     dispose() {
       geometry.dispose()
       material.dispose()
       mesh.dispose()
+      artefact.dispose()
     },
   }
+}
+
+/** The lightformer scene, baked to a PMREM once (§ 5.3). */
+function bakeEnvironment(gl: WebGLRenderer): WebGLRenderTarget {
+  const scene = new ThreeScene()
+  const geometry = new PlaneGeometry(1, 1)
+  const materials: MeshBasicMaterial[] = []
+  for (const former of LIGHTFORMERS) {
+    const material = new MeshBasicMaterial({ color: new Color(former.color).multiplyScalar(former.intensity), side: DoubleSide })
+    materials.push(material)
+    const plane = new Mesh(geometry, material)
+    plane.position.set(former.position[0], former.position[1], former.position[2])
+    plane.scale.set(former.size[0], former.size[1], 1)
+    plane.lookAt(0, 0, 0)
+    scene.add(plane)
+  }
+  const generator = new PMREMGenerator(gl)
+  const target = generator.fromScene(scene, 0.04)
+  generator.dispose()
+  geometry.dispose()
+  for (const material of materials) material.dispose()
+  return target
 }
 
 interface SceneProps {
@@ -217,10 +268,16 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
 
   const capacity = useMemo(() => instanceCount(keep), [keep])
   const frame = useMemo(() => frameFor(size.width, size.height), [size.width, size.height])
-  // Frame-invariant bundles, built on first use. Mount primes the hero only;
-  // the next formation is built the first time the scroll store names it.
+  // Frame-invariant bundles, built on first use. Mount primes the cloud and
+  // the hero only; the next formation is built the first time the scroll
+  // store names it.
   const bundles = useMemo(() => {
-    const cache = createBundleCache(formationBuilder(capacity, keep))
+    const cache = createBundleCache(
+      assemblyBuilder(capacity, keep, (moved) => {
+        if (process.env.NODE_ENV !== 'production') console.info(`[assembly] artefact clearance moved ${moved} cubes`)
+      }),
+    )
+    cache.get('cloud')
     cache.get('monolith')
     return cache
   }, [capacity, keep])
@@ -258,6 +315,19 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       rig.dispose()
     }
   }, [gl, scene, camera, rig, invalidate])
+
+  // The environment is baked one frame after the first draw, off the LCP path.
+  const environment = useRef<{ target: WebGLRenderTarget | null; scheduled: number }>({ target: null, scheduled: 0 })
+  useEffect(() => {
+    const env = environment.current
+    return () => {
+      if (env.scheduled) cancelAnimationFrame(env.scheduled)
+      env.scheduled = 0
+      scene.environment = null
+      env.target?.dispose()
+      env.target = null
+    }
+  }, [scene])
 
   // The camera and the framing maths share `frame`, so the anchor lands on the pixel.
   useEffect(() => {
@@ -301,6 +371,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   }, [invalidate, store])
 
   // Context loss: fade the 2D layer back in; give up for the session on the second loss.
+  // A restore re-bakes the environment; the attribute slots re-upload themselves.
   useEffect(() => {
     const element = gl.domElement
     let losses = 0
@@ -312,6 +383,9 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     }
     const restored = (): void => {
       if (losses >= 2) return
+      scene.environment = null
+      environment.current.target?.dispose()
+      environment.current.target = null
       onLive(true)
       invalidate()
     }
@@ -321,7 +395,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       element.removeEventListener('webglcontextlost', lost)
       element.removeEventListener('webglcontextrestored', restored)
     }
-  }, [gl, onLive, onGiveUp, invalidate])
+  }, [gl, scene, onLive, onGiveUp, invalidate])
 
   const live = useRef(false)
   const liveFrame = useRef(0)
@@ -333,25 +407,45 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     },
     [],
   )
-  const motion = useRef({ parallaxX: 0, parallaxY: 0 })
+  const motion = useRef({ parallaxX: 0, parallaxY: 0, repel: 0 })
+  const slotState = useRef<SlotState>(EMPTY_SLOTS)
+  /** The on-load assembly clock; `-1` until the first drawn frame. */
+  const assemblyStart = useRef(-1)
   const pointerLocal = useMemo(() => new Vector3(), [])
   const viewLocal = useMemo(() => new Vector3(), [])
-  /** What the colour buffer currently holds; rewritten only when this changes. */
-  const painted = useRef<{ from: BundleKind | null; to: BundleKind | null; mix: number }>({ from: null, to: null, mix: -1 })
 
   useFrame((state, delta) => {
-    const { from, to, mix, opacity } = store.current.scroll
-    if (opacity <= 0 && live.current) return
+    const scroll = store.current.scroll
+    if (scroll.opacity <= 0 && live.current) return
     if (!compiled.current) return
 
-    const a = bundles.get(from)
-    const b = bundles.get(to)
-    const sa = scalars(from)
-    const sb = scalars(to)
     const t = state.clock.elapsedTime
     const dt = Math.min(delta, 0.1)
-    const { group, mesh, colour, offsets, inverse } = rig
+    const { group, mesh, uniforms, slots, artefact, inverse } = rig
     const pointer = store.current.pointer
+
+    // The on-load assembly: cloud -> monolith on a clock from the first drawn
+    // frame; a scroll during it simply takes over `to`.
+    if (assemblyStart.current < 0) assemblyStart.current = t
+    const elapsed = t - assemblyStart.current
+    const assembling = elapsed < ASSEMBLY_SECONDS && scroll.from === 'monolith'
+    const from: BundleKind = assembling ? 'cloud' : scroll.from
+    const to: BundleKind = assembling ? scroll.to : scroll.to
+    const mix = assembling ? Math.max(easeOutQuint(elapsed / ASSEMBLY_SECONDS), scroll.mix) : scroll.mix
+
+    // Formation change: write the slot that is not holding `from`, flip uSwap.
+    const plan = planSlots(slotState.current, from, to)
+    for (const write of plan.writes) slots.write(write.slot, bundles.get(write.kind))
+    slotState.current = plan.state
+    uniforms.uSwap.value = plan.swap
+    const a = bundles.get(plan.state.a ?? from)
+    const b = bundles.get(plan.state.b ?? to)
+    const sa = scalars(plan.state.a ?? from)
+    const sb = scalars(plan.state.b ?? to)
+    const sFrom = scalars(from)
+    const sTo = scalars(to)
+    const bFrom = bundles.get(from)
+    const bTo = bundles.get(to)
 
     // Group: anchor, formation rotation, idle wobble, pointer parallax, breath, ultrawide spread.
     const wobble = Math.sin(t * WOBBLE_RATE) * WOBBLE_AMPLITUDE
@@ -362,96 +456,46 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     const ease = 1 - Math.exp(-dt * 6)
     m.parallaxX += (ny * PARALLAX - m.parallaxX) * ease
     m.parallaxY += (nx * PARALLAX - m.parallaxY) * ease
-    group.position.set(lerp(sa.anchor[0], sb.anchor[0], mix), lerp(sa.anchor[1], sb.anchor[1], mix), 0)
-    group.rotation.set(lerp(a.tilt, b.tilt, mix) + m.parallaxX, lerp(a.rot, b.rot, mix) + wobble + m.parallaxY, 0)
-    group.scale.set(breath * lerp(sa.spreadX, sb.spreadX, mix), breath, breath)
+    group.position.set(lerp(sFrom.anchor[0], sTo.anchor[0], mix), lerp(sFrom.anchor[1], sTo.anchor[1], mix), 0)
+    group.rotation.set(lerp(bFrom.tilt, bTo.tilt, mix) + m.parallaxX, lerp(bFrom.rot, bTo.rot, mix) + wobble + m.parallaxY, 0)
+    group.scale.set(breath * lerp(sFrom.spreadX, sTo.spreadX, mix), breath, breath)
     group.updateMatrixWorld()
 
     // The pointer as a perspective ray (camera through the pixel) in the group's local space.
     const radius = size.height * REPEL_RADIUS * frame.worldPerPx
-    const repel = pointer.active && radius > 0
-    if (repel) {
+    const repelTarget = pointer.active && radius > 0 ? REPEL_STRENGTH : 0
+    const repelEase = 1 - Math.exp(-dt * (repelTarget > m.repel ? REPEL_RISE : REPEL_FALL))
+    m.repel += (repelTarget - m.repel) * repelEase
+    if (m.repel > 1e-4) {
       const ray = pointerRay(frame, pointer.x, pointer.y)
       inverse.copy(group.matrixWorld).invert()
       pointerLocal.set(ray.origin[0], ray.origin[1], ray.origin[2]).applyMatrix4(inverse)
       viewLocal.set(ray.direction[0], ray.direction[1], ray.direction[2]).transformDirection(inverse)
+      uniforms.uPointerOrigin.value.copy(pointerLocal)
+      uniforms.uPointerDir.value.copy(viewLocal)
     }
+    uniforms.uRepel.value = m.repel > 1e-4 ? m.repel : 0
+    uniforms.uRepelRadius.value = radius
 
-    const bob = size.height * BOB * frame.worldPerPx
-    const spring = 1 - Math.exp(-dt * 8)
-    const matrices = mesh.instanceMatrix.array as Float32Array
-    const colours = colour.array as Float32Array
-    const unitA = sa.unit
-    const unitB = sb.unit
-    const edgeA = sa.edge
-    const edgeB = sb.edge
-    let energy = 0
-
-    for (let i = 0; i < capacity; i += 1) {
-      const i3 = i * 3
-      const i16 = i * 16
-
-      let x = lerp((a.position[i3] ?? 0) * unitA, (b.position[i3] ?? 0) * unitB, mix)
-      let y =
-        lerp((a.position[i3 + 1] ?? 0) * unitA, (b.position[i3 + 1] ?? 0) * unitB, mix) +
-        bob * Math.sin(t * BOB_RATE + i * 0.37)
-      let z = lerp((a.position[i3 + 2] ?? 0) * unitA, (b.position[i3 + 2] ?? 0) * unitB, mix)
-
-      let tx = 0
-      let ty = 0
-      let tz = 0
-      if (repel) {
-        const wx = x - pointerLocal.x
-        const wy = y - pointerLocal.y
-        const wz = z - pointerLocal.z
-        const along = wx * viewLocal.x + wy * viewLocal.y + wz * viewLocal.z
-        const qx = wx - along * viewLocal.x
-        const qy = wy - along * viewLocal.y
-        const qz = wz - along * viewLocal.z
-        const dist = Math.sqrt(qx * qx + qy * qy + qz * qz)
-        if (dist < radius && dist > 1e-6) {
-          const falloff = 1 - dist / radius
-          const push = (falloff * falloff * radius * REPEL_STRENGTH) / dist
-          tx = qx * push
-          ty = qy * push
-          tz = qz * push
-        }
-      }
-      const ox = offsets[i3] ?? 0
-      const oy = offsets[i3 + 1] ?? 0
-      const oz = offsets[i3 + 2] ?? 0
-      const dx = tx - ox
-      const dy = ty - oy
-      const dz = tz - oz
-      energy = Math.max(energy, Math.abs(dx), Math.abs(dy), Math.abs(dz))
-      offsets[i3] = ox + dx * spring
-      offsets[i3 + 1] = oy + dy * spring
-      offsets[i3 + 2] = oz + dz * spring
-      x += offsets[i3] ?? 0
-      y += offsets[i3 + 1] ?? 0
-      z += offsets[i3 + 2] ?? 0
-
-      const s = lerp((a.live[i] ?? 0) * edgeA, (b.live[i] ?? 0) * edgeB, mix)
-      matrices[i16] = s
-      matrices[i16 + 5] = s
-      matrices[i16 + 10] = s
-      matrices[i16 + 12] = x
-      matrices[i16 + 13] = y
-      matrices[i16 + 14] = z
-    }
-
-    // Colour depends on from/to/mix only: skip the write (and the upload) while they hold.
-    const p = painted.current
-    if (p.from !== from || p.to !== to || p.mix !== mix) {
-      for (let i = 0; i < capacity * 3; i += 1) colours[i] = lerp(a.colour[i] ?? 0, b.colour[i] ?? 0, mix)
-      colour.needsUpdate = true
-      p.from = from
-      p.to = to
-      p.mix = mix
-    }
-
+    // Per-frame scalars: the only viewport-dependent numbers the GPU sees.
+    uniforms.uMix.value = mix
+    uniforms.uTime.value = t
+    uniforms.uBob.value = size.height * BOB * frame.worldPerPx
+    uniforms.uUnitA.value = sa.unit
+    uniforms.uUnitB.value = sb.unit
+    uniforms.uEdgeA.value = sa.edge
+    uniforms.uEdgeB.value = sb.edge
     mesh.count = Math.max(a.count, b.count)
-    mesh.instanceMatrix.needsUpdate = true
+
+    // The artefact: ignites 0.6 s into the assembly; belongs to the hero, so it
+    // fades with the monolith's share of the morph.
+    const heroWeight = from === 'cloud' || from === 'monolith' ? 1 - (to === 'monolith' ? 0 : mix) : to === 'monolith' ? mix : 0
+    const heroUnit = scalars('monolith').unit
+    const artefactScale = heroUnit * igniteScale(elapsed) * heroWeight
+    artefact.group.position.set(ARTEFACT_CENTRE[0] * heroUnit, ARTEFACT_CENTRE[1] * heroUnit, ARTEFACT_CENTRE[2] * heroUnit)
+    artefact.group.scale.setScalar(Math.max(0, artefactScale))
+    artefact.group.visible = artefactScale > 1e-4
+    artefact.tick(t)
 
     if (!live.current) {
       live.current = true
@@ -462,8 +506,25 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       })
     }
 
-    // Keep stepping while a spring or the parallax is still settling.
-    const settling = energy > radius * 1e-3 || Math.abs(ny * PARALLAX - m.parallaxX) > 1e-4 || Math.abs(nx * PARALLAX - m.parallaxY) > 1e-4
+    // The environment bakes one frame after the first draw, never on the LCP path.
+    const env = environment.current
+    if (!env.target && !env.scheduled) {
+      env.scheduled = requestAnimationFrame(() => {
+        env.scheduled = 0
+        if (env.target) return
+        env.target = bakeEnvironment(gl)
+        scene.environment = env.target.texture
+        scene.environmentIntensity = ENVIRONMENT_INTENSITY
+        invalidate()
+      })
+    }
+
+    // Keep stepping while the assembly, the repulsion or the parallax is still settling.
+    const settling =
+      elapsed < ASSEMBLY_SECONDS ||
+      Math.abs(repelTarget - m.repel) > 1e-3 ||
+      Math.abs(ny * PARALLAX - m.parallaxX) > 1e-4 ||
+      Math.abs(nx * PARALLAX - m.parallaxY) > 1e-4
     if (settling) invalidate()
   })
 
@@ -512,8 +573,8 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp }: AssemblyCanva
       <div ref={washTo} className="absolute inset-0" style={{ opacity: 0 }} />
       <Canvas
         frameloop="demand"
-        // R3F's default resize debounce is 0, so a mobile URL-bar collapse mid-scroll
-        // would rebuild every target bundle. 150 ms matches FieldCanvas.
+        // R3F's default resize debounce is 0; a mobile URL-bar collapse mid-scroll
+        // would otherwise re-run the camera effect every frame. 150 ms matches FieldCanvas.
         resize={{ debounce: { scroll: 50, resize: 150 } }}
         // 1.5 everywhere: flat-shaded cubes cannot show DPR 2, and a full-screen
         // MSAA canvas at DPR 2 on a 1440p desktop is ~15 megapixels per frame.

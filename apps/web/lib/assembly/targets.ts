@@ -235,3 +235,45 @@ export function buildTargets(kind: FormationId, frame: Frame, capacity: number, 
     spreadX,
   }
 }
+
+/**
+ * The artefact clearance post-pass — journey spec § 3.1. Cubes that would sit
+ * inside the hero artefact's shell are moved outward along the radius from the
+ * artefact's centre to `clearance`. Applied to the **bundle**, never in the
+ * generator, so the 2D painter and its visual snapshots stay byte-identical.
+ * Returns the number of instances moved (logged in dev).
+ */
+export function clearArtefact(
+  bundle: ModelBundle,
+  centre: readonly [number, number, number],
+  /** Cubes closer than this (the shell radius) are moved. */
+  inside: number,
+  /** ... out to this radius. */
+  clearance: number = inside,
+): { readonly bundle: ModelBundle; readonly moved: number } {
+  const position = new Float32Array(bundle.position)
+  let moved = 0
+  for (let i = 0; i < bundle.count; i += 1) {
+    const i3 = i * 3
+    const dx = (position[i3] ?? 0) - centre[0]
+    const dy = (position[i3 + 1] ?? 0) - centre[1]
+    const dz = (position[i3 + 2] ?? 0) - centre[2]
+    const distance = Math.hypot(dx, dy, dz)
+    if (distance >= inside) continue
+    // A cube exactly at the centre has no direction; give it a seeded one.
+    const scale = distance > 1e-6 ? clearance / distance : 0
+    position[i3] = centre[0] + (distance > 1e-6 ? dx * scale : clearance * ((bundle.seed[i] ?? 0.5) - 0.5) * 2)
+    position[i3 + 1] = centre[1] + dy * scale
+    position[i3 + 2] = centre[2] + dz * scale
+    moved += 1
+  }
+  // Surplus instances mirror a live one; keep them following it.
+  for (let i = bundle.count; i < bundle.capacity; i += 1) {
+    if (bundle.count === 0) break
+    const src = (i % bundle.count) * 3
+    position[i * 3] = position[src] ?? 0
+    position[i * 3 + 1] = position[src + 1] ?? 0
+    position[i * 3 + 2] = position[src + 2] ?? 0
+  }
+  return { bundle: { ...bundle, position }, moved }
+}
