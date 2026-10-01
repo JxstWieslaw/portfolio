@@ -43,7 +43,8 @@ describe('content: the rejected pivot must never come back', () => {
     'Software Engineer @ Data Age',
     'Load time cut',
     'Infra cost cut',
-    '6+',
+    // '6+' was on this list while the years figure was unverified; the owner confirmed
+    // 6+ years on 2026-10-01 and it is now the hero KPI.
   ])('does not contain the rejected string %j', (rejected) => {
     expect(corpus).not.toContain(rejected)
   })
@@ -69,7 +70,7 @@ describe('content: the rejected pivot must never come back', () => {
     expect(roles).toHaveLength(2)
     expect(roles.map((r) => `${r.title} @ ${r.org}`)).toEqual([
       'Tech Lead @ Data Age',
-      'Senior Software Engineer @ Rapidev Labs',
+      'Team Lead @ Rapidev Labs',
     ])
   })
 
@@ -79,11 +80,25 @@ describe('content: the rejected pivot must never come back', () => {
     )
   })
 
-  it('lists exactly three experience entries, including Rapidev Labs', () => {
-    const orgs = getExperience().map((e) => e.org)
-    expect(orgs).toHaveLength(3)
-    expect(orgs).toContain('Data Age')
-    expect(orgs).toContain('Rapidev Labs')
+  it('lists one row per role, newest first: two per company plus the placeholder', () => {
+    const rows = getExperience().map((e) => `${e.title} @ ${e.org}`)
+    expect(rows).toEqual([
+      'Team Lead @ Rapidev Labs',
+      'Tech Lead @ Data Age',
+      'Senior Software Engineer @ Data Age',
+      'Senior Software Engineer @ Rapidev Labs',
+      'Software Engineer @ Earlier engineering roles',
+    ])
+  })
+
+  it('dates the progression to the month the owner gave', () => {
+    const periods = Object.fromEntries(
+      getExperience().map((e) => [`${e.title} @ ${e.org}`, e.period]),
+    )
+    expect(periods['Senior Software Engineer @ Data Age']).toEqual({ from: '2025-01', to: '2026-06' })
+    expect(periods['Tech Lead @ Data Age']).toEqual({ from: '2026-07' })
+    expect(periods['Senior Software Engineer @ Rapidev Labs']).toEqual({ from: '2024-01', to: '2026-07' })
+    expect(periods['Team Lead @ Rapidev Labs']).toEqual({ from: '2026-08' })
   })
 })
 

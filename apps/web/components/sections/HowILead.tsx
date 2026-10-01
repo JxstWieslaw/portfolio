@@ -61,7 +61,9 @@ export interface HowILeadProps {
  *
  * Titles are fixed copy (§ 1: `Technical direction` · `Code review & standards`
  * · `Mentorship & delivery`); the practices are the spec's parentheticals
- * written out as concrete sentences. Tints are the export's, verbatim.
+ * written out as concrete sentences. Tints are the export's, verbatim. The
+ * fourth pillar (`AI-native delivery`, 2026-10-01) is the owner's addition: an
+ * agent fleet in the delivery loop, with decisions, merges and standards human.
  */
 export const LEAD_PILLARS: readonly PillarProps[] = [
   {
@@ -98,6 +100,18 @@ export const LEAD_PILLARS: readonly PillarProps[] = [
       'Engineers grow through review — it is the default unit of work, not a gate at the end.',
       "Accountable for how it's built, not just that it ships.",
       'Handover documentation written while the context is still fresh.',
+    ],
+  },
+  {
+    eyebrow: 'Pillar 04',
+    title: 'AI-native delivery',
+    tone: 'emerald',
+    eyebrowTone: 'emerald',
+    glyphTone: 'emerald',
+    practices: [
+      'An agent fleet sits inside the delivery loop: a lead agent dispatches specialists for code review, security and performance passes, and drafts the first cut of specs and handover notes.',
+      'Every agent pass is evidence for a human review, not a replacement for one — findings arrive with file and line, and the suite has to be green before anything is read.',
+      'Decisions, merges and standards stay with me: no agent merges, ships or changes a rule.',
     ],
   },
 ]
@@ -195,7 +209,7 @@ export function HowILead({
   index = '02',
   eyebrow = 'How I Lead',
   title = "Accountable for how it's built, not just that it shipped.",
-  lede = 'Three pillars that follow me into every codebase.',
+  lede = 'Four pillars that follow me into every codebase.',
   pillars = LEAD_PILLARS,
   processTitle = 'How I run a project',
   process = LEAD_PROCESS,
@@ -219,7 +233,8 @@ export function HowILead({
         titleClassName="max-w-[22ch]"
       />
 
-      <div className="mb-16 grid grid-cols-1 gap-6 md:grid-cols-3">
+      {/* Four cards: two tracks from 768 so none is orphaned, four from 1024. */}
+      <div className="mb-16 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         {pillars.map((pillar) => (
           <Reveal key={pillar.title} as="div" className="flex">
             <Pillar {...pillar} />

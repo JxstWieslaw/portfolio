@@ -25,7 +25,7 @@ afterEach(() => {
 })
 
 const HERO_KPIS: readonly HeroKpi[] = [
-  { label: 'Years shipping', value: '5+' },
+  { label: 'Years shipping', value: '6+' },
   { label: 'Domains shipped', value: '7' },
   { label: 'Specialism', value: 'WebGL / real-time 3D' },
 ]
@@ -44,7 +44,7 @@ const DOMAINS: readonly ProofDomain[] = [
 const PROOF_KPIS: readonly ProofKpi[] = [
   { label: 'Production platforms led/shipped', value: '10', placeholder: true },
   { label: 'Domains shipped', value: '7' },
-  { label: 'Roles', value: 'Tech Lead + Senior SWE' },
+  { label: 'Roles held today', value: '2' },
   { label: 'Concurrent production systems monitored', value: '6', placeholder: true },
 ]
 
@@ -160,9 +160,7 @@ describe('Hero — copy', () => {
     render(<Hero kpis={HERO_KPIS} />)
 
     expect(
-      screen.getByText(
-        'Tech Lead @ Data Age · Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe'
-      )
+      screen.getByText('Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe')
     ).toBeInTheDocument()
     expect(
       screen.getByRole('heading', {
@@ -211,7 +209,7 @@ describe('Hero — copy', () => {
 
   it('keeps HERO_COPY aligned with the canonical strings', () => {
     expect(HERO_COPY.eyebrow).toBe(
-      'Tech Lead @ Data Age · Senior Software Engineer @ Rapidev Labs · Harare, Zimbabwe'
+      'Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe'
     )
     expect(HERO_COPY.headline).toBe(
       'I lead teams that ship production software — and I make the web move.'
@@ -225,7 +223,8 @@ describe('Hero — KPIs', () => {
     render(<Hero kpis={HERO_KPIS} />)
 
     expect(screen.getByText('Years shipping')).toBeInTheDocument()
-    expect(screen.getByText('5+')).toBeInTheDocument()
+    // 6+ — owner-confirmed on 2026-10-01; it was rejected copy while unverified.
+    expect(screen.getByText('6+')).toBeInTheDocument()
     // The derived figure is resolved upstream; the hero renders the value it
     // is given and never recomputes it.
     expect(screen.getByText('Domains shipped')).toBeInTheDocument()
@@ -242,12 +241,12 @@ describe('Hero — KPIs', () => {
 
   it('marks a placeholder KPI in the DOM and underlines it outside production', () => {
     const { container } = render(
-      <Hero kpis={[{ label: 'Years shipping', value: '5+', placeholder: true }]} />
+      <Hero kpis={[{ label: 'Years shipping', value: '6+', placeholder: true }]} />
     )
 
     const tile = container.querySelector('.kpi[data-placeholder="true"]')
     expect(tile).not.toBeNull()
-    expect(within(tile as HTMLElement).getByText('5+')).toHaveClass('placeholder-text')
+    expect(within(tile as HTMLElement).getByText('6+')).toHaveClass('placeholder-text')
   })
 
   it('does not mark a verified KPI', () => {
@@ -449,8 +448,8 @@ describe('ProofStrip — figures', () => {
 
     expect(screen.getByText('Production platforms led/shipped')).toBeInTheDocument()
     expect(screen.getByText('10')).toBeInTheDocument()
-    expect(screen.getByText('Roles')).toBeInTheDocument()
-    expect(screen.getByText('Tech Lead + Senior SWE')).toBeInTheDocument()
+    expect(screen.getByText('Roles held today')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('Concurrent production systems monitored')).toBeInTheDocument()
   })
 
@@ -476,7 +475,7 @@ describe('ProofStrip — figures', () => {
       expect(tile.querySelector('.placeholder-text')).not.toBeNull()
     }
 
-    expect(screen.getByText('Tech Lead + Senior SWE')).not.toHaveClass('placeholder-text')
+    expect(screen.getByText('2')).not.toHaveClass('placeholder-text')
   })
 
   it('never presents the export figures the reconciliation removed', () => {
