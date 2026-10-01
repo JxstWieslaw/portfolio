@@ -77,6 +77,13 @@ jobs:
         run: pnpm --filter @repo/api db:seed --apply --git-sha "${{ github.event.workflow_run.head_sha || github.sha }}"
 
       - name: Deploy to Cloud Run
+        # Repository variables go through env, never straight into the script: a value ending in `$`
+        # (the CORS preview pattern must) would otherwise be re-parsed by the shell, where `$@` expands
+        # to nothing and swallows the list delimiter.
+        env:
+          API_PUBLIC_BASE_URL: ${{ vars.API_PUBLIC_BASE_URL }}
+          API_CORS_ORIGINS: ${{ vars.API_CORS_ORIGINS }}
+          API_CORS_PREVIEW_ORIGIN_PATTERN: ${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}
         run: |
           # Deploy as a candidate revision with no traffic; only promote if smoke passes.
           # Probes (spec �12). Startup hits /v1/health, which needs no database: a revision that cannot boot
@@ -110,7 +117,7 @@ jobs:
             --startup-probe=httpGet.path=/v1/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=1,failureThreshold=15 \
             --liveness-probe=httpGet.path=/v1/ready,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3 \
             --set-secrets=DATABASE_URL=api-database-url:latest \
-            --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${{ vars.API_PUBLIC_BASE_URL }}@CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}@CORS_PREVIEW_ORIGIN_PATTERN=${{ vars.API_CORS_PREVIEW_ORIGIN_PATTERN }}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}@DB_POOL_MAX=3"
+            --set-env-vars="^@^NODE_ENV=production@PUBLIC_BASE_URL=${API_PUBLIC_BASE_URL}@CORS_ORIGINS=${API_CORS_ORIGINS}@CORS_PREVIEW_ORIGIN_PATTERN=${API_CORS_PREVIEW_ORIGIN_PATTERN}@GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}@DB_POOL_MAX=3"
 
       - name: Smoke test the new revision
         run: |
