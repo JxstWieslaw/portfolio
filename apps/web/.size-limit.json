@@ -7,9 +7,16 @@
       ".next/static/chunks/app/layout-*.js",
       "!.next/static/chunks/framework-*.js",
       "!.next/static/chunks/polyfills-*.js",
-      "!.next/static/chunks/main-!(app)*.js"
+      "!.next/static/chunks/main-!(app)*.js",
+      "!.next/static/chunks/*.*.js"
     ],
     "limit": "120 kB",
+    "gzip": true
+  },
+  {
+    "name": "three + R3F chunks (lazy)",
+    "path": [".next/static/chunks/*.*.js"],
+    "limit": "260 kB",
     "gzip": true
   }
 ]
