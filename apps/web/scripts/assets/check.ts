@@ -130,7 +130,7 @@ export async function runCheck(opts: { readonly root: string }): Promise<CheckRe
         try {
           const report = buildReport(bytes)
           violations.push(...validateReport(report, { subject: fileName, tier: variant.tier, manifestClips: entry.clips }))
-          violations.push(...scanGlb(bytes, fileName))
+          violations.push(...scanGlb(bytes, fileName, variant.tier))
 
           if (report.bytes !== variant.bytes) violations.push(schema(fileName, `manifest says ${variant.bytes} B, file is ${report.bytes} B`))
           if (report.triangles !== variant.triangles)

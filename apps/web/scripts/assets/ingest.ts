@@ -35,7 +35,8 @@ export interface IngestOptions {
   readonly only?: 'generated'
   readonly dryRun?: boolean
   readonly verify?: boolean
-  readonly acceptSourceChange?: boolean
+  /** sha256 of a changed raw source the owner has reviewed; only a file with exactly this hash is accepted. */
+  readonly acceptSourceChange?: string
   readonly log?: (line: string) => void
 }
 
@@ -125,7 +126,7 @@ export async function runIngest(opts: IngestOptions): Promise<IngestResult> {
     log(`ingest ${source.id} (${source.origin.type})`)
     let loaded
     try {
-      loaded = loadSource(source, layout, tc, { acceptSourceChange: opts.acceptSourceChange === true })
+      loaded = loadSource(source, layout, tc, { acceptSourceChange: opts.acceptSourceChange ?? null })
     } catch (error) {
       if (error instanceof SourceHashMismatch) throw error
       const hint = source.origin.type === 'file' ? `; fetch it first: npm run assets:fetch -- --id ${source.id}` : ''
@@ -217,7 +218,7 @@ export async function runIngest(opts: IngestOptions): Promise<IngestResult> {
   return { manifest, manifestText, creditsText, files, mismatches, verified: [...selectedIds], skipped, acceptedChanges }
 }
 
-const USAGE = `usage: npm run assets:ingest -- [--id <id>] [--only generated] [--verify] [--dry-run] [--accept-source-change]`
+const USAGE = `usage: npm run assets:ingest -- [--id <id>] [--only generated] [--verify] [--dry-run] [--accept-source-change <sha256>]`
 
 export async function main(
   args: readonly string[] = process.argv.slice(2),
@@ -231,12 +232,18 @@ export async function main(
         only: { type: 'string' },
         verify: { type: 'boolean', default: false },
         'dry-run': { type: 'boolean', default: false },
-        'accept-source-change': { type: 'boolean', default: false },
+        'accept-source-change': { type: 'string' },
       },
       strict: true,
     })
     if (values.only !== undefined && values.only !== 'generated') {
       console.error(`--only accepts "generated" only\n${USAGE}`)
+      return 2
+    }
+    const accept = values['accept-source-change']
+    if (accept !== undefined && !/^[0-9a-f]{64}$/.test(accept)) {
+      console.error(`--accept-source-change takes the new 64-hex sha256 as its value
+${USAGE}`)
       return 2
     }
     const result = await runIngest({
@@ -245,11 +252,14 @@ export async function main(
       only: values.only === 'generated' ? 'generated' : undefined,
       verify: values.verify,
       dryRun: values['dry-run'],
-      acceptSourceChange: values['accept-source-change'],
+      acceptSourceChange: accept,
       log: (line) => console.log(line),
     })
-    for (const c of result.acceptedChanges)
-      console.warn(`warning: ${c.id} changed upstream; pin the new sha256 in sources.json: ${c.sha256}`)
+    if (result.acceptedChanges.length > 0) {
+      for (const c of result.acceptedChanges) console.error(`${c.id} changed upstream and was accepted for this run: now pin sha256 in sources.json: ${c.sha256}`)
+      console.log(`wrote ${result.files.size} file(s), manifest ${result.manifest.contentHash}`)
+      return 3
+    }
     if (values.verify) {
       if (result.mismatches.length > 0) {
         for (const m of result.mismatches) console.error(`verify: ${m}`)

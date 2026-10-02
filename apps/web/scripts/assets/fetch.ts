@@ -73,7 +73,7 @@ export const DEFAULT_LIMITS: FetchLimits = { timeoutMs: 60_000, maxBytes: 50 * 1
 export class FetchRefused extends Error {
   constructor(
     message: string,
-    readonly reason: UrlDenyReason | 'too-large' | 'timeout' | 'too-many-redirects' | 'bad-status' | 'bad-redirect',
+    readonly reason: UrlDenyReason | 'too-large' | 'timeout' | 'too-many-redirects' | 'bad-status' | 'bad-redirect' | 'empty-body',
   ) {
     super(message)
   }
@@ -117,14 +117,16 @@ export async function fetchChecked(start: string, deps: FetchDeps): Promise<{ by
         }
         continue
       }
-      if (!res.ok) throw new FetchRefused(`server answered ${res.status}`, 'bad-status')
+      if (res.status !== 200) throw new FetchRefused(`server answered ${res.status}; only 200 is accepted`, 'bad-status')
 
       const declared = Number(res.headers.get('content-length') ?? '')
       if (Number.isFinite(declared) && declared > limits.maxBytes) {
         void res.body?.cancel().catch(() => undefined)
         throw new FetchRefused(`body declares ${declared} B; the cap is ${limits.maxBytes} B`, 'too-large')
       }
-      return { bytes: await readCapped(res, limits.maxBytes, aborted), finalUrl: verdict.url.href }
+      const body = await readCapped(res, limits.maxBytes, aborted)
+      if (body.byteLength === 0) throw new FetchRefused('the server sent an empty body', 'empty-body')
+      return { bytes: body, finalUrl: verdict.url.href }
     }
   } finally {
     clearTimeout(timer)
@@ -161,7 +163,25 @@ async function readCapped(res: Response, maxBytes: number, aborted: Promise<neve
 // Zip: read only what we want, refuse the rest
 // ---------------------------------------------------------------------------------------------
 
-export class ZipRefused extends Error {}
+export type ZipRefusal =
+  | 'unsafe-name'
+  | 'duplicate'
+  | 'symlink'
+  | 'encrypted'
+  | 'unsupported'
+  | 'too-large'
+  | 'corrupt'
+  | 'crc'
+  | 'not-zip'
+
+export class ZipRefused extends Error {
+  constructor(
+    message: string,
+    readonly reason: ZipRefusal,
+  ) {
+    super(message)
+  }
+}
 
 export const MAX_UNCOMPRESSED_BYTES = 150 * 1024 * 1024
 const MAX_ENTRIES = 5_000
@@ -185,12 +205,18 @@ function wanted(name: string): boolean {
   return TEXTURE_EXT.has(ext) && parts.slice(0, -1).some((p) => /^textures?$/i.test(p))
 }
 
+const RESERVED_DEVICE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
+
 function safeName(raw: string): string {
-  if (raw.length === 0 || raw.length > 260) throw new ZipRefused(`entry name length ${raw.length} is not acceptable`)
-  if (raw.includes('\0') || raw.includes('\\')) throw new ZipRefused(`entry name "${raw}" contains a NUL or backslash`)
-  if (raw.startsWith('/') || /^[A-Za-z]:/.test(raw)) throw new ZipRefused(`entry name "${raw}" is absolute`)
+  const refuse = (message: string) => new ZipRefused(message, 'unsafe-name')
+  if (raw.length === 0 || raw.length > 260) throw refuse(`entry name length ${raw.length} is not acceptable`)
+  if (raw.includes("\0") || raw.includes("\\")) throw refuse(`entry name "${raw}" contains a NUL or backslash`)
+  if (raw.startsWith('/') || /^[A-Za-z]:/.test(raw)) throw refuse(`entry name "${raw}" is absolute`)
+  if (/[:*?"<>|]/.test(raw)) throw refuse(`entry name "${raw}" contains a character Windows forbids`)
   const parts = raw.split('/').filter((p, i, all) => !(p === '' && i === all.length - 1))
-  if (parts.some((p) => p === '..' || p === '.' || p === '')) throw new ZipRefused(`entry name "${raw}" escapes the target folder`)
+  if (parts.some((p) => p === '..' || p === '.' || p === '')) throw refuse(`entry name "${raw}" escapes the target folder`)
+  if (parts.some((p) => /[. ]$/.test(p))) throw refuse(`entry name "${raw}" has a component ending in a dot or space`)
+  if (parts.some((p) => RESERVED_DEVICE.test(p))) throw refuse(`entry name "${raw}" uses a reserved Windows device name`)
   return parts.join('/')
 }
 
@@ -203,18 +229,18 @@ export function readZipEntries(zip: Uint8Array, maxUncompressed: number = MAX_UN
       break
     }
   }
-  if (eocd < 0) throw new ZipRefused('not a zip file (no end-of-central-directory record)')
+  if (eocd < 0) throw new ZipRefused('not a zip file (no end-of-central-directory record)', 'not-zip')
   const total = view.getUint16(eocd + 10, true)
   const cdOffset = view.getUint32(eocd + 16, true)
-  if (total === 0xffff || cdOffset === 0xffffffff) throw new ZipRefused('zip64 archives are not supported')
-  if (total > MAX_ENTRIES) throw new ZipRefused(`archive has ${total} entries; the cap is ${MAX_ENTRIES}`)
+  if (total === 0xffff || cdOffset === 0xffffffff) throw new ZipRefused('zip64 archives are not supported', 'unsupported')
+  if (total > MAX_ENTRIES) throw new ZipRefused(`archive has ${total} entries; the cap is ${MAX_ENTRIES}`, 'too-large')
 
   const files: ZipFile[] = []
   const seen = new Set<string>()
   let inflated = 0
   let at = cdOffset
   for (let n = 0; n < total; n++) {
-    if (at + 46 > zip.byteLength || view.getUint32(at, true) !== 0x02014b50) throw new ZipRefused('corrupt central directory')
+    if (at + 46 > zip.byteLength || view.getUint32(at, true) !== 0x02014b50) throw new ZipRefused('corrupt central directory', 'corrupt')
     const madeBy = view.getUint16(at + 4, true)
     const flags = view.getUint16(at + 8, true)
     const method = view.getUint16(at + 10, true)
@@ -231,19 +257,20 @@ export function readZipEntries(zip: Uint8Array, maxUncompressed: number = MAX_UN
 
     const isDir = raw.endsWith('/')
     const name = safeName(raw) // hostile names fail the whole archive, wanted or not
-    if (seen.has(name)) throw new ZipRefused(`duplicate entry "${name}"`)
-    seen.add(name)
-    if (madeBy >> 8 === 3 && ((external >>> 16) & 0xf000) === 0xa000) throw new ZipRefused(`entry "${name}" is a symlink`)
+    const folded = name.normalize('NFC').toLowerCase()
+    if (seen.has(folded)) throw new ZipRefused(`duplicate entry "${name}" (names are compared case-insensitively, NFC-normalised)`, 'duplicate')
+    seen.add(folded)
+    if (madeBy >> 8 === 3 && ((external >>> 16) & 0xf000) === 0xa000) throw new ZipRefused(`entry "${name}" is a symlink`, 'symlink')
     if (isDir || !wanted(name)) continue
 
-    if (flags & 1) throw new ZipRefused(`entry "${name}" is encrypted`)
-    if (method !== 0 && method !== 8) throw new ZipRefused(`entry "${name}" uses unsupported compression method ${method}`)
+    if (flags & 1) throw new ZipRefused(`entry "${name}" is encrypted`, 'encrypted')
+    if (method !== 0 && method !== 8) throw new ZipRefused(`entry "${name}" uses unsupported compression method ${method}`, 'unsupported')
     inflated += usize
-    if (inflated > maxUncompressed) throw new ZipRefused(`archive would inflate past ${maxUncompressed} B`)
+    if (inflated > maxUncompressed) throw new ZipRefused(`archive would inflate past ${maxUncompressed} B`, 'too-large')
 
-    if (localAt + 30 > zip.byteLength || view.getUint32(localAt, true) !== 0x04034b50) throw new ZipRefused(`entry "${name}" has a corrupt local header`)
+    if (localAt + 30 > zip.byteLength || view.getUint32(localAt, true) !== 0x04034b50) throw new ZipRefused(`entry "${name}" has a corrupt local header`, 'corrupt')
     const start = localAt + 30 + view.getUint16(localAt + 26, true) + view.getUint16(localAt + 28, true)
-    if (start + csize > zip.byteLength) throw new ZipRefused(`entry "${name}" runs past the end of the archive`)
+    if (start + csize > zip.byteLength) throw new ZipRefused(`entry "${name}" runs past the end of the archive`, 'corrupt')
     const packed = zip.subarray(start, start + csize)
     let data: Uint8Array
     if (method === 0) data = packed
@@ -251,11 +278,11 @@ export function readZipEntries(zip: Uint8Array, maxUncompressed: number = MAX_UN
       try {
         data = new Uint8Array(inflateRawSync(packed, { maxOutputLength: Math.max(usize, 1) }))
       } catch {
-        throw new ZipRefused(`entry "${name}" does not inflate to its declared ${usize} B`)
+        throw new ZipRefused(`entry "${name}" does not inflate to its declared ${usize} B`, 'too-large')
       }
     }
-    if (data.byteLength !== usize) throw new ZipRefused(`entry "${name}" is ${data.byteLength} B, declared ${usize} B`)
-    if (crc32(data) !== crc) throw new ZipRefused(`entry "${name}" fails its CRC check`)
+    if (data.byteLength !== usize) throw new ZipRefused(`entry "${name}" is ${data.byteLength} B, declared ${usize} B`, 'corrupt')
+    if (crc32(data) !== crc) throw new ZipRefused(`entry "${name}" fails its CRC check`, 'crc')
     files.push({ name, data })
   }
   return files
@@ -266,7 +293,7 @@ export function writeEntries(dir: string, files: readonly ZipFile[]): void {
   const base = path.resolve(dir)
   for (const f of files) {
     const target = path.resolve(base, ...f.name.split('/'))
-    if (!target.startsWith(base + path.sep)) throw new ZipRefused(`entry "${f.name}" resolves outside ${dir}`)
+    if (!target.startsWith(base + path.sep)) throw new ZipRefused(`entry "${f.name}" resolves outside ${dir}`, 'unsafe-name')
     mkdirSync(path.dirname(target), { recursive: true })
     writeFileSync(target, f.data)
   }

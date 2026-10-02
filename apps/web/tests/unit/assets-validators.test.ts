@@ -196,56 +196,123 @@ describe('scanGlb: the committed-file security scan', () => {
   const tier1 = manifest.models[0]?.variants.find((x) => x.tier === 1)
   const base = new Uint8Array(readFileSync(path.join(modelsDir, (tier1?.url ?? '').replace('/models/', ''))))
 
-  const mutate = (fn: (json: Record<string, unknown>) => void): Uint8Array => {
+  type Json = Record<string, unknown>
+  const shape = (() => {
     const { json, bin } = parseGlb(base)
-    fn(json)
-    return packGlb(json, bin)
+    const declared = Number(((json['buffers'] as Json[])[0] ?? {})['byteLength'])
+    let covered = 0
+    for (const view of json['bufferViews'] as Json[]) {
+      const m = (view['extensions'] as Record<string, Record<string, number>> | undefined)?.['EXT_meshopt_compression']
+      if (m && m['buffer'] === 0) covered = Math.max(covered, (m['byteOffset'] ?? 0) + (m['byteLength'] ?? 0))
+    }
+    return { declared, covered, binLength: bin?.byteLength ?? 0 }
+  })()
+  const mutate = (fn: (json: Json, bin: Uint8Array) => Uint8Array | void): Uint8Array => {
+    const { json, bin } = parseGlb(base)
+    const replaced = fn(json, bin ?? new Uint8Array())
+    return packGlb(json, replaced ?? bin)
   }
-  const firstNode = (json: Record<string, unknown>) => (json['nodes'] as Record<string, unknown>[])[0] ?? {}
+  const firstNode = (json: Json) => (json['nodes'] as Json[])[0] ?? {}
+  const messages = (bytes: Uint8Array, tier?: 1 | 2 | 3) => scanGlb(bytes, 'g', tier).map((x) => x.message)
+  const setName = (value: string) => (json: Json) => void (firstNode(json)['name'] = value)
 
-  it('passes the committed gyroscope, which the pipeline wrote', () => {
-    expect(scanGlb(base, 'gyroscope')).toEqual([])
+  it('passes the committed gyroscope, which the pipeline wrote, at its own tier', () => {
+    expect(scanGlb(base, 'gyroscope', 1)).toEqual([])
     expect(buildReport(base).triangles).toBe(6_000)
   })
 
-  const cases: [string, (json: Record<string, unknown>) => void, RegExp][] = [
-    ['extras on a node', (j) => void (firstNode(j)['extras'] = { note: 'x' }), /extras/],
-    ['extras at the asset level', (j) => void ((j['asset'] as Record<string, unknown>)['extras'] = {}), /extras|asset metadata/],
-    ['asset.generator', (j) => void ((j['asset'] as Record<string, unknown>)['generator'] = 'Blender 4.2'), /asset metadata/],
-    ['asset.copyright', (j) => void ((j['asset'] as Record<string, unknown>)['copyright'] = '(c) me'), /asset metadata/],
-    ['a Windows drive path in a name', (j) => void (firstNode(j)['name'] = 'C:\\Users\\wiesl\\model.blend'), /drive-letter/],
-    ['a forward-slash drive path', (j) => void (firstNode(j)['name'] = 'D:/work/model.blend'), /drive-letter/],
-    ['a Linux home path', (j) => void (firstNode(j)['name'] = '/home/wiesl/model.blend'), /home-directory/],
-    ['a macOS home path', (j) => void (firstNode(j)['name'] = '/Users/wiesl/model.blend'), /home-directory/],
-    ['an email address', (j) => void (firstNode(j)['name'] = 'made-by-info@rapidevlabs.com'), /email/],
-    ['a URL that is not allow-listed', (j) => void (firstNode(j)['name'] = 'see https://evil.example/model'), /not allow-listed/],
-    ['a file: URL', (j) => void (firstNode(j)['name'] = 'file:///etc/passwd'), /not allow-listed/],
-    ['an external image uri', (j) => void (j['images'] = [{ uri: 'textures/a.png' }]), /uri/],
-    ['a data: buffer uri', (j) => void (j['buffers'] = [{ byteLength: 4, uri: 'data:application/octet-stream;base64,AAAA' }]), /uri|data:/],
-    ['a second stored buffer', (j) => void (j['buffers'] as unknown[]).push({ byteLength: 4 }), /exactly one embedded buffer/],
-    ['Draco compression', (j) => void (j['extensionsUsed'] = ['KHR_draco_mesh_compression']), /allow-list/],
-    ['KTX2 textures', (j) => void (j['extensionsRequired'] = ['KHR_texture_basisu']), /allow-list/],
-    ['a punctual light extension', (j) => void (j['extensions'] = { KHR_lights_punctual: { lights: [] } }), /allow-list/],
-    ['a camera', (j) => void (j['cameras'] = [{ type: 'perspective' }]), /cameras/],
-    ['an image name', (j) => void (j['images'] = [{ name: 'brick.png', bufferView: 0, mimeType: 'image/webp' }]), /image names|WebP/],
+  // Every row asserts the EXACT messages, so a scan that stops working fails by name.
+  const cases: [string, (json: Json, bin: Uint8Array) => Uint8Array | void, string[]][] = [
+    ['extras on a node', (j) => void (firstNode(j)['extras'] = { note: 'x' }), ['extras are not allowed']],
+    ['asset.generator', (j) => void ((j['asset'] as Json)['generator'] = 'Blender 4.2'), ['asset metadata other than version must be stripped']],
+    ['asset.copyright', (j) => void ((j['asset'] as Json)['copyright'] = 'me'), ['asset metadata other than version must be stripped']],
+    ['a Windows drive path in a name', setName('C:\\Users\\wiesl\\model.blend'), ['contains a drive-letter path', 'contains a home-directory path', 'names must be stripped']],
+    ['a forward-slash drive path', setName('D:/work/model.blend'), ['contains a drive-letter path', 'names must be stripped']],
+    ['a Linux home path at the start of a value', setName('/home/wiesl/model.blend'), ['contains a home-directory path', 'names must be stripped']],
+    ['a macOS home path mid-value', setName('exported from/Users/wiesl/x'), ['contains a home-directory path', 'names must be stripped']],
+    ['an environment-variable path', setName('%USERPROFILE%model'), ['contains an environment-variable path', 'names must be stripped']],
+    ['a UNC path', setName('\\\\fileserver\\share\\model'), ['contains a UNC network path', 'names must be stripped']],
+    ['a protocol-relative value', setName('//cdn.example/model'), ['contains a protocol-relative or network path', 'names must be stripped']],
+    ['an email address', setName('made-by-info@rapidevlabs.com'), ['contains an email address', 'names must be stripped']],
+    ['a URL that is not allow-listed', setName('see https://evil.example/model'), ['contains a URL that is not allow-listed', 'names must be stripped']],
+    ['a file: URL', setName('file:///etc/passwd'), ['contains a URL that is not allow-listed', 'contains a URI scheme', 'names must be stripped']],
+    ['a scheme-looking value', setName('ssh:deploy'), ['contains a URI scheme', 'names must be stripped']],
+    ['a harmless name, which is still a name', setName('c_users_bob'), ['names must be stripped']],
+    ['an external image uri', (j) => void (j['images'] = [{ uri: 'textures/a.png' }]), ['external or data: uri is not allowed; a GLB must be self-contained', 'image data must be embedded in the binary chunk']],
+    [
+      'a data: buffer uri',
+      (j) => void (j['buffers'] = [{ byteLength: 4, uri: 'data:application/octet-stream;base64,AAAA' }]),
+      ['external or data: uri is not allowed; a GLB must be self-contained', 'contains a data: URI', `binary chunk is ${shape.binLength - 4} bytes longer than the declared buffer`, 'binary chunk padding is not zero'],
+    ],
+    ['a camera', (j) => void (j['cameras'] = [{ type: 'perspective' }]), ['top-level key "cameras" is not allowed']],
+    ['an unknown top-level key', (j) => void (j['KHR_lights_punctual'] = {}), ['top-level key "KHR_lights_punctual" is not allowed']],
+    ['a top-level extensions block', (j) => void (j['extensions'] = { KHR_lights_punctual: { lights: [] } }), ['extension KHR_lights_punctual is not on the allow-list', 'top-level key "extensions" is not allowed']],
+    ['Draco compression', (j) => void (j['extensionsUsed'] = ['KHR_draco_mesh_compression']), ['extension KHR_draco_mesh_compression is not on the allow-list (Draco and KTX2 are rejected for now)']],
+    ['KTX2 textures', (j) => void (j['extensionsRequired'] = ['KHR_texture_basisu']), ['extension KHR_texture_basisu is not on the allow-list (Draco and KTX2 are rejected for now)']],
+    ['a KHR_materials_ name that is not in the contract', (j) => void (j['extensionsUsed'] = ['KHR_materials_clearcoat']), ['extension KHR_materials_clearcoat is not on the allow-list (Draco and KTX2 are rejected for now)']],
+    [
+      'an element extension that extensionsUsed never declares',
+      (j) => void (((j['materials'] as Json[])[0] ?? {})['extensions'] = { KHR_materials_ior: { ior: 1.5 } }),
+      ['extension KHR_materials_ior is not allowed at this tier', 'extension KHR_materials_ior is used in the file but not declared in extensionsUsed'],
+    ],
+    ['an image name', (j) => void (j['images'] = [{ name: 'brick.png', bufferView: 0, mimeType: 'image/webp' }]), ['names must be stripped', 'image bufferView runs past the end of the binary chunk']],
+    ['a clip name outside the pattern', (j) => void (j['animations'] = [{ name: 'Idle Loop', samplers: [], channels: [] }]), ['clip names must match [a-z0-9-]{0,40}']],
+    ['a third buffer of any kind', (j) => void (j['buffers'] as unknown[]).push({ byteLength: 4 }), ['a GLB carries one stored buffer and at most one meshopt fallback']],
+    [
+      'three buffers',
+      (j) => void (j['buffers'] as unknown[]).push({ byteLength: 4, extensions: { EXT_meshopt_compression: { fallback: true } } }, { byteLength: 4, extensions: { EXT_meshopt_compression: { fallback: true } } }),
+      ['a GLB carries one stored buffer and at most one meshopt fallback'],
+    ],
+    [
+      'a fallback buffer that is not marked fallback: true',
+      (j) => void ((j['buffers'] as Json[])[1] = { byteLength: 9, extensions: { EXT_meshopt_compression: { fallback: false } } }),
+      ['a second buffer must be the meshopt fallback and nothing else'],
+    ],
+    [
+      'buffer 0 marked as the fallback',
+      (j) => void ((j['buffers'] as Json[])[0] = { ...((j['buffers'] as Json[])[0] ?? {}), extensions: { EXT_meshopt_compression: { fallback: true } } }),
+      ['buffer 0 may not be a fallback buffer'],
+    ],
+    [
+      'an email hidden in the BIN tail',
+      (_j, bin) => {
+        const tail = new TextEncoder().encode('owner@example.com....')
+        const out = new Uint8Array(bin.byteLength + tail.byteLength)
+        out.set(bin)
+        out.set(tail, bin.byteLength)
+        return out
+      },
+      [`binary chunk is ${Math.ceil((shape.binLength + 21) / 4) * 4 - shape.declared} bytes longer than the declared buffer`, 'binary chunk padding is not zero'],
+    ],
+    [
+      'a gap in the BIN chunk no bufferView covers',
+      (j, bin) => {
+        ;((j['buffers'] as Json[])[0] as Json)['byteLength'] = bin.byteLength + 64
+        const out = new Uint8Array(bin.byteLength + 64)
+        out.set(bin)
+        return out
+      },
+      [`binary chunk has an unreferenced tail of ${shape.binLength + 64 - shape.covered} bytes at offset ${shape.covered}`],
+    ],
   ]
 
   it.each(cases)('SECURITY: %s', (_label, change, expected) => {
-    const found = scanGlb(mutate(change), 'gyroscope')
-    expect(found.length).toBeGreaterThan(0)
+    const found = scanGlb(mutate(change), 'g', 1)
     expect(codes(found)).toEqual(found.map(() => 'SECURITY'))
-    expect(found.map((x) => x.message).join(' | ')).toMatch(expected)
+    expect(found.map((x) => x.message).sort()).toEqual([...expected].sort())
   })
 
-  it('allows material extensions, and no URL at all', () => {
-    const clean = mutate((j) => {
-      j['extensionsUsed'] = ['KHR_materials_clearcoat', 'KHR_texture_transform', 'EXT_texture_webp']
+  it('SECURITY: a transmissive extension is held to the tier it is scanned at', () => {
+    const bytes = mutate((j) => {
+      j['extensionsUsed'] = ['KHR_materials_transmission']
     })
-    expect(scanGlb(clean, 'gyroscope')).toEqual([])
+    expect(messages(bytes, 2)).toEqual(['extension KHR_materials_transmission is not allowed at this tier'])
+    expect(messages(bytes, 3)).toEqual([])
+    expect(messages(bytes)).toEqual([])
   })
 
   it('does not echo the offending value, only where it is', () => {
-    const found = scanGlb(mutate((j) => void (firstNode(j)['name'] = 'C:\\Users\\secret-person\\x')), 'gyroscope')
+    const found = scanGlb(mutate(setName('C:\\Users\\secret-person\\x')), 'g')
     expect(JSON.stringify(found)).not.toContain('secret-person')
   })
 
@@ -269,10 +336,11 @@ describe('scanGlb: the committed-file security scan', () => {
         webp,
       )
     expect(scanGlb(glbWith(riff([['VP8 ', 10]])), 'x')).toEqual([])
-    expect(codes(scanGlb(glbWith(riff([['VP8 ', 10], ['EXIF', 8]])), 'x'))).toEqual(['SECURITY'])
-    expect(codes(scanGlb(glbWith(riff([['XMP ', 8]])), 'x'))).toEqual(['SECURITY'])
+    expect(messages(glbWith(riff([['VP8 ', 10], ['EXIF', 8]])))).toEqual(['WebP chunk "EXIF" can carry metadata and is not allowed'])
+    expect(messages(glbWith(riff([['XMP ', 8]])))).toEqual(['WebP chunk "XMP" can carry metadata and is not allowed'])
   })
 })
+
 
 describe('parseGlb: malformed containers are rejected, not tolerated', () => {
   const u32 = (n: number) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]

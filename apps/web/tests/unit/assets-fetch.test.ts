@@ -2,7 +2,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { crc32, deflateRawSync } from 'node:zlib'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -21,6 +20,8 @@ import {
 } from '../../scripts/assets/fetch'
 import { layoutFor, sourceEntrySchema } from '../../scripts/assets/sources'
 import { sha256Hex } from '../../scripts/assets/validators'
+
+import { makeZip } from './assets-fixtures'
 
 // No test in this file may touch the network: every fetch is injected.
 const neverCalled = vi.fn<typeof fetch>(() => Promise.reject(new Error('the network must not be used')))
@@ -197,65 +198,6 @@ describe('fetchChecked: injected fetch only', () => {
   })
 })
 
-interface ZipSpec {
-  name: string
-  data?: Uint8Array | string
-  method?: 0 | 8
-  flags?: number
-  /** Unix mode in the high 16 bits of the external attributes. */
-  mode?: number
-  usize?: number
-  crc?: number
-}
-
-function makeZip(specs: ZipSpec[]): Uint8Array {
-  const out: Buffer[] = []
-  const central: Buffer[] = []
-  let offset = 0
-  for (const s of specs) {
-    const name = Buffer.from(s.name)
-    const raw = Buffer.from(s.data ?? '')
-    const method = s.method ?? 0
-    const packed = method === 8 ? deflateRawSync(raw) : raw
-    const crc = s.crc ?? crc32(raw)
-    const usize = s.usize ?? raw.length
-
-    const local = Buffer.alloc(30)
-    local.writeUInt32LE(0x04034b50, 0)
-    local.writeUInt16LE(20, 4)
-    local.writeUInt16LE(s.flags ?? 0, 6)
-    local.writeUInt16LE(method, 8)
-    local.writeUInt32LE(crc, 14)
-    local.writeUInt32LE(packed.length, 18)
-    local.writeUInt32LE(usize, 22)
-    local.writeUInt16LE(name.length, 26)
-    out.push(local, name, packed)
-
-    const cd = Buffer.alloc(46)
-    cd.writeUInt32LE(0x02014b50, 0)
-    cd.writeUInt16LE((3 << 8) | 20, 4)
-    cd.writeUInt16LE(20, 6)
-    cd.writeUInt16LE(s.flags ?? 0, 8)
-    cd.writeUInt16LE(method, 10)
-    cd.writeUInt32LE(crc, 16)
-    cd.writeUInt32LE(packed.length, 20)
-    cd.writeUInt32LE(usize, 24)
-    cd.writeUInt16LE(name.length, 28)
-    cd.writeUInt32LE(((s.mode ?? 0o100644) << 16) >>> 0, 38)
-    cd.writeUInt32LE(offset, 42)
-    central.push(cd, name)
-    offset += local.length + name.length + packed.length
-  }
-  const cdSize = central.reduce((n, b) => n + b.length, 0)
-  const eocd = Buffer.alloc(22)
-  eocd.writeUInt32LE(0x06054b50, 0)
-  eocd.writeUInt16LE(specs.length, 8)
-  eocd.writeUInt16LE(specs.length, 10)
-  eocd.writeUInt32LE(cdSize, 12)
-  eocd.writeUInt32LE(offset, 16)
-  return new Uint8Array(Buffer.concat([...out, ...central, eocd]))
-}
-
 describe('readZipEntries: take what we want, refuse the rest', () => {
   it('extracts models, textures and licence files only, stored or deflated', () => {
     const zip = makeZip([
@@ -429,6 +371,13 @@ describe('sources.json: the licence and provenance pins are required', () => {
     expect(sourceEntrySchema.safeParse(base).success).toBe(true)
   })
 
+  it('a generated origin must be own, and deriveCredit returns a validated credit', () => {
+    const generated = { ...base, origin: { type: 'generated', generator: 'gyroscope' }, licenceId: 'own' }
+    expect(sourceEntrySchema.safeParse(generated).success).toBe(true)
+    expect(sourceEntrySchema.safeParse({ ...generated, licenceId: 'CC0-1.0' }).success).toBe(false)
+    expect(sourceEntrySchema.safeParse({ ...generated, origin: { type: 'generated', generator: 'gyroscope', extra: 1 } }).success).toBe(false)
+  })
+
   it('allows a space inside a path segment (Kenney ships "Models/GLB format/x.glb"), never at its edges', () => {
     const withPath = (p: string) => sourceEntrySchema.safeParse({ ...base, origin: { ...base.origin, path: p } }).success
     expect(withPath('assets-src/x/Models/GLB format/crate large.glb')).toBe(true)
@@ -451,6 +400,12 @@ describe('sources.json: the licence and provenance pins are required', () => {
     ['an origin path that climbs out', { origin: { ...base.origin, path: 'assets-src/x/../../m.glb' } }],
     ['CC-BY without a licence URL', { licenceId: 'CC-BY-4.0' }],
     ['an unknown key', { surprise: true }],
+    ['own on a downloaded file', { licenceId: 'own' }],
+    ['licence evidence from a different host', { licenceEvidence: { url: 'https://evil.example/license', retrievedAt: '2026-10-02' } }],
+    ['an unknown key in licenceEvidence', { licenceEvidence: { url: 'https://kenney.nl/license', retrievedAt: '2026-10-02', note: 'x' } }],
+    ['an unknown key in credit', { credit: { author: 'A', sourceUrl: 'https://kenney.nl/x', retrievedAt: '2026-10-02', note: 'x' } }],
+    ['an unknown key in origin', { origin: { ...base.origin, mirror: 'https://evil.example' } }],
+    ['duplicate tiers', { tiers: [1, 1] }],
   ])('rejects %s', (_label, change) => {
     expect(sourceEntrySchema.safeParse({ ...base, ...change }).success).toBe(false)
   })

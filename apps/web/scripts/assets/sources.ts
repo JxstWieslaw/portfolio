@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { licenceSchema, modelTierSchema, slugSchema, type Credit, type ModelTier } from '@repo/contracts'
+import { creditSchema, licenceSchema, modelTierSchema, slugSchema, type Credit, type ModelTier } from '@repo/contracts'
 import { z } from 'zod'
 
 const httpsUrl = z
@@ -41,12 +41,12 @@ const fileOrigin = z.object({
   sha256,
   /** Set when `url` is a zip: sha256 of the archive as downloaded, checked before extraction. */
   archiveSha256: sha256.optional(),
-})
+}).strict()
 
 const generatedOrigin = z.object({
   type: z.literal('generated'),
   generator: z.enum(GENERATOR_IDS),
-})
+}).strict()
 
 export const sourceEntrySchema = z
   .object({
@@ -57,20 +57,31 @@ export const sourceEntrySchema = z
     origin: z.discriminatedUnion('type', [fileOrigin, generatedOrigin]),
     licenceId: licenceSchema,
     /** The primary-source page that shows the licence, and the day it was read. */
-    licenceEvidence: z.object({ url: httpsUrl, retrievedAt: isoDate }),
+    licenceEvidence: z.object({ url: httpsUrl, retrievedAt: isoDate }).strict(),
     credit: z.object({
       author: z.string().min(1).max(120),
       sourceUrl: httpsUrl,
       licenceUrl: httpsUrl.optional(),
       retrievedAt: isoDate,
-    }),
+    }).strict(),
     clips: z.array(z.object({ from: z.string().min(1), as: slugSchema })).max(2).optional(),
-    tiers: z.array(modelTierSchema).min(1).optional(),
+    tiers: z
+      .array(modelTierSchema)
+      .min(1)
+      .refine((t) => new Set(t).size === t.length, 'tiers must be unique')
+      .optional(),
   })
   .strict()
   .superRefine((e, ctx) => {
     if (e.licenceId === 'CC-BY-4.0' && !e.credit.licenceUrl)
       ctx.addIssue({ code: 'custom', path: ['credit', 'licenceUrl'], message: 'CC-BY requires a licenceUrl' })
+    // `own` means "I made it": only a generator in this repository can say so. Everything downloaded is someone else's.
+    if (e.licenceId === 'own' && e.origin.type !== 'generated')
+      ctx.addIssue({ code: 'custom', path: ['licenceId'], message: 'own is only legal for generated origins' })
+    if (e.origin.type === 'generated' && e.licenceId !== 'own')
+      ctx.addIssue({ code: 'custom', path: ['licenceId'], message: 'generated origins must be own' })
+    if (e.origin.type === 'file' && new URL(e.licenceEvidence.url).hostname !== new URL(e.origin.url).hostname)
+      ctx.addIssue({ code: 'custom', path: ['licenceEvidence', 'url'], message: 'licence evidence must come from the same host as the download' })
     if (e.origin.type === 'file' && !e.origin.path.startsWith(`assets-src/${e.id}/`))
       ctx.addIssue({ code: 'custom', path: ['origin', 'path'], message: `path must start with assets-src/${e.id}/` })
   })
@@ -92,7 +103,7 @@ export function tiersOf(entry: SourceEntry): readonly ModelTier[] {
 
 /** The credits row for a source. `credits.json` is exactly these, for enabled entries, in manifest order. */
 export function deriveCredit(entry: SourceEntry): Credit {
-  return {
+  return creditSchema.parse({
     assetId: entry.id,
     title: entry.title,
     author: entry.credit.author,
@@ -100,7 +111,7 @@ export function deriveCredit(entry: SourceEntry): Credit {
     licence: entry.licenceId,
     ...(entry.credit.licenceUrl ? { licenceUrl: entry.credit.licenceUrl } : {}),
     retrievedAt: entry.credit.retrievedAt,
-  }
+  })
 }
 
 export interface Layout {

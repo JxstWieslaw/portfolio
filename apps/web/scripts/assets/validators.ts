@@ -477,78 +477,191 @@ export function validateCredits(
 // Security scan of a committed GLB
 // ---------------------------------------------------------------------------------------------
 
-/** Any URL inside a committed GLB must start with one of these; our own output contains none. */
+/** Any URL inside a committed GLB must start with one of these; our own output contains none, so the list is empty. */
 export const ALLOWED_GLB_URL_PREFIXES: readonly string[] = []
 
-const ALLOWED_EXACT_EXTENSIONS = new Set([
-  'KHR_mesh_quantization',
-  'EXT_meshopt_compression',
-  'EXT_texture_webp',
-  'KHR_texture_transform',
+/** The only top-level glTF keys a committed GLB may carry. Anything else (cameras, extras, extensions) is a finding. */
+const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
+  'asset',
+  'scene',
+  'scenes',
+  'nodes',
+  'meshes',
+  'materials',
+  'accessors',
+  'bufferViews',
+  'buffers',
+  'images',
+  'textures',
+  'samplers',
+  'animations',
+  'skins',
+  'extensionsUsed',
+  'extensionsRequired',
 ])
 
+/** Collections whose objects may not carry a `name` at all: names are where paths and e-mail addresses hide. */
+const UNNAMED_COLLECTIONS = ['scenes', 'nodes', 'meshes', 'materials', 'accessors', 'bufferViews', 'buffers', 'images', 'textures', 'samplers', 'skins'] as const
+const CLIP_NAME = /^[a-z0-9-]{0,40}$/
+
+const KNOWN_EXTENSIONS: ReadonlySet<string> = new Set(gltfExtensionSchema.options)
+
+/** Exact membership in the contract's extension list; there is no prefix match. */
 export function isAllowedGlbExtension(name: string): boolean {
-  return name.startsWith('KHR_materials_') || ALLOWED_EXACT_EXTENSIONS.has(name)
+  return KNOWN_EXTENSIONS.has(name)
 }
 
 const DRIVE_LETTER = /(?<![A-Za-z0-9])[A-Za-z]:[\\/]/
-const HOME_PATH = /(?:^|[^A-Za-z0-9])(?:\/home\/|\/Users\/|\/root\/|\/mnt\/[a-z]\/|~\/)|\\Users\\/i
+const HOME_PATH = /\/home\/|\/Users\/|\/root\/|\/mnt\/[a-z]\/|~\/|\\Users\\/i
+const ENV_VAR = /%[A-Za-z_][A-Za-z0-9_]*%/
+const UNC_PATH = /\\\\[A-Za-z0-9_.$-]+\\/
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/
 const URL_LIKE = /\b(?:https?|ftp|file):\/\/[^\s"'<>]*/gi
+const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/
 
-function scanString(text: string, where: string, out: Violation[]): void {
+function scanString(text: string, where: string, out: Violation[], opts: { scheme: boolean }): void {
   if (DRIVE_LETTER.test(text)) out.push(v('SECURITY', where, 'contains a drive-letter path'))
   if (HOME_PATH.test(text)) out.push(v('SECURITY', where, 'contains a home-directory path'))
+  if (ENV_VAR.test(text)) out.push(v('SECURITY', where, 'contains an environment-variable path'))
+  if (UNC_PATH.test(text)) out.push(v('SECURITY', where, 'contains a UNC network path'))
+  if (text.startsWith('//')) out.push(v('SECURITY', where, 'contains a protocol-relative or network path'))
   if (EMAIL.test(text)) out.push(v('SECURITY', where, 'contains an email address'))
   for (const match of text.matchAll(URL_LIKE)) {
-    const url = match[0]
-    if (!ALLOWED_GLB_URL_PREFIXES.some((p) => url.startsWith(p))) out.push(v('SECURITY', where, 'contains a URL that is not allow-listed'))
+    if (!ALLOWED_GLB_URL_PREFIXES.some((p) => match[0].startsWith(p))) out.push(v('SECURITY', where, 'contains a URL that is not allow-listed'))
   }
   if (/^data:/i.test(text.trim())) out.push(v('SECURITY', where, 'contains a data: URI'))
+  else if (opts.scheme && SCHEME.test(text) && !DRIVE_LETTER.test(text)) out.push(v('SECURITY', where, 'contains a URI scheme'))
 }
 
-function walk(value: unknown, where: string, out: Violation[]): void {
-  if (typeof value === 'string') return scanString(value, where, out)
-  if (Array.isArray(value)) return value.forEach((item, i) => walk(item, `${where}[${i}]`, out))
+interface WalkState {
+  readonly out: Violation[]
+  readonly elementExtensions: Set<string>
+  readonly tierAllowed: ReadonlySet<string> | null
+}
+
+function walk(value: unknown, where: string, state: WalkState): void {
+  const { out } = state
+  if (typeof value === 'string') return scanString(value, where, out, { scheme: true })
+  if (Array.isArray(value)) return value.forEach((item, i) => walk(item, `${where}[${i}]`, state))
   if (value === null || typeof value !== 'object') return
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     const at = `${where}.${key}`
-    scanString(key, `${at} (key)`, out)
+    scanString(key, `${at} (key)`, out, { scheme: false })
     if (key === 'extras') out.push(v('SECURITY', at, 'extras are not allowed'))
     else if (key === 'uri') out.push(v('SECURITY', at, 'external or data: uri is not allowed; a GLB must be self-contained'))
-    else if (key === 'extensions' && child !== null && typeof child === 'object')
-      for (const ext of Object.keys(child as Record<string, unknown>))
+    else if (key === 'extensions' && child !== null && typeof child === 'object') {
+      for (const ext of Object.keys(child as Record<string, unknown>)) {
+        state.elementExtensions.add(ext)
         if (!isAllowedGlbExtension(ext)) out.push(v('SECURITY', `${at}.${ext}`, `extension ${ext} is not on the allow-list`))
-    walk(child, at, out)
+        else if (state.tierAllowed && !state.tierAllowed.has(ext))
+          out.push(v('SECURITY', `${at}.${ext}`, `extension ${ext} is not allowed at this tier`))
+      }
+    }
+    walk(child, at, state)
   }
 }
 
-export function scanGlb(bytes: Uint8Array, subject: string): Violation[] {
+/** Ranges of buffer 0 that bufferViews cover, counting a meshopt view by the compressed bytes it really stores. */
+function storedRanges(bufferViews: Json[]): { start: number; end: number }[] {
+  const ranges: { start: number; end: number }[] = []
+  for (const view of bufferViews) {
+    const meshopt = (view['extensions'] as Json | undefined)?.['EXT_meshopt_compression'] as Json | undefined
+    if (meshopt) {
+      if (num(meshopt['buffer']) === 0) ranges.push({ start: num(meshopt['byteOffset']), end: num(meshopt['byteOffset']) + num(meshopt['byteLength']) })
+    } else if (num(view['buffer']) === 0) {
+      ranges.push({ start: num(view['byteOffset']), end: num(view['byteOffset']) + num(view['byteLength']) })
+    }
+  }
+  return ranges.sort((a, b) => a.start - b.start)
+}
+
+/** The binary chunk must be exactly the declared buffer: no tail, no hidden gap, nothing in the padding. */
+function scanBinary(json: Json, bin: Uint8Array | null, out: Violation[]): void {
+  const buffers = arr(json['buffers'])
+  const declared = num(buffers[0]?.['byteLength'])
+  if (!bin) {
+    if (declared > 0) out.push(v('SECURITY', '$.buffers[0]', 'declares bytes but the file has no binary chunk'))
+    return
+  }
+  if (bin.byteLength < declared) out.push(v('SECURITY', '$.buffers[0]', 'binary chunk is shorter than the declared buffer'))
+  if (bin.byteLength - declared > 3)
+    out.push(v('SECURITY', '$.buffers[0]', `binary chunk is ${bin.byteLength - declared} bytes longer than the declared buffer`))
+  for (let i = Math.min(declared, bin.byteLength); i < bin.byteLength; i++) {
+    if (bin[i] !== 0) {
+      out.push(v('SECURITY', '$.buffers[0]', 'binary chunk padding is not zero'))
+      break
+    }
+  }
+  let covered = 0
+  for (const r of storedRanges(arr(json['bufferViews']))) {
+    if (r.start - covered > 3) {
+      out.push(v('SECURITY', '$.bufferViews', `binary chunk has an unreferenced gap of ${r.start - covered} bytes at offset ${covered}`))
+      covered = r.end
+    } else covered = Math.max(covered, r.end)
+  }
+  if (declared - covered > 3)
+    out.push(v('SECURITY', '$.bufferViews', `binary chunk has an unreferenced tail of ${declared - covered} bytes at offset ${covered}`))
+}
+
+/**
+ * Security scan of a GLB's bytes. With `tier`, element-level extensions and `extensionsUsed` are
+ * also held to that tier's list. Findings name the JSON path, never the offending value.
+ */
+export function scanGlb(bytes: Uint8Array, subject: string, tier?: ModelTier): Violation[] {
   const { json, bin } = parseGlb(bytes)
   const out: Violation[] = []
-  walk(json, '$', out)
+  const state: WalkState = {
+    out,
+    elementExtensions: new Set<string>(),
+    tierAllowed: tier ? new Set<string>(TIER_EXTENSIONS[tier]) : null,
+  }
+  walk(json, '$', state)
 
+  for (const key of Object.keys(json))
+    if (!ALLOWED_TOP_LEVEL_KEYS.has(key)) out.push(v('SECURITY', `$.${key}`, `top-level key "${key}" is not allowed`))
+
+  const declaredExtensions = new Set<string>()
   for (const key of ['extensionsUsed', 'extensionsRequired'] as const) {
     const list = json[key]
-    if (Array.isArray(list))
-      for (const ext of list)
-        if (typeof ext !== 'string' || !isAllowedGlbExtension(ext))
-          out.push(v('SECURITY', `$.${key}`, `extension ${String(ext)} is not on the allow-list (Draco and KTX2 are rejected for now)`))
+    if (!Array.isArray(list)) continue
+    for (const ext of list) {
+      if (typeof ext !== 'string' || !isAllowedGlbExtension(ext))
+        out.push(v('SECURITY', `$.${key}`, `extension ${String(ext)} is not on the allow-list (Draco and KTX2 are rejected for now)`))
+      else if (state.tierAllowed && !state.tierAllowed.has(ext))
+        out.push(v('SECURITY', `$.${key}`, `extension ${ext} is not allowed at this tier`))
+      else declaredExtensions.add(ext)
+    }
   }
+  for (const ext of state.elementExtensions)
+    if (isAllowedGlbExtension(ext) && !declaredExtensions.has(ext))
+      out.push(v('SECURITY', '$.extensionsUsed', `extension ${ext} is used in the file but not declared in extensionsUsed`))
 
   const asset = (json['asset'] ?? {}) as Record<string, unknown>
   for (const key of Object.keys(asset))
     if (key !== 'version') out.push(v('SECURITY', `$.asset.${key}`, 'asset metadata other than version must be stripped'))
-  if (arr(json['cameras']).length > 0) out.push(v('SECURITY', '$.cameras', 'cameras must be stripped'))
-  // Meshopt declares a second, virtual "fallback" buffer that is never stored; anything else beyond one is not self-contained.
-  const stored = arr(json['buffers']).filter(
-    (b) => ((b['extensions'] as Json | undefined)?.['EXT_meshopt_compression'] as Json | undefined)?.['fallback'] !== true,
-  )
-  if (stored.length > 1) out.push(v('SECURITY', '$.buffers', 'a GLB carries exactly one embedded buffer'))
+
+  for (const collection of UNNAMED_COLLECTIONS)
+    for (const [i, item] of arr(json[collection]).entries())
+      if ('name' in item) out.push(v('SECURITY', `$.${collection}[${i}].name`, 'names must be stripped'))
+  for (const [i, animation] of arr(json['animations']).entries()) {
+    const name = animation['name']
+    if (name !== undefined && (typeof name !== 'string' || !CLIP_NAME.test(name)))
+      out.push(v('SECURITY', `$.animations[${i}].name`, 'clip names must match [a-z0-9-]{0,40}'))
+  }
+
+  // Meshopt declares one virtual "fallback" buffer that is never stored. Buffer 0 is the stored one.
+  const buffers = arr(json['buffers'])
+  const isFallback = (b: Json | undefined) =>
+    ((b?.['extensions'] as Json | undefined)?.['EXT_meshopt_compression'] as Json | undefined)?.['fallback'] === true
+  if (buffers.length > 2) out.push(v('SECURITY', '$.buffers', 'a GLB carries one stored buffer and at most one meshopt fallback'))
+  if (isFallback(buffers[0])) out.push(v('SECURITY', '$.buffers[0]', 'buffer 0 may not be a fallback buffer'))
+  if (buffers.length === 2 && !isFallback(buffers[1]))
+    out.push(v('SECURITY', '$.buffers[1]', 'a second buffer must be the meshopt fallback and nothing else'))
+
+  scanBinary(json, bin, out)
 
   const bufferViews = arr(json['bufferViews'])
   for (const [i, image] of arr(json['images']).entries()) {
-    if (typeof image['name'] === 'string') out.push(v('SECURITY', `$.images[${i}].name`, 'image names must be stripped'))
     const view = typeof image['bufferView'] === 'number' ? bufferViews[image['bufferView']] : undefined
     if (!view || !bin) {
       out.push(v('SECURITY', `$.images[${i}]`, 'image data must be embedded in the binary chunk'))
@@ -560,8 +673,7 @@ export function scanGlb(bytes: Uint8Array, subject: string): Violation[] {
       out.push(v('SECURITY', `$.images[${i}]`, 'image bufferView runs past the end of the binary chunk'))
       continue
     }
-    const data = bin.subarray(start, end)
-    const chunks = webpChunks(data)
+    const chunks = webpChunks(bin.subarray(start, end))
     if (chunks === null) {
       if (image['mimeType'] === 'image/webp') out.push(v('SECURITY', `$.images[${i}]`, 'declared as WebP but is not a RIFF/WEBP file'))
     } else {
@@ -570,7 +682,7 @@ export function scanGlb(bytes: Uint8Array, subject: string): Violation[] {
     }
   }
 
-  // Dedupe: a string with two problems should still read as one finding per location and message.
+  // A string with two problems should still read as one finding per location and message.
   const seen = new Set<string>()
   return out
     .filter((x) => {

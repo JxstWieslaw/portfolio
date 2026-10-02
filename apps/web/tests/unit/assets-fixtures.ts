@@ -1,4 +1,6 @@
 /** Shared fixtures for the assets-*.test.ts files. Not a test itself. */
+import { crc32, deflateRawSync } from 'node:zlib'
+
 import { Document } from '@gltf-transform/core'
 
 /** A UV sphere offset and scaled away from the origin: `lat * lon * 2` triangles. */
@@ -76,3 +78,63 @@ export function addClip(doc: Document, name: string, seconds: number): void {
   const channel = doc.createAnimationChannel().setSampler(sampler).setTargetNode(node).setTargetPath('translation')
   doc.createAnimation(name).addSampler(sampler).addChannel(channel)
 }
+
+export interface ZipSpec {
+  name: string
+  data?: Uint8Array | string
+  method?: 0 | 8
+  flags?: number
+  /** Unix mode in the high 16 bits of the external attributes. */
+  mode?: number
+  usize?: number
+  crc?: number
+}
+
+export function makeZip(specs: ZipSpec[]): Uint8Array {
+  const out: Buffer[] = []
+  const central: Buffer[] = []
+  let offset = 0
+  for (const s of specs) {
+    const name = Buffer.from(s.name)
+    const raw = Buffer.from(s.data ?? '')
+    const method = s.method ?? 0
+    const packed = method === 8 ? deflateRawSync(raw) : raw
+    const crc = s.crc ?? crc32(raw)
+    const usize = s.usize ?? raw.length
+
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(s.flags ?? 0, 6)
+    local.writeUInt16LE(method, 8)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(packed.length, 18)
+    local.writeUInt32LE(usize, 22)
+    local.writeUInt16LE(name.length, 26)
+    out.push(local, name, packed)
+
+    const cd = Buffer.alloc(46)
+    cd.writeUInt32LE(0x02014b50, 0)
+    cd.writeUInt16LE((3 << 8) | 20, 4)
+    cd.writeUInt16LE(20, 6)
+    cd.writeUInt16LE(s.flags ?? 0, 8)
+    cd.writeUInt16LE(method, 10)
+    cd.writeUInt32LE(crc, 16)
+    cd.writeUInt32LE(packed.length, 20)
+    cd.writeUInt32LE(usize, 24)
+    cd.writeUInt16LE(name.length, 28)
+    cd.writeUInt32LE(((s.mode ?? 0o100644) << 16) >>> 0, 38)
+    cd.writeUInt32LE(offset, 42)
+    central.push(cd, name)
+    offset += local.length + name.length + packed.length
+  }
+  const cdSize = central.reduce((n, b) => n + b.length, 0)
+  const eocd = Buffer.alloc(22)
+  eocd.writeUInt32LE(0x06054b50, 0)
+  eocd.writeUInt16LE(specs.length, 8)
+  eocd.writeUInt16LE(specs.length, 10)
+  eocd.writeUInt32LE(cdSize, 12)
+  eocd.writeUInt32LE(offset, 16)
+  return new Uint8Array(Buffer.concat([...out, ...central, eocd]))
+}
+

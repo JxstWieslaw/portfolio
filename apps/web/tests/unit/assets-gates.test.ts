@@ -4,7 +4,7 @@ import sharp from 'sharp'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { IngestRejected, buildVariant, countTriangles, loadToolchain, type Toolchain } from '../../scripts/assets/pipeline'
-import { buildReport } from '../../scripts/assets/validators'
+import { buildReport, parseGlb, scanGlb } from '../../scripts/assets/validators'
 
 import { addClip, soup, uvSphere } from './assets-fixtures'
 
@@ -59,13 +59,15 @@ describe('buildVariant: the final validateReport + scanGlb gate is reachable', (
     expect(messagesOf(error)).toContain('clip "spin" runs 25 s; the cap is 20 s')
   }, 60_000)
 
-  it('SECURITY: an email address left in a material name', async () => {
+  it('SECURITY: an email address in a material, node or mesh name never reaches the file (names are stripped)', async () => {
     const doc = uvSphere(8, 10)
     doc.getRoot().listMaterials()[0]?.setName('made-by-someone@example.com')
-    const error = await buildVariant(tc, doc, { subject, tier: 2 }).catch((e: unknown) => e)
-    expect(error).toBeInstanceOf(IngestRejected)
-    expect(codesOf(error)).toContain('SECURITY')
-    expect(messagesOf(error)).toContain('contains an email address')
+    doc.getRoot().listNodes()[0]?.setName('C:\\Users\\wiesl\\model')
+    doc.getRoot().listMeshes()[0]?.setName('/home/wiesl/mesh')
+    const out = await buildVariant(tc, doc, { subject, tier: 2 })
+    const { json } = parseGlb(out.bytes)
+    expect(JSON.stringify(json)).not.toMatch(/example.com|wiesl|Users/)
+    expect(scanGlb(out.bytes, subject, 2)).toEqual([])
   }, 60_000)
 
   it('logs an animation it drops for not being listed in clips', async () => {

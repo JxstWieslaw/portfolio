@@ -56,7 +56,7 @@ export class SourceHashMismatch extends Error {
   ) {
     super(
       `source "${sourceId}" changed: sources.json pins sha256 ${expected} but the file hashes to ${actual}. ` +
-        'Re-check the licence page, then update sources.json (or pass --accept-source-change for one run).',
+        'Re-check the licence page, then update sources.json, or pass --accept-source-change <the new sha256> for one run.',
     )
   }
 }
@@ -101,7 +101,8 @@ export function loadSource(
   source: SourceEntry,
   layout: Layout,
   tc: Toolchain,
-  opts: { readonly acceptSourceChange: boolean },
+  /** The new sha256 the owner has looked at; a file that hashes to anything else is still refused. */
+  opts: { readonly acceptSourceChange: string | null },
 ): LoadedSource {
   if (source.origin.type === 'generated') {
     return { makeDocument: () => Promise.resolve(buildGyroscope()), rawSha256: null }
@@ -109,7 +110,7 @@ export function loadSource(
   const file = path.join(layout.root, ...source.origin.path.split('/'))
   const bytes = new Uint8Array(readFileSync(file))
   const actual = sha256Hex(bytes)
-  if (actual !== source.origin.sha256 && !opts.acceptSourceChange)
+  if (actual !== source.origin.sha256 && opts.acceptSourceChange !== actual)
     throw new SourceHashMismatch(source.id, source.origin.sha256, actual)
   return { makeDocument: () => tc.io.readBinary(bytes), rawSha256: actual }
 }
@@ -218,17 +219,21 @@ function normalise(doc: Document, subject: string): void {
   scene.addChild(wrapper)
 }
 
+const NAMED_COLLECTIONS = ['scenes', 'nodes', 'meshes', 'materials', 'accessors', 'bufferViews', 'buffers', 'images', 'textures', 'samplers', 'skins'] as const
+
 /** Removes every `extras` key and all metadata the writer adds, from the written bytes. Deterministic. */
 export function stripGlbMetadata(bytes: Uint8Array): Uint8Array {
   const { json, bin } = parseGlb(bytes)
   const clean = dropExtras(json) as Record<string, unknown>
   clean['asset'] = { version: '2.0' }
-  const images = clean['images']
-  if (Array.isArray(images)) {
-    clean['images'] = images.map((image: Record<string, unknown>) => {
-      const rest = { ...image }
+  // Names are where paths and addresses hide, and nothing at runtime reads them. Clip names stay: the ledger addresses clips by name.
+  for (const collection of NAMED_COLLECTIONS) {
+    const items = clean[collection]
+    if (!Array.isArray(items)) continue
+    clean[collection] = items.map((item: Record<string, unknown>) => {
+      const rest = { ...item }
       delete rest['name']
-      delete rest['uri']
+      if (collection === 'images') delete rest['uri']
       return rest
     })
   }
@@ -305,7 +310,7 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   const bytes = stripGlbMetadata(await tc.io.writeBinary(doc))
   const report = buildReport(bytes)
 
-  const violations = [...validateReport(report, { subject, tier }), ...scanGlb(bytes, subject)]
+  const violations = [...validateReport(report, { subject, tier }), ...scanGlb(bytes, subject, tier)]
   if (violations.length > 0) throw new IngestRejected(subject, violations)
 
   const meta = deriveVariantMeta(report)

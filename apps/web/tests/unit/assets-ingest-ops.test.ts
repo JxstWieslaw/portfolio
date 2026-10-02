@@ -71,6 +71,7 @@ describe('ingest: partial runs, verify, writes', () => {
       ...gyro(),
       id: 'raw-one',
       licenceId: 'CC0-1.0',
+      licenceEvidence: { url: 'https://kenney.nl/support', retrievedAt: '2026-10-02' },
       origin: { type: 'file', path: 'assets-src/raw-one/m.glb', url: 'https://kenney.nl/x', sha256: 'a'.repeat(64) },
     }
     const root = rootWith('vacuous', [fileSource])

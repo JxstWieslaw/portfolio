@@ -1,5 +1,5 @@
 {
-  "contentHash": "5fc3e61a23406789",
+  "contentHash": "11f8cb6e2dfc45f4",
   "models": [
     {
       "boundsRadius": 1,
@@ -10,34 +10,34 @@
       "title": "Gyroscope",
       "variants": [
         {
-          "bytes": 28348,
+          "bytes": 28184,
           "extensions": [
             "EXT_meshopt_compression",
             "KHR_mesh_quantization"
           ],
-          "integrity": "sha256-j9beqsbI07HCsh+LIq6vjmGAspRjDqa5T5PZHcyOTX8=",
+          "integrity": "sha256-uoOGK/a4W0oOBP14TMz1+HvcEOhkXnOsZlQFlKLw3po=",
           "maxTexturePx": 0,
           "requires": [
             "meshopt"
           ],
           "tier": 1,
           "triangles": 6000,
-          "url": "/models/gyroscope.t1.8fd6deaa.glb"
+          "url": "/models/gyroscope.t1.ba83862b.glb"
         },
         {
-          "bytes": 33564,
+          "bytes": 33400,
           "extensions": [
             "EXT_meshopt_compression",
             "KHR_mesh_quantization"
           ],
-          "integrity": "sha256-IiwPGq1pzIYOE7JYNBWxkJoytitsw2VcLdY6/AMQyHk=",
+          "integrity": "sha256-+rKams+/1/a4q+X+6t1ssVM2hzmhV6vlSE2dRLaNdO4=",
           "maxTexturePx": 0,
           "requires": [
             "meshopt"
           ],
           "tier": 2,
           "triangles": 7104,
-          "url": "/models/gyroscope.t2.222c0f1a.glb"
+          "url": "/models/gyroscope.t2.fab29a9a.glb"
         }
       ]
     }
