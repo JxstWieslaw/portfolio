@@ -242,7 +242,16 @@ describe('scanGlb: the committed-file security scan', () => {
     [
       'a data: buffer uri',
       (j) => void (j['buffers'] = [{ byteLength: 4, uri: 'data:application/octet-stream;base64,AAAA' }]),
-      ['external or data: uri is not allowed; a GLB must be self-contained', 'contains a data: URI', `binary chunk is ${shape.binLength - 4} bytes longer than the declared buffer`, 'binary chunk padding is not zero'],
+      [
+        'external or data: uri is not allowed; a GLB must be self-contained',
+        'contains a data: URI',
+        `binary chunk is ${shape.binLength - 4} bytes longer than the declared buffer`,
+        'binary chunk padding is not zero',
+        // The three meshopt views now end past the 4 byte buffer the edit declared.
+        'bufferView ends at 6814, past the declared buffer of 4 bytes',
+        'bufferView ends at 12423, past the declared buffer of 4 bytes',
+        'bufferView ends at 26496, past the declared buffer of 4 bytes',
+      ],
     ],
     ['a camera', (j) => void (j['cameras'] = [{ type: 'perspective' }]), ['top-level key "cameras" is not allowed']],
     ['an unknown top-level key', (j) => void (j['KHR_lights_punctual'] = {}), ['top-level key "KHR_lights_punctual" is not allowed']],
@@ -255,7 +264,7 @@ describe('scanGlb: the committed-file security scan', () => {
       (j) => void (((j['materials'] as Json[])[0] ?? {})['extensions'] = { KHR_materials_ior: { ior: 1.5 } }),
       ['extension KHR_materials_ior is not allowed at this tier', 'extension KHR_materials_ior is used in the file but not declared in extensionsUsed'],
     ],
-    ['an image name', (j) => void (j['images'] = [{ name: 'brick.png', bufferView: 0, mimeType: 'image/webp' }]), ['names must be stripped', 'image bufferView runs past the end of the binary chunk']],
+    ['an image name', (j) => void (j['images'] = [{ name: 'brick.png', bufferView: 0, mimeType: 'image/webp' }]), ['names must be stripped', 'image bufferView must be a plain stored view in buffer 0']],
     ['a clip name outside the pattern', (j) => void (j['animations'] = [{ name: 'Idle Loop', samplers: [], channels: [] }]), ['clip names must match [a-z0-9-]{0,40}']],
     ['a third buffer of any kind', (j) => void (j['buffers'] as unknown[]).push({ byteLength: 4 }), ['a GLB carries one stored buffer and at most one meshopt fallback']],
     [

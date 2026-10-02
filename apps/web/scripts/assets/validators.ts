@@ -181,18 +181,39 @@ function fourcc(bytes: Uint8Array, at: number): string {
   return String.fromCharCode(bytes[at] ?? 0, bytes[at + 1] ?? 0, bytes[at + 2] ?? 0, bytes[at + 3] ?? 0)
 }
 
-/** RIFF chunk ids of a WebP file, or null when it is not a WebP. */
-export function webpChunks(bytes: Uint8Array): string[] | null {
+export interface WebpInspection {
+  readonly chunks: string[]
+  /** Why the container is not a clean RIFF/WEBP file of exactly this length, or null. */
+  readonly problem: string | null
+}
+
+/** Walks a WebP's RIFF structure; null when the bytes are not a WebP at all. Chunk ids are listed even when the sizes lie. */
+export function inspectWebp(bytes: Uint8Array): WebpInspection | null {
   if (bytes.byteLength < 20 || fourcc(bytes, 0) !== 'RIFF' || fourcc(bytes, 8) !== 'WEBP') return null
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const ids: string[] = []
+  const riffEnd = view.getUint32(4, true) + 8
+  const pad = bytes.byteLength - riffEnd
+  let problem: string | null = null
+  // The only slack a RIFF file may have is one zero pad byte.
+  if (pad !== 0 && pad !== 1) problem = `RIFF size says ${riffEnd} B but the image is ${bytes.byteLength} B`
+  else if (pad === 1 && bytes[bytes.byteLength - 1] !== 0) problem = 'a non-zero byte follows the RIFF payload'
+  const end = Math.min(riffEnd, bytes.byteLength)
+  const chunks: string[] = []
   let at = 12
-  while (at + 8 <= bytes.byteLength) {
-    ids.push(fourcc(bytes, at))
-    const size = view.getUint32(at + 4, true)
-    at += 8 + size + (size % 2)
+  while (at < end) {
+    if (at + 8 > end) {
+      problem ??= 'a truncated chunk header ends the image'
+      break
+    }
+    const id = fourcc(bytes, at)
+    chunks.push(id)
+    at += 8 + view.getUint32(at + 4, true) + (view.getUint32(at + 4, true) % 2)
+    if (at > end) {
+      problem ??= `chunk "${id.trim()}" runs past the end of the image`
+      break
+    }
   }
-  return ids
+  return { chunks, problem }
 }
 
 /** Long edge in pixels of a WebP or PNG, 0 when unknown. */
@@ -238,7 +259,24 @@ export interface GlbReport {
 }
 
 type Json = Record<string, unknown>
-const arr = (value: unknown): Json[] => (Array.isArray(value) ? (value as Json[]) : [])
+const isObj = (value: unknown): value is Json => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/**
+ * The elements of a glTF collection. A non-object element (`nodes: [1]`) becomes an empty object so
+ * indices keep their meaning and no caller can throw on it; with `out`, it is also a SECURITY finding.
+ */
+function arr(value: unknown, out?: Violation[], where = '$'): Json[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) {
+    out?.push(v('SECURITY', where, 'must be an array'))
+    return []
+  }
+  return value.map((item, i) => {
+    if (isObj(item)) return item
+    out?.push(v('SECURITY', `${where}[${i}]`, 'must be an object'))
+    return {}
+  })
+}
 const num = (value: unknown, fallback = 0): number => (typeof value === 'number' ? value : fallback)
 
 function primitiveTriangles(primitive: Json, accessors: Json[]): number {
@@ -511,7 +549,11 @@ export function isAllowedGlbExtension(name: string): boolean {
   return KNOWN_EXTENSIONS.has(name)
 }
 
-const DRIVE_LETTER = /(?<![A-Za-z0-9])[A-Za-z]:[\\/]/
+/**
+ * `C:\x`, `d:/x`, and `exportC:\x` (a letter glued to a word is still a drive path when a backslash follows).
+ * A forward slash needs a non-alphanumeric before it and no second slash after it, so `https://` is not a drive.
+ */
+const DRIVE_LETTER = /(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/](?!\/)|[A-Za-z]:\\/
 const HOME_PATH = /\/home\/|\/Users\/|\/root\/|\/mnt\/[a-z]\/|~\/|\\Users\\/i
 const ENV_VAR = /%[A-Za-z_][A-Za-z0-9_]*%/
 const UNC_PATH = /\\\\[A-Za-z0-9_.$-]+\\/
@@ -561,24 +603,276 @@ function walk(value: unknown, where: string, state: WalkState): void {
   }
 }
 
-/** Ranges of buffer 0 that bufferViews cover, counting a meshopt view by the compressed bytes it really stores. */
-function storedRanges(bufferViews: Json[]): { start: number; end: number }[] {
-  const ranges: { start: number; end: number }[] = []
-  for (const view of bufferViews) {
-    const meshopt = (view['extensions'] as Json | undefined)?.['EXT_meshopt_compression'] as Json | undefined
-    if (meshopt) {
-      if (num(meshopt['buffer']) === 0) ranges.push({ start: num(meshopt['byteOffset']), end: num(meshopt['byteOffset']) + num(meshopt['byteLength']) })
-    } else if (num(view['buffer']) === 0) {
-      ranges.push({ start: num(view['byteOffset']), end: num(view['byteOffset']) + num(view['byteLength']) })
+// ---------------------------------------------------------------------------------------------
+// Structure: which keys a committed GLB may carry
+// ---------------------------------------------------------------------------------------------
+
+const keys = (...list: string[]): ReadonlySet<string> => new Set(list)
+
+const TEXTURE_INFO_KEYS = keys('index', 'texCoord', 'extensions')
+const EXTENSION_BODY_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
+  EXT_meshopt_compression: keys('buffer', 'byteOffset', 'byteLength', 'byteStride', 'count', 'mode', 'filter', 'fallback'),
+  EXT_texture_webp: keys('source'),
+  KHR_texture_transform: keys('offset', 'rotation', 'scale', 'texCoord'),
+  KHR_materials_emissive_strength: keys('emissiveStrength'),
+  KHR_materials_transmission: keys('transmissionFactor', 'transmissionTexture'),
+  KHR_materials_volume: keys('thicknessFactor', 'thicknessTexture', 'attenuationDistance', 'attenuationColor'),
+  KHR_materials_ior: keys('ior'),
+}
+/** Extension bodies that hold a textureInfo of their own. */
+const EXTENSION_TEXTURES = ['transmissionTexture', 'thicknessTexture'] as const
+
+const ATTRIBUTE_KEY = /^(?:POSITION|NORMAL|TANGENT|TEXCOORD_\d|COLOR_\d|JOINTS_\d|WEIGHTS_\d)$/
+
+/** Extensions a collection element may carry, by collection. Any other contract extension there is misplaced. */
+const EXTENSIONS_ON: Readonly<Record<string, readonly string[]>> = {
+  buffers: ['EXT_meshopt_compression'],
+  bufferViews: ['EXT_meshopt_compression'],
+  textures: ['EXT_texture_webp'],
+  materials: ['KHR_materials_emissive_strength', 'KHR_materials_transmission', 'KHR_materials_volume', 'KHR_materials_ior'],
+  textureInfo: ['KHR_texture_transform'],
+}
+
+/** Keys with a dedicated finding elsewhere (a name, extras, a uri), so the key rule stays quiet about them. */
+const HANDLED_ELSEWHERE: ReadonlySet<string> = keys('name', 'extras', 'uri')
+
+const COLLECTION_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
+  scenes: keys('nodes'),
+  nodes: keys('children', 'mesh', 'skin', 'translation', 'rotation', 'scale', 'matrix', 'weights'),
+  meshes: keys('primitives', 'weights'),
+  materials: keys('pbrMetallicRoughness', 'normalTexture', 'occlusionTexture', 'emissiveTexture', 'emissiveFactor', 'alphaMode', 'alphaCutoff', 'doubleSided', 'extensions'),
+  accessors: keys('bufferView', 'byteOffset', 'componentType', 'normalized', 'count', 'type', 'max', 'min', 'sparse'),
+  bufferViews: keys('buffer', 'byteOffset', 'byteLength', 'byteStride', 'target', 'extensions'),
+  buffers: keys('byteLength', 'extensions'),
+  images: keys('bufferView', 'mimeType'),
+  textures: keys('sampler', 'source', 'extensions'),
+  samplers: keys('magFilter', 'minFilter', 'wrapS', 'wrapT'),
+  animations: keys('channels', 'samplers'),
+  skins: keys('inverseBindMatrices', 'skeleton', 'joints'),
+}
+const PRIMITIVE_KEYS = keys('attributes', 'indices', 'material', 'mode', 'targets')
+const PBR_KEYS = keys('baseColorFactor', 'baseColorTexture', 'metallicFactor', 'roughnessFactor', 'metallicRoughnessTexture')
+
+function checkKeys(item: Json, allowed: ReadonlySet<string>, where: string, out: Violation[], opts: { collection?: boolean } = {}): void {
+  for (const key of Object.keys(item)) {
+    if (allowed.has(key) || key === 'extras') continue
+    if (opts.collection && HANDLED_ELSEWHERE.has(key)) continue
+    out.push(v('SECURITY', `${where}.${key}`, `key "${key}" is not allowed here`))
+  }
+}
+
+function checkExtensions(item: Json, on: string, where: string, out: Violation[]): void {
+  const body = item['extensions']
+  if (body === undefined) return
+  if (!isObj(body)) {
+    out.push(v('SECURITY', `${where}.extensions`, 'must be an object'))
+    return
+  }
+  const allowedHere = new Set(EXTENSIONS_ON[on] ?? [])
+  for (const [name, value] of Object.entries(body)) {
+    const at = `${where}.extensions.${name}`
+    // A name outside the contract has its own finding in `walk`.
+    if (!isAllowedGlbExtension(name)) continue
+    if (!allowedHere.has(name)) {
+      out.push(v('SECURITY', at, `extension ${name} is not valid on ${on}`))
+      continue
+    }
+    if (!isObj(value)) {
+      out.push(v('SECURITY', at, 'must be an object'))
+      continue
+    }
+    checkKeys(value, EXTENSION_BODY_KEYS[name] ?? keys(), at, out)
+    for (const key of EXTENSION_TEXTURES) {
+      const info = value[key]
+      if (isObj(info)) checkTextureInfo(info, `${at}.${key}`, out, keys())
     }
   }
-  return ranges.sort((a, b) => a.start - b.start)
+}
+
+function checkTextureInfo(info: Json, where: string, out: Violation[], extra: ReadonlySet<string>): void {
+  checkKeys(info, new Set([...TEXTURE_INFO_KEYS, ...extra]), where, out)
+  checkExtensions(info, 'textureInfo', where, out)
+}
+
+function checkMaterial(material: Json, where: string, out: Violation[]): void {
+  const texture = (parent: Json, key: string, extra: ReadonlySet<string>, at: string) => {
+    const info = parent[key]
+    if (info === undefined) return
+    if (!isObj(info)) out.push(v('SECURITY', `${at}.${key}`, 'must be an object'))
+    else checkTextureInfo(info, `${at}.${key}`, out, extra)
+  }
+  texture(material, 'normalTexture', keys('scale'), where)
+  texture(material, 'occlusionTexture', keys('strength'), where)
+  texture(material, 'emissiveTexture', keys(), where)
+  const pbr = material['pbrMetallicRoughness']
+  if (pbr === undefined) return
+  if (!isObj(pbr)) {
+    out.push(v('SECURITY', `${where}.pbrMetallicRoughness`, 'must be an object'))
+    return
+  }
+  const at = `${where}.pbrMetallicRoughness`
+  checkKeys(pbr, PBR_KEYS, at, out)
+  texture(pbr, 'baseColorTexture', keys(), at)
+  texture(pbr, 'metallicRoughnessTexture', keys(), at)
+}
+
+function checkAttributes(value: unknown, where: string, out: Violation[]): void {
+  if (value === undefined) return
+  if (!isObj(value)) {
+    out.push(v('SECURITY', where, 'must be an object'))
+    return
+  }
+  for (const key of Object.keys(value))
+    if (!ATTRIBUTE_KEY.test(key)) out.push(v('SECURITY', `${where}.${key}`, `attribute "${key}" is not allowed`))
+}
+
+const COLLECTIONS = ['scenes', 'nodes', 'meshes', 'materials', 'accessors', 'bufferViews', 'buffers', 'images', 'textures', 'samplers', 'animations', 'skins'] as const
+type Collections = Readonly<Record<(typeof COLLECTIONS)[number], Json[]>>
+
+/** Every collection must hold objects only, and every object only keys the pipeline can emit. */
+function scanStructure(json: Json, cols: Collections, out: Violation[]): void {
+  const asset = json['asset']
+  if (!isObj(asset)) out.push(v('SECURITY', '$.asset', 'asset must be an object'))
+  else if (asset['version'] !== '2.0') out.push(v('SECURITY', '$.asset.version', 'asset.version must be "2.0"'))
+
+  for (const collection of COLLECTIONS) {
+    const allowed = COLLECTION_KEYS[collection] ?? keys()
+    for (const [i, item] of cols[collection].entries()) {
+      const where = `$.${collection}[${i}]`
+      checkKeys(item, allowed, where, out, { collection: true })
+      checkExtensions(item, collection, where, out)
+    }
+  }
+  for (const [i, material] of cols.materials.entries()) checkMaterial(material, `$.materials[${i}]`, out)
+  for (const [i, mesh] of cols.meshes.entries()) {
+    for (const [j, primitive] of arr(mesh['primitives'], out, `$.meshes[${i}].primitives`).entries()) {
+      const where = `$.meshes[${i}].primitives[${j}]`
+      checkKeys(primitive, PRIMITIVE_KEYS, where, out)
+      checkAttributes(primitive['attributes'], `${where}.attributes`, out)
+      const targets = primitive['targets']
+      if (Array.isArray(targets)) targets.forEach((t: unknown, k) => checkAttributes(t, `${where}.targets[${k}]`, out))
+      else if (targets !== undefined) out.push(v('SECURITY', `${where}.targets`, 'must be an array'))
+    }
+  }
+  for (const [i, animation] of cols.animations.entries()) {
+    const where = `$.animations[${i}]`
+    for (const [j, channel] of arr(animation['channels'], out, `${where}.channels`).entries()) {
+      checkKeys(channel, keys('sampler', 'target'), `${where}.channels[${j}]`, out)
+      const target = channel['target']
+      if (isObj(target)) checkKeys(target, keys('node', 'path'), `${where}.channels[${j}].target`, out)
+      else if (target !== undefined) out.push(v('SECURITY', `${where}.channels[${j}].target`, 'must be an object'))
+    }
+    for (const [j, sampler] of arr(animation['samplers'], out, `${where}.samplers`).entries())
+      checkKeys(sampler, keys('input', 'interpolation', 'output'), `${where}.samplers[${j}]`, out)
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The binary chunk: every stored byte is a referenced, in-range, non-overlapping view
+// ---------------------------------------------------------------------------------------------
+
+/** A non-negative integer field (or `fallback` when absent); null when present but not one. */
+function intField(item: Json, key: string, fallback: number | null): number | null {
+  const value = item[key]
+  if (value === undefined) return fallback
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+}
+
+interface StoredRange {
+  readonly start: number
+  readonly end: number
+  readonly view: number
+}
+
+/**
+ * The bytes of buffer 0 that each bufferView really stores. A plain view stores its own range; a
+ * meshopt view stores the compressed range its extension names, while its own offset and length
+ * describe the decoded fallback data that is never written. Anything unreadable is reported.
+ */
+function storedRanges(bufferViews: Json[], declared: number, binLength: number, out: Violation[]): StoredRange[] {
+  const ranges: StoredRange[] = []
+  for (const [i, view] of bufferViews.entries()) {
+    const where = `$.bufferViews[${i}]`
+    const extensions = view['extensions']
+    const meshoptRaw = isObj(extensions) ? extensions['EXT_meshopt_compression'] : undefined
+    const meshopt = isObj(meshoptRaw) ? meshoptRaw : null
+    const viewBuffer = intField(view, 'buffer', null)
+    let source: Json = view
+    if (meshopt) {
+      source = meshopt
+      if (viewBuffer === null || viewBuffer === 0)
+        out.push(v('SECURITY', where, 'a meshopt bufferView must point at the fallback buffer, not at buffer 0'))
+      if (intField(meshopt, 'buffer', null) !== 0)
+        out.push(v('SECURITY', `${where}.extensions.EXT_meshopt_compression`, 'compressed bytes must live in buffer 0'))
+      // The decoded length is never stored but accessors are checked against it.
+      if (intField(view, 'byteLength', null) === null || intField(view, 'byteOffset', 0) === null)
+        out.push(v('SECURITY', where, 'byteOffset and byteLength must be non-negative integers'))
+    } else if (viewBuffer !== 0) {
+      out.push(v('SECURITY', where, 'a bufferView must point at buffer 0; any other buffer is never stored'))
+      continue
+    }
+    const start = intField(source, 'byteOffset', 0)
+    const length = intField(source, 'byteLength', null)
+    if (start === null || length === null) {
+      out.push(v('SECURITY', where, 'byteOffset and byteLength must be non-negative integers'))
+      continue
+    }
+    if (start + length > declared)
+      out.push(v('SECURITY', where, `bufferView ends at ${start + length}, past the declared buffer of ${declared} bytes`))
+    if (start + length > binLength)
+      out.push(v('SECURITY', where, `bufferView ends at ${start + length}, past the ${binLength} byte binary chunk`))
+    ranges.push({ start, end: start + length, view: i })
+  }
+  return ranges.sort((a, b) => a.start - b.start || a.end - b.end)
+}
+
+const COMPONENT_BYTES: Readonly<Record<number, number>> = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 }
+const TYPE_COMPONENTS: Readonly<Record<string, number>> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 }
+
+/** Accessors: no sparse, a real view, every element inside it. Returns the views that something reads. */
+function scanAccessors(accessors: Json[], bufferViews: Json[], images: Json[], out: Violation[]): Set<number> {
+  const referenced = new Set<number>()
+  for (const [i, accessor] of accessors.entries()) {
+    const where = `$.accessors[${i}]`
+    if ('sparse' in accessor) out.push(v('SECURITY', `${where}.sparse`, 'sparse accessors are not allowed'))
+    const index = accessor['bufferView']
+    if (index === undefined) continue
+    const view = typeof index === 'number' && Number.isInteger(index) ? bufferViews[index] : undefined
+    if (typeof index !== 'number' || !view) {
+      out.push(v('SECURITY', `${where}.bufferView`, 'accessor points at a bufferView that does not exist'))
+      continue
+    }
+    referenced.add(index)
+    const componentBytes = COMPONENT_BYTES[accessor['componentType'] as number]
+    const components = TYPE_COMPONENTS[accessor['type'] as string]
+    const count = accessor['count']
+    const offset = intField(accessor, 'byteOffset', 0)
+    if (
+      componentBytes === undefined ||
+      components === undefined ||
+      typeof count !== 'number' ||
+      !Number.isInteger(count) ||
+      count < 1 ||
+      offset === null
+    ) {
+      out.push(v('SECURITY', where, 'accessor needs a known type and componentType, a positive integer count and a non-negative integer byteOffset'))
+      continue
+    }
+    const viewLength = intField(view, 'byteLength', null)
+    if (viewLength === null) continue // reported by storedRanges
+    const element = componentBytes * components
+    const stride = intField(view, 'byteStride', null) ?? element
+    const needed = offset + stride * (count - 1) + element
+    if (needed > viewLength) out.push(v('SECURITY', where, `accessor reads ${needed} bytes but its bufferView holds ${viewLength}`))
+  }
+  for (const image of images) if (typeof image['bufferView'] === 'number') referenced.add(image['bufferView'])
+  return referenced
 }
 
 /** The binary chunk must be exactly the declared buffer: no tail, no hidden gap, nothing in the padding. */
-function scanBinary(json: Json, bin: Uint8Array | null, out: Violation[]): void {
-  const buffers = arr(json['buffers'])
-  const declared = num(buffers[0]?.['byteLength'])
+function scanBinary(cols: Collections, bin: Uint8Array | null, out: Violation[]): void {
+  const declared = num(cols.buffers[0]?.['byteLength'])
+  const referenced = scanAccessors(cols.accessors, cols.bufferViews, cols.images, out)
   if (!bin) {
     if (declared > 0) out.push(v('SECURITY', '$.buffers[0]', 'declares bytes but the file has no binary chunk'))
     return
@@ -592,15 +886,27 @@ function scanBinary(json: Json, bin: Uint8Array | null, out: Violation[]): void 
       break
     }
   }
+
+  const ranges = storedRanges(cols.bufferViews, declared, bin.byteLength, out)
   let covered = 0
-  for (const r of storedRanges(arr(json['bufferViews']))) {
-    if (r.start - covered > 3) {
+  let last: StoredRange | null = null
+  for (const r of ranges) {
+    if (r.end === r.start) continue
+    if (last && r.start < covered)
+      out.push(v('SECURITY', '$.bufferViews', `bufferViews ${last.view} and ${r.view} overlap in the binary chunk`))
+    else if (r.start - covered > 3)
       out.push(v('SECURITY', '$.bufferViews', `binary chunk has an unreferenced gap of ${r.start - covered} bytes at offset ${covered}`))
+    if (r.end >= covered) {
       covered = r.end
-    } else covered = Math.max(covered, r.end)
+      last = r
+    }
   }
   if (declared - covered > 3)
     out.push(v('SECURITY', '$.bufferViews', `binary chunk has an unreferenced tail of ${declared - covered} bytes at offset ${covered}`))
+
+  // A stored view nothing reads is data the file carries for no reason: a hiding place.
+  for (const r of ranges)
+    if (!referenced.has(r.view)) out.push(v('SECURITY', `$.bufferViews[${r.view}]`, 'bufferView is not referenced by any accessor or image'))
 }
 
 /**
@@ -610,6 +916,13 @@ function scanBinary(json: Json, bin: Uint8Array | null, out: Violation[]): void 
 export function scanGlb(bytes: Uint8Array, subject: string, tier?: ModelTier): Violation[] {
   const { json, bin } = parseGlb(bytes)
   const out: Violation[] = []
+
+  // JSON.parse keeps the last of two equal keys and ignores whitespace, and everything below
+  // inspects the parsed view. So the parsed view must be the file: repacking it must give the same bytes.
+  const repacked = packGlb(json, bin)
+  if (repacked.byteLength !== bytes.byteLength || repacked.some((b, i) => b !== bytes[i]))
+    out.push(v('SECURITY', '$', 'GLB is not in canonical form (duplicate keys, extra whitespace or non-canonical JSON)'))
+
   const state: WalkState = {
     out,
     elementExtensions: new Set<string>(),
@@ -619,6 +932,9 @@ export function scanGlb(bytes: Uint8Array, subject: string, tier?: ModelTier): V
 
   for (const key of Object.keys(json))
     if (!ALLOWED_TOP_LEVEL_KEYS.has(key)) out.push(v('SECURITY', `$.${key}`, `top-level key "${key}" is not allowed`))
+
+  const cols = Object.fromEntries(COLLECTIONS.map((c) => [c, arr(json[c], out, `$.${c}`)])) as unknown as Collections
+  scanStructure(json, cols, out)
 
   const declaredExtensions = new Set<string>()
   for (const key of ['extensionsUsed', 'extensionsRequired'] as const) {
@@ -636,21 +952,21 @@ export function scanGlb(bytes: Uint8Array, subject: string, tier?: ModelTier): V
     if (isAllowedGlbExtension(ext) && !declaredExtensions.has(ext))
       out.push(v('SECURITY', '$.extensionsUsed', `extension ${ext} is used in the file but not declared in extensionsUsed`))
 
-  const asset = (json['asset'] ?? {}) as Record<string, unknown>
+  const asset = isObj(json['asset']) ? json['asset'] : {}
   for (const key of Object.keys(asset))
     if (key !== 'version') out.push(v('SECURITY', `$.asset.${key}`, 'asset metadata other than version must be stripped'))
 
   for (const collection of UNNAMED_COLLECTIONS)
-    for (const [i, item] of arr(json[collection]).entries())
+    for (const [i, item] of cols[collection].entries())
       if ('name' in item) out.push(v('SECURITY', `$.${collection}[${i}].name`, 'names must be stripped'))
-  for (const [i, animation] of arr(json['animations']).entries()) {
+  for (const [i, animation] of cols.animations.entries()) {
     const name = animation['name']
     if (name !== undefined && (typeof name !== 'string' || !CLIP_NAME.test(name)))
       out.push(v('SECURITY', `$.animations[${i}].name`, 'clip names must match [a-z0-9-]{0,40}'))
   }
 
   // Meshopt declares one virtual "fallback" buffer that is never stored. Buffer 0 is the stored one.
-  const buffers = arr(json['buffers'])
+  const buffers = cols.buffers
   const isFallback = (b: Json | undefined) =>
     ((b?.['extensions'] as Json | undefined)?.['EXT_meshopt_compression'] as Json | undefined)?.['fallback'] === true
   if (buffers.length > 2) out.push(v('SECURITY', '$.buffers', 'a GLB carries one stored buffer and at most one meshopt fallback'))
@@ -658,27 +974,31 @@ export function scanGlb(bytes: Uint8Array, subject: string, tier?: ModelTier): V
   if (buffers.length === 2 && !isFallback(buffers[1]))
     out.push(v('SECURITY', '$.buffers[1]', 'a second buffer must be the meshopt fallback and nothing else'))
 
-  scanBinary(json, bin, out)
+  scanBinary(cols, bin, out)
 
-  const bufferViews = arr(json['bufferViews'])
-  for (const [i, image] of arr(json['images']).entries()) {
-    const view = typeof image['bufferView'] === 'number' ? bufferViews[image['bufferView']] : undefined
+  for (const [i, image] of cols.images.entries()) {
+    const view = typeof image['bufferView'] === 'number' ? cols.bufferViews[image['bufferView']] : undefined
     if (!view || !bin) {
       out.push(v('SECURITY', `$.images[${i}]`, 'image data must be embedded in the binary chunk'))
       continue
     }
-    const start = num(view['byteOffset'])
-    const end = start + num(view['byteLength'])
-    if (start < 0 || end > bin.byteLength) {
+    if (view['buffer'] !== 0 || isObj(view['extensions'])) {
+      out.push(v('SECURITY', `$.images[${i}]`, 'image bufferView must be a plain stored view in buffer 0'))
+      continue
+    }
+    const start = intField(view, 'byteOffset', 0)
+    const length = intField(view, 'byteLength', null)
+    if (start === null || length === null || start + length > bin.byteLength) {
       out.push(v('SECURITY', `$.images[${i}]`, 'image bufferView runs past the end of the binary chunk'))
       continue
     }
-    const chunks = webpChunks(bin.subarray(start, end))
-    if (chunks === null) {
+    const webp = inspectWebp(bin.subarray(start, start + length))
+    if (webp === null) {
       if (image['mimeType'] === 'image/webp') out.push(v('SECURITY', `$.images[${i}]`, 'declared as WebP but is not a RIFF/WEBP file'))
     } else {
-      for (const id of chunks)
+      for (const id of webp.chunks)
         if (!WEBP_ALLOWED_CHUNKS.has(id)) out.push(v('SECURITY', `$.images[${i}]`, `WebP chunk "${id.trim()}" can carry metadata and is not allowed`))
+      if (webp.problem) out.push(v('SECURITY', `$.images[${i}]`, `WebP container is malformed: ${webp.problem}`))
     }
   }
 
