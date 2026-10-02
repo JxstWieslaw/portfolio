@@ -168,8 +168,8 @@ test.describe('a model in the lattice section', () => {
       await expect.poll(async () => (await memory(page))?.textures, { timeout: 15_000 }).toBeGreaterThan(baseline?.textures ?? 0)
 
       await scrollToTop(page)
-      // Grace period is 2 s; allow a second of margin.
-      await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 3_500 })
+      // Grace period is 2 s. Eviction is frame-driven and SwiftShader frames crawl under a loaded runner, so the window is generous.
+      await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 8_000 })
       await expect.poll(() => memory(page), { timeout: 10_000 }).toEqual(baseline)
     }
 

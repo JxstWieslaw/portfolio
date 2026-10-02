@@ -29,7 +29,7 @@
     "path": [
       ".next/static/chunks/models.*.js"
     ],
-    "limit": "26 kB",
+    "limit": "22.8 kB",
     "gzip": true
   }
 ]
