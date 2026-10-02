@@ -25,10 +25,11 @@ import {
 import { ARTEFACT_CENTRE, ARTEFACT_LIGHT_INTENSITY, igniteScale } from '@/lib/assembly/artefact'
 import { ATTRACT_PULL_MODEL, ATTRACT_RADIUS, ATTRACT_RISE, attractorStore, boxCentre } from '@/lib/assembly/attractors'
 import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
+import { chapterFor, lerpChapter } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
-import { NO_DROP, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
+import { BREATH_FPS, NO_DROP, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
 import { EMPTY_SLOTS, planSlots, type SlotState } from '@/lib/assembly/slots'
@@ -44,6 +45,7 @@ import {
 } from '@/lib/assembly/targets'
 import { FORMATIONS, washCss, type FormationId } from '@/lib/formations/config'
 import { createArtefact, type Artefact } from './Artefact'
+import { createModelSlot, type ModelSlot, type ModelSlotOptions } from './models/ModelSlot'
 import { attachSlots, createAssemblyMaterial, createAssemblyUniforms, type AssemblySlots, type AssemblyUniforms } from './AssemblyMaterial'
 
 /**
@@ -69,9 +71,13 @@ import { attachSlots, createAssemblyMaterial, createAssemblyUniforms, type Assem
  * environment baked through PMREM before the programs compile (§ 5.3).
  *
  * Frame loop is `demand`: scroll, pointer, resize and the attractor
- * invalidate; a 30 fps ticker invalidates for the idle motion while the tab
- * is visible and the layer is not faded out. Nothing runs while
+ * invalidate; a 20 fps ticker (`BREATH_FPS`) invalidates for the idle motion
+ * while the tab is visible and the layer is not faded out. Nothing runs while
  * `document.hidden`.
+ *
+ * Models (model platform spec § 3): the rig owns a `ModelSlot` that hosts at
+ * most two GLBs, driven from the same priority-1 frame as everything else. The
+ * chapter ledger (`CHAPTERS`) is all `null` today, so the slot is inert.
  */
 
 export interface AssemblyCanvasProps {
@@ -102,10 +108,9 @@ const REPEL_FALL = 4
 /** The artefact's scale as the orbit's core (§ 3.4). */
 const ORBIT_ARTEFACT_SCALE = 0.6
 
-/**
- * 20 on every device, matching the 2D hero this replaces.
- */
-const BREATH_FPS = 20
+/** The hemisphere and sun at neutral key/fill bias (the chapter ledger multiplies these). */
+const HEMISPHERE_INTENSITY = 1.1
+const SUN_INTENSITY = 1.6
 
 interface PointerState {
   x: number
@@ -187,13 +192,14 @@ interface Rig {
   readonly slots: AssemblySlots
   readonly uniforms: AssemblyUniforms
   readonly artefact: Artefact
+  readonly models: ModelSlot
   readonly hemisphere: HemisphereLight
   readonly sun: DirectionalLight
   readonly inverse: Matrix4
   dispose(): void
 }
 
-function createRig(capacity: number): Rig {
+function createRig(capacity: number, slot: Omit<ModelSlotOptions, 'parent'>): Rig {
   // A plain Mesh over an InstancedBufferGeometry: position, scale and rotation
   // live in the vertex program, so there is no instance matrix to upload
   // (an InstancedMesh would carry 192 kB of identity matrices for nothing).
@@ -213,11 +219,12 @@ function createRig(capacity: number): Rig {
 
   const group = new Group()
   group.add(mesh, artefact.group)
+  const models = createModelSlot({ ...slot, parent: group })
 
   // Sky a dim violet, ground near-black; one key light from above-left so the
   // top faces read lit, like the 2D painter's highlight band.
-  const hemisphere = new HemisphereLight(new Color('#6d4bd1'), new Color('#06080c'), 1.1)
-  const sun = new DirectionalLight(0xffffff, 1.6)
+  const hemisphere = new HemisphereLight(new Color('#6d4bd1'), new Color('#06080c'), HEMISPHERE_INTENSITY)
+  const sun = new DirectionalLight(0xffffff, SUN_INTENSITY)
   sun.position.set(-4, 7, 5)
 
   return {
@@ -227,10 +234,12 @@ function createRig(capacity: number): Rig {
     slots,
     uniforms,
     artefact,
+    models,
     hemisphere,
     sun,
     inverse: new Matrix4(),
     dispose() {
+      models.dispose()
       geometry.dispose()
       material.dispose()
       artefact.dispose()
@@ -276,6 +285,8 @@ interface Motion {
   repel: number
   attract: number
   rig: CameraRig
+  /** The chapter ledger's look-at offset and light biases, damped like the rig. */
+  look: { x: number; y: number; z: number; key: number; fill: number }
   orbit: number
   drop: DropState
   /** `uTime` at which the ring fully landed; `-1` otherwise. */
@@ -306,7 +317,8 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     return cache
   }, [capacity, keep])
 
-  const rig = useMemo(() => createRig(capacity), [capacity])
+  const rung = keep < 1 ? 'reduced-instances' : 'live'
+  const rig = useMemo(() => createRig(capacity, { gl, scene, camera, rung, invalidate }), [capacity, gl, scene, camera, rung, invalidate])
   const slotState = useRef<SlotState>(EMPTY_SLOTS)
   // The environment is baked *before* the programs are compiled so the variant
   // that links is the final one (the envMap define is part of the program key).
@@ -440,6 +452,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     repel: 0,
     attract: 0,
     rig: rigFor('monolith', portrait),
+    look: { x: 0, y: 0, z: 0, key: 1, fill: 1 },
     orbit: 0,
     drop: NO_DROP,
     settledAt: -1,
@@ -490,9 +503,18 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     }
     m.orbit += target.orbitRate * dt
     const [cx, cy, cz] = cameraPosition(m.rig.distance, m.rig.tiltDeg, m.orbit)
+    // The chapter ledger's look-at offset and key/fill bias, damped at the same rate.
+    // Neutral rows ([0,0,0], 1, 1) leave the camera and the lights exactly as they were.
+    const chapter = lerpChapter(chapterFor(from), chapterFor(to), mix)
+    const look = m.look
+    look.x = damp(look.x, chapter.target[0], CAMERA_DAMP, dt)
+    look.y = damp(look.y, chapter.target[1], CAMERA_DAMP, dt)
+    look.z = damp(look.z, chapter.target[2], CAMERA_DAMP, dt)
+    look.key = damp(look.key, chapter.keyBias, CAMERA_DAMP, dt)
+    look.fill = damp(look.fill, chapter.fillBias, CAMERA_DAMP, dt)
+    rig.sun.intensity = SUN_INTENSITY * look.key
+    rig.hemisphere.intensity = HEMISPHERE_INTENSITY * look.fill
     camera.position.set(cx, cy, cz)
-    camera.lookAt(0, 0, 0)
-    camera.updateMatrixWorld()
 
     // Per-frame scalars from the live distance: one tan, so the anchor stays
     // on its measured pixel at any dolly (§ 3.8).
@@ -500,6 +522,10 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     const scalars = (kind: BundleKind): FrameScalars => frameScalars(FORMATIONS[kind === 'cloud' ? 'monolith' : kind], view)
     const sFrom = scalars(from)
     const sTo = scalars(to)
+    // The look-at offset is in model units; the live unit turns it into world units.
+    const lookUnit = lerp(sFrom.unit, sTo.unit, mix)
+    camera.lookAt(look.x * lookUnit, look.y * lookUnit, look.z * lookUnit)
+    camera.updateMatrixWorld()
 
     // Formation change: write the slot that is not holding `from`, flip uSwap.
     const plan = planSlots(slotState.current, from, to)
@@ -611,6 +637,11 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     // TODO(slice 3): drive the light by tier as well — off at tier 1, where
     // the environment is skipped too (§ 5.6); it stays on for every tier now.
     artefact.light.intensity = ARTEFACT_LIGHT_INTENSITY * Math.max(ignite * heroWeight, orbitWeight)
+
+    // Models (platform spec § 3): placed, scaled in and animated here, never on a loop of their own.
+    // A loaded `artefact`-role model takes the artefact's place; scale 0, never `visible` (it holds a light).
+    const modelFrame = rig.models.update({ from, to, mix, settled, dt, time: t, unitOf: (formation) => scalars(formation).unit })
+    if (modelFrame.suppressArtefact) artefact.group.scale.setScalar(0)
     artefact.tick(t)
 
     if (!live.current) {
@@ -632,6 +663,8 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       Math.abs(target.tiltDeg - m.rig.tiltDeg) > 1e-3 ||
       Math.abs(repelTarget - m.repel) > 1e-3 ||
       Math.abs(attractTarget - m.attract) > 1e-3 ||
+      Math.abs(chapter.target[0] - look.x) + Math.abs(chapter.target[1] - look.y) + Math.abs(chapter.target[2] - look.z) > 1e-4 ||
+      Math.abs(chapter.keyBias - look.key) + Math.abs(chapter.fillBias - look.fill) > 1e-4 ||
       shiver > 0 ||
       (calm > 0 && calm < 1) ||
       Math.abs(ny * parallax - m.parallaxX) > 1e-4 ||

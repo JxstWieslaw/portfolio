@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { assemblyBuilder, formationBuilder } from '@/lib/assembly/bundle-cache'
+import { CHAPTERS, type ModelPlacement } from '@/lib/assembly/chapters'
 import {
   INSTANCE_CAPACITY,
+  buildModelBundle,
   buildTargets,
+  clearArtefact,
+  clearSphere,
   frameFor,
   instanceCount,
   pixelToWorld,
@@ -12,6 +17,17 @@ import { REDUCED_KEEP } from '@/lib/formations/fallback'
 import { pointsFor, shade } from '@/lib/formations/render'
 
 const frame = frameFor(1440, 900)
+
+const modelRow: ModelPlacement = {
+  asset: 'test',
+  role: 'prop',
+  position: [0, 0, 0],
+  scale: 1,
+  rotation: [0, 0, 0],
+  spin: 0,
+  exclusion: 0,
+  appear: [0.2, 0.8],
+}
 
 describe('buildTargets', () => {
   it.each(FORMATION_IDS)('%s: one bundle, N*3 positions, N colours, N scales', (kind) => {
@@ -93,5 +109,67 @@ describe('buildTargets', () => {
     expect(buildTargets('grid', frame, 10).spreadX).toBe(1)
     expect(frameFor(390, 844).fov).toBe(45)
     expect(frame.fov).toBe(35)
+  })
+})
+
+describe('clearSphere', () => {
+  const centre = [0, 0.1, 0] as const
+
+  it('moves cubes inside the radius out to it along the radius from the centre, and no others', () => {
+    const bundle = buildModelBundle('monolith', INSTANCE_CAPACITY)
+    const { bundle: cleared, moved } = clearSphere(bundle, centre, 0.3)
+    expect(moved).toBeGreaterThan(0)
+    for (let i = 0; i < cleared.count; i += 1) {
+      const d = Math.hypot(
+        (cleared.position[i * 3] ?? 0) - centre[0],
+        (cleared.position[i * 3 + 1] ?? 0) - centre[1],
+        (cleared.position[i * 3 + 2] ?? 0) - centre[2],
+      )
+      expect(d).toBeGreaterThanOrEqual(0.3 - 1e-6)
+    }
+    // Cubes already outside are untouched, and the input is not mutated.
+    const before = Math.hypot(bundle.position[0] ?? 0, (bundle.position[1] ?? 0) - 0.1, bundle.position[2] ?? 0)
+    if (before >= 0.3) expect(cleared.position.slice(0, 3)).toEqual(bundle.position.slice(0, 3))
+    expect(bundle.position).toEqual(buildModelBundle('monolith', INSTANCE_CAPACITY).position)
+  })
+
+  it('moves nothing when the radius is 0 and returns the same positions', () => {
+    const bundle = buildModelBundle('orbit', INSTANCE_CAPACITY)
+    const { bundle: cleared, moved } = clearSphere(bundle, centre, 0)
+    expect(moved).toBe(0)
+    expect(cleared.position).toEqual(bundle.position)
+  })
+
+  it('is what clearArtefact does: the old name is a thin wrapper with identical output', () => {
+    const bundle = buildModelBundle('monolith', INSTANCE_CAPACITY)
+    const a = clearArtefact(bundle, centre, 0.42, 0.48)
+    const b = clearSphere(bundle, centre, 0.42, 0.48)
+    expect(a.moved).toBe(b.moved)
+    expect(a.bundle.position).toEqual(b.bundle.position)
+  })
+})
+
+describe('the chapter ledger leaves the formations alone while every model is null', () => {
+  it.each(FORMATION_IDS)('%s: assemblyBuilder with the committed ledger equals the plain builder', (kind) => {
+    const plain = formationBuilder(INSTANCE_CAPACITY, 1)
+    const scene = assemblyBuilder(INSTANCE_CAPACITY, 1)
+    if (kind === 'monolith') return // the monolith carries the artefact's own clearance, tested in assembly-journey
+    expect(scene(kind).position).toEqual(plain(kind).position)
+  })
+
+  it('applies a placement exclusion to that formation only, and the monolith keeps the artefact clearance on top', () => {
+    const ledger = {
+      ...CHAPTERS,
+      stream: { ...CHAPTERS.stream, model: { ...modelRow, position: [0, 0, 0] as const, exclusion: 0.4 } },
+    }
+    const base = assemblyBuilder(INSTANCE_CAPACITY, 1)
+    const withRow = assemblyBuilder(INSTANCE_CAPACITY, 1, undefined, ledger)
+    const stream = withRow('stream')
+    expect(stream.position).not.toEqual(base('stream').position)
+    for (let i = 0; i < stream.count; i += 1) {
+      expect(Math.hypot(stream.position[i * 3] ?? 0, stream.position[i * 3 + 1] ?? 0, stream.position[i * 3 + 2] ?? 0)).toBeGreaterThanOrEqual(0.4 - 1e-6)
+    }
+    expect(withRow('lattice').position).toEqual(base('lattice').position)
+    expect(withRow('monolith').position).toEqual(base('monolith').position)
   })
 })

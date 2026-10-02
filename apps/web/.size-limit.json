@@ -15,8 +15,21 @@
   },
   {
     "name": "assembly core (three + R3F + CSM + scene, lazy)",
-    "path": [".next/static/chunks/*.*.js", "!.next/static/chunks/655.*.js", "!.next/static/chunks/826.*.js"],
+    "path": [
+      ".next/static/chunks/*.*.js",
+      "!.next/static/chunks/655.*.js",
+      "!.next/static/chunks/826.*.js",
+      "!.next/static/chunks/models.*.js"
+    ],
     "limit": "275 kB",
+    "gzip": true
+  },
+  {
+    "name": "assembly models (GLTFLoader + Meshopt + manifest, lazy)",
+    "path": [
+      ".next/static/chunks/models.*.js"
+    ],
+    "limit": "26 kB",
     "gzip": true
   }
 ]

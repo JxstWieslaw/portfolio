@@ -1,6 +1,10 @@
 import { fileURLToPath } from 'node:url'
 import type { NextConfig } from 'next'
 
+/** Modules that belong to the lazy `models` chunk, matched on path with either separator. */
+const MODELS_CHUNK =
+  /[\\/](?:components[\\/]three[\\/]models[\\/]ModelLoader\.ts|lib[\\/]models[\\/]manifest\.ts|public[\\/]models[\\/]manifest\.json|three[\\/]examples[\\/]jsm[\\/](?:loaders[\\/]GLTFLoader|libs[\\/]meshopt_decoder\.module|utils[\\/](?:BufferGeometryUtils|SkeletonUtils))\.js)$/
+
 const config: NextConfig = {
   reactStrictMode: true,
   // `@repo/contracts` ships TypeScript source rather than a build artefact
@@ -28,7 +32,40 @@ const config: NextConfig = {
       ...config.resolve.extensionAlias,
       '.js': ['.ts', '.tsx', '.js'],
     }
+    /**
+     * The model loaders (GLTFLoader, the Meshopt decoder), the manifest and the
+     * `ModelLoader` that imports them are reachable only through one dynamic
+     * import. Next's default cache groups would still shave them into a numbered
+     * shared chunk beside a tiny named one, which is two files for `size-limit`
+     * to tell apart. Forcing one async group named `models` keeps them in a
+     * single `models.<hash>.js` whose size is the budget (platform spec § 4.2).
+     */
+    const splitChunks = config.optimization?.splitChunks
+    if (splitChunks && typeof splitChunks === 'object') {
+      splitChunks.cacheGroups = {
+        ...splitChunks.cacheGroups,
+        models: {
+          name: 'models',
+          chunks: 'async',
+          enforce: true,
+          priority: 60,
+          test: MODELS_CHUNK,
+        },
+      }
+    }
     return config
+  },
+  async headers() {
+    return [
+      {
+        // Hashed file names (`<id>.t<tier>.<hash8>.glb`): a changed asset is a new file, so a year is safe.
+        source: '/models/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
+    ]
   },
 }
 
