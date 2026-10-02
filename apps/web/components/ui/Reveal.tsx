@@ -146,8 +146,18 @@ class RevealController {
 
   /** Reveals elements that entered together, staggered by position in the batch. */
   private revealBatch(batch: readonly HTMLElement[]): void {
+    // Observer entries arrive in `observe()` order, and React runs child effects
+    // first, so nested or late-hydrating targets can arrive bottom-up. Position
+    // is assigned in DOM order so the stagger always plays top to bottom.
+    const ordered = [...batch].sort((a, b) =>
+      a === b
+        ? 0
+        : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING
+          ? -1
+          : 1
+    )
     let position = 0
-    for (const element of batch) {
+    for (const element of ordered) {
       if (element.dataset['revealed'] === 'true') continue
       this.reveal(element, batchStaggerMs(position))
       position += 1

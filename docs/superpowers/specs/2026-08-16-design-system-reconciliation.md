@@ -291,7 +291,8 @@ New in the export, absent from the plan, and buildable in M0 with plain CSS + In
 — **no animation dependency**. Motion stays out of M0 as the plan intends.
 
 - Hidden state `opacity:0; translateY(24px)` → `opacity:1; transform:none`
-- `560ms cubic-bezier(.2,.8,.2,1)`, `siblingIndex * 70ms` stagger
+- `560ms cubic-bezier(.2,.8,.2,1)`, `batchPosition * 70ms` stagger, capped at 3 steps (210ms). Position is the element's place (in DOM order) among those revealed in the same observer callback or poll tick, not its sibling index.
+  - *Decision (P3a, 2026-10-02):* the export's sibling index delayed a late list item 400ms+ even when it scrolled in alone; batch position gives it 0ms.
 - Observer `threshold: 0.12, rootMargin: '0px 0px -4% 0px'`
 - **Above-fold guard:** anything with `top <= innerHeight * 0.92` is never hidden — prevents FOUC
 - 450ms geometry-poll fallback; **4000ms hard deadline** after which everything reveals regardless

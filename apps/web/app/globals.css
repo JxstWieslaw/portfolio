@@ -106,8 +106,8 @@
   /* --- Motion ------------------------------------------------------------ */
   --d-1: 120ms;                 /* colour, border, chip */
   --d-2: 200ms;                 /* hover, focus, glow */
-  --d-3: 320ms;                 /* reveals, nav condense */
-  --d-4: 560ms;                 /* sheet, formation cross-fade */
+  --d-3: 320ms;                 /* reveals, nav condense, sheet enter */
+  --d-4: 560ms;                 /* formation cross-fade (the sheet enter moved to --d-3) */
   /* reconciliation §2: kept OUT of the reduced-motion override below. Every
      other --d-* collapses to 1ms there; an opacity-only cross-fade is safe
      under reduced motion and rung 3 of the poster fallback ladder needs it. */
@@ -1103,6 +1103,13 @@
   to {
     clip-path: inset(-0.1em -0.1em -0.25em -0.1em);
     translate: 0 0;
+  }
+}
+
+/* A heading must never print clipped mid-reveal. */
+@media print {
+  .section-head-title h2 {
+    animation: none;
   }
 }
 

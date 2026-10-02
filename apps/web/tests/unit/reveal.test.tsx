@@ -203,7 +203,7 @@ describe('Reveal — observer path and stagger', () => {
     expect(element.style.transform).toBe('none')
   })
 
-  it('staggers a batch by 70ms per position and uses the 560ms curve', () => {
+  it('regression guard: a batch staggers 70ms per position on the 560ms curve (passes on old and new code)', () => {
     const observer = stubIntersectionObserver()
     stubRectTop(10_000)
 
@@ -230,6 +230,31 @@ describe('Reveal — observer path and stagger', () => {
       'transform 560ms cubic-bezier(.2,.8,.2,1) 70ms'
     )
     expect(third.getAttribute('style')).toContain('140ms')
+  })
+
+  it('assigns stagger in DOM order even when the observer delivers bottom-up', () => {
+    const observer = stubIntersectionObserver()
+    stubRectTop(10_000)
+
+    const { container } = render(
+      <>
+        <Reveal>one</Reveal>
+        <Reveal>two</Reveal>
+        <Reveal>three</Reveal>
+      </>
+    )
+    const [first, second, third] = Array.from(container.children) as HTMLElement[]
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error('expected three siblings')
+    }
+
+    act(() => {
+      observer.fireBatch([third, first, second])
+    })
+
+    expect(first.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 0ms')
+    expect(second.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 70ms')
+    expect(third.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 140ms')
   })
 
   it('gives a late list item no delay when it scrolls in alone', () => {

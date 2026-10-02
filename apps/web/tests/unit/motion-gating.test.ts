@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -103,5 +103,37 @@ describe('the section heading reveal', () => {
     const body = css.slice(at, css.length - rest.length)
     const properties = Array.from(body.matchAll(/([a-z-]+)\s*:/g)).map((match) => match[1])
     expect(new Set(properties)).toEqual(new Set(['clip-path', 'translate']))
+  })
+})
+
+describe('no bare :hover anywhere in the source tree', () => {
+  function walk(dir: string, extensions: readonly string[]): string[] {
+    const found: string[] = []
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) found.push(...walk(path, extensions))
+      else if (extensions.some((extension) => entry.name.endsWith(extension))) found.push(path)
+    }
+    return found
+  }
+
+  const files = [
+    ...walk(join(root, 'components'), ['.tsx']),
+    ...walk(join(root, 'app'), ['.css', '.tsx']),
+  ]
+
+  it('scans a meaningful number of files', () => {
+    expect(files.length).toBeGreaterThan(20)
+  })
+
+  it('finds a :hover selector only inside @media (hover: hover)', () => {
+    const offenders: string[] = []
+    for (const file of files) {
+      const source = withoutComments(readFileSync(file, 'utf8')).replace(/^\s*\/\/.*$/gm, '')
+      const rest = withoutBlocks(source, '@media (hover: hover)')
+      // Tailwind `hover:` utilities have no leading colon and are gated by v4 itself.
+      if (/:hover\b/.test(rest)) offenders.push(file)
+    }
+    expect(offenders).toEqual([])
   })
 })

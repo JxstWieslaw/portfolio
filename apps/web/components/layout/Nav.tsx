@@ -64,7 +64,7 @@ const HEADER = [
 ].join(' ')
 
 const CHROME = [
-  'absolute inset-x-0 top-0 h-[72px] border-b border-transparent bg-[rgba(13,17,23,0.35)]',
+  'pointer-events-auto absolute inset-x-0 top-0 h-[72px] border-b border-transparent bg-[rgba(13,17,23,0.35)]',
   'backdrop-blur-[12px]',
   'transition-[translate,background-color,border-color] duration-[var(--d-3)] ease-[var(--ease)]',
   'group-data-[condensed=true]:-translate-y-[16px] group-data-[condensed=true]:border-[var(--line-1)]',

@@ -246,9 +246,15 @@ describe('Nav — scroll condense', () => {
   })
 
   it('leaves the transparent strip under the condensed bar click-through', () => {
-    render(<Nav />)
+    const { container } = render(<Nav />)
     expect(screen.getByRole('banner').className).toContain('pointer-events-none')
     expect(screen.getByRole('link', { name: NAV_CTA.label }).closest('.pointer-events-auto')).not.toBeNull()
+    // The visible 56px bar must block pointer events (hit-testing follows the
+    // translate), so clicks on empty bar never reach cards scrolled beneath it.
+    const chromePlate = container.querySelector('[data-nav-chrome]') as HTMLElement
+    expect(chromePlate.className).toContain('pointer-events-auto')
+    const monogram = container.querySelector('header a')
+    expect(monogram?.closest('.pointer-events-auto')).not.toBeNull()
     expect(screen.getByRole('navigation', { name: 'Primary' }).className).toContain(
       'pointer-events-auto'
     )
