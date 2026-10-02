@@ -3,56 +3,18 @@
  * The scanner is the only backstop for file-origin sources (raw sources are gitignored, so CI cannot
  * re-derive them). Each test here fails if the fix it names is removed.
  */
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-
-import { KHRMaterialsIOR, KHRMaterialsTransmission, KHRMaterialsVolume, KHRTextureTransform } from '@gltf-transform/extensions'
 import { MODEL_BUDGETS, TIER_EXTENSIONS } from '@repo/contracts'
 import sharp from 'sharp'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { buildVariant, loadToolchain } from '../../scripts/assets/pipeline'
-import { defaultRoot } from '../../scripts/assets/sources'
 import { inspectWebp, packGlb, parseGlb, scanGlb, type Violation } from '../../scripts/assets/validators'
-import { addClip, uvSphere } from './assets-fixtures'
+import { type Json, binGlb, committedGlb, floats, glbAroundImage, rawGlb, richDoc, shorts, view, type BinSpec } from './assets-fixtures'
 
-type Json = Record<string, unknown>
-
-const modelsDir = path.join(defaultRoot(), 'apps', 'web', 'public', 'models')
-const committed = (tier: 1 | 2): Uint8Array => {
-  const manifest = JSON.parse(readFileSync(path.join(modelsDir, 'manifest.json'), 'utf8')) as {
-    models: { variants: { tier: number; url: string }[] }[]
-  }
-  const url = manifest.models[0]?.variants.find((x) => x.tier === tier)?.url ?? ''
-  return new Uint8Array(readFileSync(path.join(modelsDir, url.replace('/models/', ''))))
-}
+const committed = committedGlb
 
 const messages = (found: readonly Violation[]) => found.map((x) => x.message).sort()
 const onlySecurity = (found: readonly Violation[]) => expect(found.every((x) => x.code === 'SECURITY')).toBe(true)
-
-/** A GLB container around hand-written JSON text, so the text can hold what JSON.stringify never writes. */
-function rawGlb(jsonText: string, bin: Uint8Array | null): Uint8Array {
-  const jsonBytes = new TextEncoder().encode(jsonText)
-  const jsonPadded = Math.ceil(jsonBytes.byteLength / 4) * 4
-  const binPadded = bin ? Math.ceil(bin.byteLength / 4) * 4 : 0
-  const total = 12 + 8 + jsonPadded + (bin ? 8 + binPadded : 0)
-  const out = new Uint8Array(total)
-  const view = new DataView(out.buffer)
-  view.setUint32(0, 0x46546c67, true)
-  view.setUint32(4, 2, true)
-  view.setUint32(8, total, true)
-  view.setUint32(12, jsonPadded, true)
-  view.setUint32(16, 0x4e4f534a, true)
-  out.fill(0x20, 20, 20 + jsonPadded)
-  out.set(jsonBytes, 20)
-  if (bin) {
-    const at = 20 + jsonPadded
-    view.setUint32(at, binPadded, true)
-    view.setUint32(at + 4, 0x004e4942, true)
-    out.set(bin, at + 8)
-  }
-  return out
-}
 
 // ---------------------------------------------------------------------------------------------
 // A1: the parsed view of a file must be the file
@@ -87,7 +49,7 @@ describe('A1: canonical form', () => {
   })
 
   it('SECURITY: a number written another way (1.0 for 1)', () => {
-    const changed = text.replace('"scale":[', '"scale":[').replace('"mode":4', '"mode":4.0')
+    const changed = text.replace('"mode":4', '"mode":4.0')
     expect(changed).not.toBe(text)
     expect(messages(scanGlb(rawGlb(changed, bin), 'g', 1))).toEqual([CANONICAL])
   })
@@ -98,34 +60,14 @@ describe('A1: canonical form', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('A2: BIN coverage', () => {
-  /** Two float accessors over two 8-byte views, laid out back to back unless a case says otherwise. */
-  interface Spec {
-    bufferViews?: Json[]
-    accessors?: Json[]
-    binLength?: number
-    declared?: number
-    extra?: Json
-  }
-  const view = (byteOffset: number, byteLength: number, more: Json = {}): Json => ({ buffer: 0, byteOffset, byteLength, ...more })
-  const floats = (bufferView: number, count: number, more: Json = {}): Json => ({ bufferView, componentType: 5126, count, type: 'SCALAR', ...more })
-  const glb = (spec: Spec = {}): Uint8Array => {
-    const binLength = spec.binLength ?? 16
-    return packGlb(
-      {
-        asset: { version: '2.0' },
-        accessors: spec.accessors ?? [floats(0, 2), floats(1, 2)],
-        bufferViews: spec.bufferViews ?? [view(0, 8), view(8, 8)],
-        buffers: [{ byteLength: spec.declared ?? binLength }],
-        ...spec.extra,
-      },
-      new Uint8Array(binLength),
-    )
-  }
+  type Spec = BinSpec
+  const glb = binGlb
   const scan = (spec?: Spec) => scanGlb(glb(spec), 'g')
 
-  it('passes the clean baseline, and a 3 byte alignment gap (the boundary)', () => {
+  it('passes the clean baseline, and the alignment padding between two views (the boundary)', () => {
     expect(scan()).toEqual([])
-    expect(scan({ bufferViews: [view(0, 8), view(11, 8)], binLength: 20 })).toEqual([])
+    // A 6 byte view ends at 6, so the next view starts at 8: the 2 byte gap is exactly the padding to a 4 byte boundary.
+    expect(scan({ bufferViews: [view(0, 6), view(8, 8)], accessors: [shorts(0, 3), floats(1, 2)] })).toEqual([])
   })
 
   it('passes the committed gyroscope: meshopt views are judged by their compressed bytes', () => {
@@ -216,18 +158,18 @@ describe('A2: BIN coverage', () => {
     const { json, bin } = parseGlb(committed(1))
     ;(json['accessors'] as unknown[]).pop()
     const found = scanGlb(packGlb(json, bin), 'g', 1)
-    expect(messages(found)).toEqual(['bufferView is not referenced by any accessor or image'])
-    expect(found[0]?.subject).toContain('$.bufferViews[2]')
+    expect(messages(found)).toEqual(['POSITION is not the index of an existing accessor', 'bufferView is not referenced by any accessor or image'].sort())
+    expect(found.find((x) => x.message === 'bufferView is not referenced by any accessor or image')?.subject).toContain('$.bufferViews[2]')
   })
 
   it('SECURITY: a meshopt view whose compressed bytes run past the buffer', () => {
     const { json, bin } = parseGlb(committed(1))
     const ext = (((json['bufferViews'] as Json[])[2] as Json)['extensions'] as Json)['EXT_meshopt_compression'] as Json
+    const declared = ((json['buffers'] as Json[])[0] as Json)['byteLength']
+    const end = (ext['byteOffset'] as number) + 10_000_000
     ext['byteLength'] = 10_000_000
     const found = scanGlb(packGlb(json, bin), 'g', 1)
-    expect(messages(found)).toEqual(
-      expect.arrayContaining([expect.stringMatching(/^bufferView ends at 10012424, past the declared buffer of 26496 bytes$/)]),
-    )
+    expect(messages(found)).toContain(`bufferView ends at ${end}, past the declared buffer of ${declared} bytes`)
     onlySecurity(found)
   })
 
@@ -247,22 +189,8 @@ describe('A3: structural keys', () => {
   const tiers = { 2: null as Uint8Array | null, 3: null as Uint8Array | null }
   beforeAll(async () => {
     const tc = await loadToolchain()
-    const png = await sharp(Buffer.alloc(64 * 64 * 3, 120), { raw: { width: 64, height: 64, channels: 3 } }).png().toBuffer()
-    for (const tier of [2, 3] as const) {
-      const doc = uvSphere(20, 24, true)
-      const texture = doc.createTexture('a').setImage(new Uint8Array(png)).setMimeType('image/png')
-      const material = doc.getRoot().listMaterials()[0] ?? doc.createMaterial('fallback')
-      material.setNormalTexture(texture).setOcclusionTexture(texture).setEmissiveFactor([1, 0, 0]).setAlphaMode('BLEND').setDoubleSided(true)
-      material.setBaseColorTexture(texture)
-      material.getBaseColorTextureInfo()?.setExtension('KHR_texture_transform', doc.createExtension(KHRTextureTransform).createTransform().setScale([2, 2]).setOffset([0.1, 0]))
-      if (tier === 3) {
-        material.setExtension('KHR_materials_transmission', doc.createExtension(KHRMaterialsTransmission).createTransmission().setTransmissionFactor(0.5))
-        material.setExtension('KHR_materials_volume', doc.createExtension(KHRMaterialsVolume).createVolume().setThicknessFactor(1))
-        material.setExtension('KHR_materials_ior', doc.createExtension(KHRMaterialsIOR).createIOR().setIOR(1.4))
-      }
-      addClip(doc, 'idle', 2)
-      tiers[tier] = (await buildVariant(tc, doc, { subject: 'kenney-like', tier, clips: [{ from: 'idle', as: 'idle' }] })).bytes
-    }
+    for (const tier of [2, 3] as const)
+      tiers[tier] = (await buildVariant(tc, await richDoc(tier), { subject: 'kenney-like', tier, clips: [{ from: 'idle', as: 'idle' }] })).bytes
   }, 120_000)
 
   const kenney = (tier: 2 | 3): Uint8Array => tiers[tier] ?? new Uint8Array()
@@ -272,6 +200,9 @@ describe('A3: structural keys', () => {
     return packGlb(json, bin)
   }
   const at = (json: Json, collection: string): Json[] => json[collection] as Json[]
+  /** The textured material of the fixture: the pipeline may reorder materials, so find it by what it carries. */
+  const bodyMaterial = (json: Json): Json => at(json, 'materials').find((m) => 'normalTexture' in m) ?? {}
+  const bodyAt = (json: Json): number => at(json, 'materials').findIndex((m) => 'normalTexture' in m)
 
   it('never rejects what the pipeline writes: both committed GLBs and textured, animated, transmissive output', () => {
     expect(scanGlb(committed(1), 'gyroscope', 1)).toEqual([])
@@ -300,7 +231,7 @@ describe('A3: structural keys', () => {
 
   it('SECURITY: unknown keys one level down (primitive, pbr, textureInfo, channel, target, sampler)', () => {
     const bytes = mutate(kenney(3), (json) => {
-      const material = at(json, 'materials')[0] as Json
+      const material = bodyMaterial(json)
       const prim = ((at(json, 'meshes')[0] as Json)['primitives'] as Json[])[0] as Json
       prim['bogus'] = 1
       ;(material['pbrMetallicRoughness'] as Json)['bogus'] = 1
@@ -312,11 +243,12 @@ describe('A3: structural keys', () => {
       ;((animation['samplers'] as Json[])[0] as Json)['bogus'] = 1
     })
     const found = scanGlb(bytes, 'g', 3).map((x) => x.subject.replace(/^g /, ''))
+    const m = bodyAt(parseGlb(bytes).json)
     expect(found.sort()).toEqual(
       [
         '$.meshes[0].primitives[0].bogus',
-        '$.materials[0].pbrMetallicRoughness.bogus',
-        '$.materials[0].normalTexture.bogus',
+        `$.materials[${m}].pbrMetallicRoughness.bogus`,
+        `$.materials[${m}].normalTexture.bogus`,
         '$.animations[0].channels[0].bogus',
         '$.animations[0].channels[0].target.bogus',
         '$.animations[0].samplers[0].bogus',
@@ -326,11 +258,11 @@ describe('A3: structural keys', () => {
 
   it('SECURITY: unknown keys inside every allowed extension body', () => {
     const bytes = mutate(kenney(3), (json) => {
-      const material = at(json, 'materials')[0] as Json
+      const material = bodyMaterial(json)
       for (const ext of Object.values(material['extensions'] as Record<string, Json>)) ext['bogus'] = 1
       const body = (item: Json | undefined, ext: string): Json => ((item?.['extensions'] as Record<string, Json> | undefined)?.[ext] ?? {}) as Json
       body(at(json, 'textures')[0], 'EXT_texture_webp')['bogus'] = 1
-      body(at(json, 'bufferViews')[1], 'EXT_meshopt_compression')['bogus'] = 1
+      body(at(json, 'bufferViews').find((x) => 'extensions' in x), 'EXT_meshopt_compression')['bogus'] = 1
       body(at(json, 'buffers')[1], 'EXT_meshopt_compression')['bogus'] = 1
     })
     const found = scanGlb(bytes, 'g', 3).filter((x) => x.message === 'key "bogus" is not allowed here')
@@ -471,25 +403,16 @@ describe('A4: path and PII patterns', () => {
 
 describe('A4: WebP container sizes', () => {
   /** A RIFF/WEBP body from chunks; `riffSize` and `trailing` let a case lie about it. */
-  function webp(chunks: [string, number][], opts: { riffSize?: number; trailing?: number[]; skipPad?: boolean } = {}): Uint8Array {
+  function webp(chunks: [string, number][], opts: { riffSize?: number; trailing?: number[]; skipPad?: boolean; padByte?: number } = {}): Uint8Array {
     const body: number[] = [...Buffer.from('WEBP')]
     for (const [id, size] of chunks) {
       body.push(...Buffer.from(id), size & 255, (size >> 8) & 255, 0, 0, ...new Array<number>(size).fill(0))
-      if (size % 2 && !opts.skipPad) body.push(0)
+      if (size % 2 && !opts.skipPad) body.push(opts.padByte ?? 0)
     }
     const riffSize = opts.riffSize ?? body.length
     return new Uint8Array([...Buffer.from('RIFF'), riffSize & 255, (riffSize >> 8) & 255, 0, 0, ...body, ...(opts.trailing ?? [])])
   }
-  const glbWith = (image: Uint8Array): Uint8Array =>
-    packGlb(
-      {
-        asset: { version: '2.0' },
-        buffers: [{ byteLength: image.length }],
-        bufferViews: [{ buffer: 0, byteLength: image.length }],
-        images: [{ bufferView: 0, mimeType: 'image/webp' }],
-      },
-      image,
-    )
+  const glbWith = glbAroundImage
   const found = (image: Uint8Array) => messages(scanGlb(glbWith(image), 'x'))
 
   it('passes an exact container, with and without an odd chunk and its pad byte', () => {
@@ -526,6 +449,38 @@ describe('A4: WebP container sizes', () => {
 
     const short = webp([['VP8 ', 10]], { riffSize: 30 + 3 - 8, trailing: [0, 0, 0] })
     expect(found(short)).toEqual(['WebP container is malformed: a truncated chunk header ends the image'])
+  })
+
+  const LAYOUT = 'WebP chunk layout is not one the encoder writes: '
+
+  it('SECURITY: a simple WebP is one VP8 or VP8L chunk, so a second bitstream chunk is a finding', () => {
+    const simple = `${LAYOUT}a simple WebP is one VP8 or VP8L chunk and nothing else`
+    expect(found(webp([['VP8 ', 10], ['VP8L', 10]]))).toEqual([simple])
+    expect(found(webp([['VP8L', 10], ['ALPH', 4]]))).toEqual([simple])
+  })
+
+  it('SECURITY: an extended WebP has at most one ALPH, one VP8X and exactly one bitstream chunk', () => {
+    const exactlyOne = `${LAYOUT}an extended WebP needs exactly one VP8 or VP8L chunk`
+    expect(found(webp([['VP8X', 10], ['ALPH', 4], ['VP8 ', 8]]))).toEqual([])
+    expect(found(webp([['VP8X', 10], ['VP8L', 8]]))).toEqual([])
+    expect(found(webp([['VP8X', 10], ['ALPH', 4], ['ALPH', 4], ['VP8 ', 8]]))).toEqual([`${LAYOUT}more than one ALPH chunk`])
+    expect(found(webp([['VP8X', 10], ['ALPH', 4]]))).toEqual([exactlyOne])
+    expect(found(webp([['VP8X', 10], ['VP8 ', 8], ['VP8L', 8]]))).toEqual([exactlyOne])
+    expect(found(webp([['VP8X', 10], ['VP8X', 10], ['VP8 ', 8]]))).toEqual([`${LAYOUT}more than one VP8X chunk`])
+  })
+
+  it('SECURITY: the first chunk must be a VP8, VP8L or VP8X chunk', () => {
+    expect(found(webp([['ALPH', 4], ['VP8 ', 8]]))).toEqual(
+      [`${LAYOUT}the first chunk must be VP8, VP8L or VP8X`, `${LAYOUT}a simple WebP is one VP8 or VP8L chunk and nothing else`].sort(),
+    )
+    // No chunk at all is shorter than a RIFF header can be, so it is not recognised as a WebP in the first place.
+    expect(found(webp([]))).toEqual(['declared as WebP but is not a RIFF/WEBP file'])
+  })
+
+  it('SECURITY: the pad byte after an odd-sized chunk is zero (it is a place to hide one byte per chunk)', () => {
+    expect(found(webp([['VP8 ', 11]]))).toEqual([])
+    expect(found(webp([['VP8 ', 11]], { padByte: 7 }))).toEqual(['WebP container is malformed: a non-zero pad byte follows chunk "VP8"'])
+    expect(found(webp([['VP8X', 10], ['ALPH', 5], ['VP8 ', 8]], { padByte: 1 }))).toEqual(['WebP container is malformed: a non-zero pad byte follows chunk "ALPH"'])
   })
 
   it('inspectWebp: null for anything that is not RIFF/WEBP, a clean verdict for the real thing', () => {

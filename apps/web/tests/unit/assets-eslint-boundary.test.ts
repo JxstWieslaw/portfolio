@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ESLint } from 'eslint'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const eslint = new ESLint({ cwd: webRoot })
@@ -16,6 +16,12 @@ async function lint(file: string, code: string): Promise<string[]> {
 const TOOLCHAIN = 'Build-time only: asset tooling must not reach the client bundle.'
 
 describe('the asset toolchain cannot reach the client bundle', () => {
+  // The first lint loads the whole flat config and the TypeScript parser (13 s on a cold machine), which
+  // is longer than the 5 s default and would be charged to whichever case happens to run first.
+  beforeAll(async () => {
+    await lint('lib/warm-up.ts', 'export const warm = 1\n')
+  }, 60_000)
+
   const forbidden: [string, string][] = [
     ['sharp', `import sharp from 'sharp'\nexport const a = sharp\n`],
     ['a named gltf-transform import', `import { Document } from '@gltf-transform/core'\nexport const a = Document\n`],

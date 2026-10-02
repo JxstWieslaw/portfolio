@@ -183,7 +183,7 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
   it('MATERIALS (validateReport): a file over its tier cap', async () => {
     rewriteVariant({ json: (j) => void (j['materials'] = [{}, {}, {}]) })
     const { violations } = await runCheck({ root })
-    expect(messages(violations, 'MATERIALS')).toEqual(['3 materials exceed the tier 2 cap of 2'])
+    expect(messages(violations, 'MATERIALS')).toEqual(['materials: 3 > budget 2: needs a material merge, see docs/3d-asset-sourcing.md'])
   })
 
   it('SCHEMA (the contract): a file name that says another tier than the variant', async () => {

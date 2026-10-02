@@ -11,6 +11,7 @@ import path from 'node:path'
 
 import { modelManifestSchema, type ModelManifest } from '@repo/contracts'
 
+import { verifyImages } from './images'
 import { loadToolchain, measureBoundsRadius, type Toolchain } from './pipeline'
 import { defaultRoot, deriveCredit, layoutFor, loadSources, tiersOf, type SourceEntry } from './sources'
 import {
@@ -19,6 +20,7 @@ import {
   contentHashOf,
   deriveVariantMeta,
   describeError,
+  printable,
   scanGlb,
   validateComplete,
   validateCredits,
@@ -131,6 +133,7 @@ export async function runCheck(opts: { readonly root: string }): Promise<CheckRe
           const report = buildReport(bytes)
           violations.push(...validateReport(report, { subject: fileName, tier: variant.tier, manifestClips: entry.clips }))
           violations.push(...scanGlb(bytes, fileName, variant.tier))
+          violations.push(...(await verifyImages(bytes, fileName)))
 
           if (report.bytes !== variant.bytes) violations.push(schema(fileName, `manifest says ${variant.bytes} B, file is ${report.bytes} B`))
           if (report.triangles !== variant.triangles)
@@ -177,7 +180,8 @@ export async function runCheck(opts: { readonly root: string }): Promise<CheckRe
 export async function main(root: string = defaultRoot()): Promise<number> {
   try {
     const result = await runCheck({ root })
-    for (const x of result.violations) console.error(`[${x.code}] ${x.subject}: ${x.message}`)
+    // Subjects and messages can carry text from a hostile file: a newline in a key must not forge a workflow command.
+    for (const x of result.violations) console.error(printable(`[${x.code}] ${x.subject}: ${x.message}`))
     if (result.violations.length > 0) {
       console.error(`assets:check failed with ${result.violations.length} violation(s)`)
       return 1
@@ -187,7 +191,7 @@ export async function main(root: string = defaultRoot()): Promise<number> {
     else console.log(`assets:check ok: ${result.entries} entr${result.entries === 1 ? 'y' : 'ies'}, ${result.files} GLB file(s)`)
     return 0
   } catch (error) {
-    console.error(`assets:check crashed: ${describeError(error)}`)
+    console.error(printable(`assets:check crashed: ${describeError(error)}`))
     return 1
   }
 }
