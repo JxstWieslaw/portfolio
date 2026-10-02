@@ -251,7 +251,7 @@ describe('A3: structural keys', () => {
     for (const tier of [2, 3] as const) {
       const doc = uvSphere(20, 24, true)
       const texture = doc.createTexture('a').setImage(new Uint8Array(png)).setMimeType('image/png')
-      const material = doc.getRoot().listMaterials()[0]!
+      const material = doc.getRoot().listMaterials()[0] ?? doc.createMaterial('fallback')
       material.setNormalTexture(texture).setOcclusionTexture(texture).setEmissiveFactor([1, 0, 0]).setAlphaMode('BLEND').setDoubleSided(true)
       material.setBaseColorTexture(texture)
       material.getBaseColorTextureInfo()?.setExtension('KHR_texture_transform', doc.createExtension(KHRTextureTransform).createTransform().setScale([2, 2]).setOffset([0.1, 0]))
@@ -328,10 +328,10 @@ describe('A3: structural keys', () => {
     const bytes = mutate(kenney(3), (json) => {
       const material = at(json, 'materials')[0] as Json
       for (const ext of Object.values(material['extensions'] as Record<string, Json>)) ext['bogus'] = 1
-      ;((at(json, 'textures')[0] as Json)['extensions'] as Record<string, Json>)['EXT_texture_webp']!['bogus'] = 1
-      const meshopt = ((at(json, 'bufferViews')[1] as Json)['extensions'] as Record<string, Json>)['EXT_meshopt_compression']!
-      meshopt['bogus'] = 1
-      ;((at(json, 'buffers')[1] as Json)['extensions'] as Record<string, Json>)['EXT_meshopt_compression']!['bogus'] = 1
+      const body = (item: Json | undefined, ext: string): Json => ((item?.['extensions'] as Record<string, Json> | undefined)?.[ext] ?? {}) as Json
+      body(at(json, 'textures')[0], 'EXT_texture_webp')['bogus'] = 1
+      body(at(json, 'bufferViews')[1], 'EXT_meshopt_compression')['bogus'] = 1
+      body(at(json, 'buffers')[1], 'EXT_meshopt_compression')['bogus'] = 1
     })
     const found = scanGlb(bytes, 'g', 3).filter((x) => x.message === 'key "bogus" is not allowed here')
     expect(found).toHaveLength(6)

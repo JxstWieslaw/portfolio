@@ -88,7 +88,7 @@ describe('B1: one source of truth for hosts', () => {
       const root = path.join(tmp, 'bom')
       const l = layoutFor(root)
       mkdirSync(path.dirname(l.sourcesFile), { recursive: true })
-      writeFileSync(l.sourcesFile, `﻿${JSON.stringify([base])}`)
+      writeFileSync(l.sourcesFile, String.fromCharCode(0xfeff) + JSON.stringify([base]))
       expect(loadSources(l)).toHaveLength(1)
     })
   })
