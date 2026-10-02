@@ -10,6 +10,18 @@
 import { FORMATIONS, type FormationId } from '@/lib/formations/config'
 import type { BundleKind } from '@/lib/assembly/targets'
 
+/**
+ * The idle ticker's rate, fps, on every device: breathing, flow, spins and
+ * clips advance at this rate while the tab is visible and the layer is shown.
+ *
+ * It was 30 on pointer devices and 20 on touch; the perf review moved desktop
+ * to 20 to match the 2D hero this layer replaces, trading smoothness for
+ * power (30 -> 20 fps is a third fewer frames while idle). The cost is that
+ * `setInterval(..., 50)` steps visibly on 120 and 144 Hz displays, where the
+ * scene advances every 6th or 7th refresh. Raise it here, not in the canvas.
+ */
+export const BREATH_FPS = 20
+
 /** `uBias` magnitude: violet-led sections shift the ramp down, cyan-led up (§ 5.1). */
 export const BIAS = 0.08
 

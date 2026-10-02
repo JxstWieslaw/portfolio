@@ -323,16 +323,17 @@ export function buildTargets(kind: FormationId, frame: Frame, capacity: number, 
 }
 
 /**
- * The artefact clearance post-pass — journey spec § 3.1. Cubes that would sit
- * inside the hero artefact's shell are moved outward along the radius from the
- * artefact's centre to `clearance`. Applied to the **bundle**, never in the
- * generator, so the 2D painter and its visual snapshots stay byte-identical.
- * Returns the number of instances moved (logged in dev).
+ * The clearance post-pass — journey spec § 3.1, model platform spec § 3.3.
+ * Cubes that would sit inside a sphere (the hero artefact's shell, a model's
+ * exclusion radius) are moved outward along the radius from `centre` to
+ * `clearance`. Applied to the **bundle**, never in the generator, so the 2D
+ * painter and its visual snapshots stay byte-identical. Returns the number of
+ * instances moved (logged in dev).
  */
-export function clearArtefact(
+export function clearSphere(
   bundle: ModelBundle,
   centre: readonly [number, number, number],
-  /** Cubes closer than this (the shell radius) are moved. */
+  /** Cubes closer than this are moved. */
   inside: number,
   /** ... out to this radius. */
   clearance: number = inside,
@@ -362,4 +363,14 @@ export function clearArtefact(
     position[i * 3 + 2] = position[src + 2] ?? 0
   }
   return { bundle: { ...bundle, position }, moved }
+}
+
+/** The hero artefact's clearance: `clearSphere` under its journey-spec name. */
+export function clearArtefact(
+  bundle: ModelBundle,
+  centre: readonly [number, number, number],
+  inside: number,
+  clearance: number = inside,
+): { readonly bundle: ModelBundle; readonly moved: number } {
+  return clearSphere(bundle, centre, inside, clearance)
 }
