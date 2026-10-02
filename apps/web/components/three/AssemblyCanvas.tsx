@@ -103,10 +103,9 @@ const REPEL_FALL = 4
 const ORBIT_ARTEFACT_SCALE = 0.6
 
 /**
- * 20 on touch devices (the 2D hero this replaces ran at 20), 30 on pointer
- * devices. Evaluated once: this module only ever loads in the browser.
+ * 20 on every device, matching the 2D hero this replaces.
  */
-const BREATH_FPS = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 ? 20 : 30
+const BREATH_FPS = 20
 
 interface PointerState {
   x: number
