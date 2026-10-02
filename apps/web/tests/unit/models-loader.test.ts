@@ -10,9 +10,11 @@ import { INTEGRITY, MODEL_URL, assertFetchable, assertParsed } from '@/lib/model
  * The GLB has no texture: the browser image decoders do not exist under jsdom.
  */
 
+import type * as DisposeModule from '@/lib/models/dispose'
+
 const disposeSpy = vi.fn()
 vi.mock('@/lib/models/dispose', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/models/dispose')>()
+  const actual = await importOriginal<typeof DisposeModule>()
   return { ...actual, disposeModel: (...args: Parameters<typeof actual.disposeModel>) => (disposeSpy(...args), actual.disposeModel(...args)) }
 })
 
@@ -105,12 +107,22 @@ describe('the fetch', () => {
     await expect(loadModel('unit-cube', 2)).rejects.toMatchObject({ code: 'network' })
   })
 
-  it('tells an integrity failure from a dead network by the browser message', async () => {
+  it('tells an integrity failure from a dead network: by the message when it says, else by probing the url without integrity', async () => {
     installManifest(glb)
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to find a valid digest in the 'integrity' attribute"))
     await expect(loadModel('unit-cube', 2)).rejects.toMatchObject({ code: 'integrity' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // A bare "Failed to fetch": the HEAD probe answers, so the file was reachable and the hash was wrong.
     resetLoaderForTests()
-    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    fetchMock.mockReset().mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce({ ok: true, status: 200 })
+    await expect(loadModel('unit-cube', 2)).rejects.toMatchObject({ code: 'integrity' })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'HEAD', mode: 'same-origin', credentials: 'omit', redirect: 'error' })
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).integrity).toBeUndefined()
+
+    // The probe fails too: a dead network.
+    resetLoaderForTests()
+    fetchMock.mockReset().mockRejectedValue(new TypeError('Failed to fetch'))
     await expect(loadModel('unit-cube', 2)).rejects.toMatchObject({ code: 'network' })
   })
 
@@ -157,11 +169,16 @@ describe('the fetch', () => {
 describe('prefetch', () => {
   it('drops a failed prefetch so the real load can retry, and a good one is reused', async () => {
     installManifest(glb)
-    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    let down = true
+    fetchMock.mockImplementation(async () => {
+      if (down) throw new TypeError('Failed to fetch')
+      return okResponse(glb)
+    })
     await expect(prefetchModel('unit-cube', 2)).rejects.toMatchObject({ code: 'network' })
-    fetchMock.mockResolvedValueOnce(okResponse(glb))
+    down = false
+    fetchMock.mockClear()
     await expect(loadModel('unit-cube', 2)).resolves.toMatchObject({ kind: 'loaded' })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
 
     resetLoaderForTests()
     fetchMock.mockReset().mockResolvedValue(okResponse(glb))

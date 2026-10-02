@@ -48,11 +48,24 @@ interface FetchInit extends RequestInit {
 /** Bytes fetched ahead of need, by url. A failed prefetch is forgotten so the real load can try again. */
 const bytes = new Map<string, Promise<ArrayBuffer>>()
 
-/** A fetch rejection is a TypeError for both a dead network and a failed integrity check; the message tells them apart. */
-function classify(error: unknown): ModelLoadError {
+/**
+ * A fetch rejection is a bare TypeError for a dead network and for a failed
+ * integrity check alike, and Chromium words neither reliably. So when the
+ * message does not say, probe the same url once more without `integrity`
+ * (HEAD, same-origin, a short deadline): if the server answers, the bytes were
+ * reachable and it was the hash that failed. Only failure paths pay for this.
+ */
+async function classify(error: unknown, url: string): Promise<ModelLoadError> {
   if (error instanceof ModelLoadError) return error
   const message = error instanceof Error ? error.message : String(error)
-  return new ModelLoadError(/integrity|digest/i.test(message) ? 'integrity' : 'network', message, { cause: error })
+  if (/integrity|digest/i.test(message)) return new ModelLoadError('integrity', message, { cause: error })
+  try {
+    const probe = await fetch(url, { method: 'HEAD', mode: 'same-origin', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(5000) })
+    if (probe.ok) return new ModelLoadError('integrity', `the file is reachable but failed its integrity check (${message})`, { cause: error })
+  } catch {
+    // Unreachable as well: a network problem.
+  }
+  return new ModelLoadError('network', message, { cause: error })
 }
 
 /** Reads a response body up to `cap` bytes; anything longer aborts the request. */
@@ -98,8 +111,8 @@ function fetchBytes(url: string, integrity: string, expectedBytes: number): Prom
         if (data.length !== expectedBytes) throw new ModelLoadError('size', `model is ${data.length} bytes, the manifest says ${expectedBytes}`)
         return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
       })
-      .catch((error: unknown) => {
-        throw classify(controller.signal.aborted && controller.signal.reason instanceof ModelLoadError ? controller.signal.reason : error)
+      .catch(async (error: unknown) => {
+        throw await classify(controller.signal.aborted && controller.signal.reason instanceof ModelLoadError ? controller.signal.reason : error, url)
       })
       .finally(() => clearTimeout(timer))
     bytes.set(url, pending)

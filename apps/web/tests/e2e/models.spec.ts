@@ -108,8 +108,19 @@ async function scrollWholePage(page: Page): Promise<void> {
  * reported, its 500 ms quiet window has passed and the thread has been idle.
  */
 async function decisionMade(page: Page): Promise<void> {
-  await page.waitForFunction(() => performance.getEntriesByType('largest-contentful-paint').length > 0, null, { timeout: 30_000 })
-  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(() => requestIdleCallback(() => resolve(), { timeout: 3000 }), 1500)))
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const quiet = () => setTimeout(() => requestIdleCallback(() => resolve(), { timeout: 3000 }), 1500)
+        // The LCP entry is only readable through an observer; the layer itself gives up waiting after 8 s.
+        const timer = setTimeout(quiet, 9000)
+        try {
+          new PerformanceObserver(() => (clearTimeout(timer), quiet())).observe({ type: 'largest-contentful-paint', buffered: true })
+        } catch {
+          // No LCP support: the layer waits for load instead, which has happened by now.
+        }
+      }),
+  )
 }
 
 function watch(page: Page) {

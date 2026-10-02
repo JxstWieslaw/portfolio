@@ -1,6 +1,7 @@
 import { AnimationClip, AnimationMixer, BoxGeometry, Group, Mesh, MeshStandardMaterial, VectorKeyframeTrack, type Camera, type Scene, type WebGLRenderer } from 'three'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHAPTERS, type Chapter, type ModelPlacement } from '@/lib/assembly/chapters'
+import type * as DisposeModule from '@/lib/models/dispose'
 import { ModelLoadError } from '@/lib/models/errors'
 import type { FormationId } from '@/lib/formations/config'
 import type { ModelFrame } from '@/components/three/models/ModelSlot'
@@ -17,7 +18,7 @@ const prefetchModel = vi.fn()
 const disposeSpy = vi.fn()
 
 vi.mock('@/components/three/models/ModelLoader', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/dispose')>('@/lib/models/dispose')
+  const actual = await vi.importActual<typeof DisposeModule>('@/lib/models/dispose')
   return {
     prepareModel: (...args: unknown[]) => prepareModel(...args),
     prefetchModel: (...args: unknown[]) => prefetchModel(...args),
