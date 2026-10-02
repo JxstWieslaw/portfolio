@@ -38,6 +38,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test
+      # Validates the committed 3D models, manifest and credits. No network: sources are
+      # generated or already committed, and assets:fetch never runs in CI.
+      - name: Validate 3D assets
+        run: |
+          npm run assets:check
+          npm run assets:ingest -- --only generated --verify
       - name: Report placeholder content (never fails the build)
         run: npm run lint:content
       # Reports production advisories and never gates: main carries moderate/high advisories through

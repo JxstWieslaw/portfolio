@@ -1,0 +1,9 @@
+# Binary assets: no line-ending or diff munging, ever.
+*.glb binary
+*.ktx2 binary
+*.hdr binary
+
+# Generated JSON is canonical LF so hashes and diffs do not depend on core.autocrlf.
+apps/web/public/models/manifest.json text eol=lf
+content/credits.json text eol=lf
+content/models/sources.json text eol=lf

@@ -72,20 +72,25 @@ For the **USDZ** (iOS AR): same model, exported via Blender's USD exporter or co
 > **From milestone M4 this is automated.** You upload a raw GLB through the admin surface and
 > the transcoder service (Cloud Run) runs every step below, producing per-tier LODs, KTX2
 > textures, the USDZ for iOS AR and a render poster — then `GET /v1/assets/manifest` serves each
-> visitor the right variant for their GPU tier and codec support. The commands below are what
-> that service runs, and what you run by hand before M4. See the
-> [API service spec §7](superpowers/specs/2026-08-15-api-service-design.md).
+> visitor the right variant for their GPU tier and codec support. Until then the repo's own
+> `assets:*` commands below do the work by hand. See the
+> [API service spec §7](superpowers/specs/2026-08-15-api-service-design.md) and the
+> [model platform spec](superpowers/specs/2026-10-02-model-platform.md) §5.
 >
 > Sourcing and licensing are **not** automated: licence is a required field at upload and feeds
 > the site colophon. §6 below still applies.
 
 ```bash
-# 1. Inspect
-npx @gltf-transform/cli inspect artefact.glb
+# 1. Register the source in content/models/sources.json (url, sha256, licenceId, licenceEvidence), then
+#    download it. Only polyhaven.com, dl.polyhaven.org, kenney.nl, quaternius.com and named GitHub
+#    repos are reachable; the file lands in the gitignored assets-src/<id>/ and must match its sha256.
+npm run assets:fetch -- --id artefact
 
-# 2. Optimise: dedupe, prune, weld, reorder, Meshopt-compress geometry, KTX2 textures
-npx @gltf-transform/cli optimize artefact.glb public/models/artefact.glb \
-  --compress meshopt --texture-compress ktx2
+# 2. Optimise with the pinned toolchain (no unpinned `npx @gltf-transform/cli`): dedupe, weld,
+#    simplify to the tier budget, quantize, Meshopt-compress, WebP textures, strip all metadata,
+#    hashed per-tier GLBs, manifest and credits.
+npm run assets:ingest -- --id artefact
+npm run assets:check          # what CI runs: budgets, hashes, licences, metadata scan
 
 # 3. Generate a typed React component (once; commit the output)
 npx gltfjsx public/models/artefact.glb --types --transform -o components/three/models/Artefact.tsx

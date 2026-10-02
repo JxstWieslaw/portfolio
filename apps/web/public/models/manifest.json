@@ -1,0 +1,46 @@
+{
+  "contentHash": "5fc3e61a23406789",
+  "models": [
+    {
+      "boundsRadius": 1,
+      "clips": [],
+      "enabled": false,
+      "id": "gyroscope",
+      "kind": "prop",
+      "title": "Gyroscope",
+      "variants": [
+        {
+          "bytes": 28348,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-j9beqsbI07HCsh+LIq6vjmGAspRjDqa5T5PZHcyOTX8=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 1,
+          "triangles": 6000,
+          "url": "/models/gyroscope.t1.8fd6deaa.glb"
+        },
+        {
+          "bytes": 33564,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-IiwPGq1pzIYOE7JYNBWxkJoytitsw2VcLdY6/AMQyHk=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 2,
+          "triangles": 7104,
+          "url": "/models/gyroscope.t2.222c0f1a.glb"
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

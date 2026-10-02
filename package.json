@@ -15,7 +15,10 @@
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
-    "lint:content": "turbo run lint:content"
+    "lint:content": "turbo run lint:content",
+    "assets:ingest": "npm run assets:ingest -w @repo/web --",
+    "assets:check": "npm run assets:check -w @repo/web",
+    "assets:fetch": "npm run assets:fetch -w @repo/web --"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

@@ -1,0 +1,274 @@
+// @vitest-environment node
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
+import { MODEL_REPO_BYTES, type Credit } from '@repo/contracts'
+import { describe, expect, it } from 'vitest'
+
+import { defaultRoot } from '../../scripts/assets/sources'
+import {
+  buildReport,
+  canonicalJson,
+  contentHashOf,
+  integrityOf,
+  packGlb,
+  parseGlb,
+  scanGlb,
+  sha256Hex,
+  validateComplete,
+  validateCredits,
+  validateFileName,
+  validateHash,
+  validateOrphans,
+  validateRepoBytes,
+  validateReport,
+  type GlbReport,
+  type Violation,
+} from '../../scripts/assets/validators'
+
+const codes = (vs: readonly Violation[]) => vs.map((x) => x.code)
+
+const report = (over: Partial<GlbReport> = {}): GlbReport => ({
+  bytes: 1_000,
+  sha256: '0'.repeat(64),
+  triangles: 100,
+  materials: 1,
+  textures: [],
+  extensionsUsed: ['EXT_meshopt_compression', 'KHR_mesh_quantization'],
+  clips: [],
+  names: ['body'],
+  ...over,
+})
+
+describe('validateReport: the budget table', () => {
+  const ok = (r: GlbReport, tier: 1 | 2 | 3 = 2) => validateReport(r, { subject: 'x', tier })
+
+  it('passes a small clean model at every tier', () => {
+    for (const tier of [1, 2, 3] as const) expect(ok(report(), tier)).toEqual([])
+  })
+
+  it('BYTES: over the tier budget, and over the per-file cap', () => {
+    expect(codes(ok(report({ bytes: 70_001 }), 1))).toEqual(['BYTES'])
+    expect(ok(report({ bytes: 70_000 }), 1)).toEqual([])
+    expect(codes(ok(report({ bytes: 180_001 }), 2))).toEqual(['BYTES'])
+    expect(codes(ok(report({ bytes: 400_001 }), 3))).toEqual(['BYTES', 'BYTES'])
+  })
+
+  it('TRIS: over the tier budget', () => {
+    expect(codes(ok(report({ triangles: 6_001 }), 1))).toEqual(['TRIS'])
+    expect(ok(report({ triangles: 6_001 }), 2)).toEqual([])
+    expect(codes(ok(report({ triangles: 50_001 }), 3))).toEqual(['TRIS'])
+  })
+
+  it('TEXTURE: count, long edge, MIME, and one large texture at most at tier 3', () => {
+    const webp = (longEdge: number) => ({ mimeType: 'image/webp', longEdge })
+    expect(ok(report({ textures: [webp(512)] }), 1)).toEqual([])
+    expect(codes(ok(report({ textures: [webp(513)] }), 1))).toEqual(['TEXTURE'])
+    expect(codes(ok(report({ textures: [webp(256), webp(256)] }), 1))).toEqual(['TEXTURE'])
+    expect(codes(ok(report({ textures: [{ mimeType: 'image/png', longEdge: 256 }] }), 2))).toEqual(['TEXTURE'])
+    expect(codes(ok(report({ textures: [{ mimeType: null, longEdge: 256 }] }), 2))).toEqual(['TEXTURE'])
+    expect(ok(report({ textures: [webp(2048), webp(1024)] }), 3)).toEqual([])
+    expect(codes(ok(report({ textures: [webp(2048), webp(2048)] }), 3))).toEqual(['TEXTURE'])
+  })
+
+  it('MATERIALS: over the tier cap', () => {
+    expect(codes(ok(report({ materials: 2 }), 1))).toEqual(['MATERIALS'])
+    expect(ok(report({ materials: 2 }), 2)).toEqual([])
+    expect(codes(ok(report({ materials: 3 }), 3))).toEqual(['MATERIALS'])
+  })
+
+  it('EXTENSIONS: transmission is a tier 3 privilege, Draco is never allowed', () => {
+    const transmissive = report({ extensionsUsed: ['EXT_meshopt_compression', 'KHR_materials_transmission'] })
+    expect(codes(ok(transmissive, 2))).toEqual(['EXTENSIONS'])
+    expect(ok(transmissive, 3)).toEqual([])
+    expect(codes(ok(report({ extensionsUsed: ['KHR_draco_mesh_compression'] }), 3))).toEqual(['EXTENSIONS'])
+  })
+
+  it('CLIPS: count, duration, kebab-case names, agreement with the manifest', () => {
+    const clip = (name: string, seconds = 2) => ({ name, seconds })
+    expect(ok(report({ clips: [clip('idle')] }), 1)).toEqual([])
+    expect(codes(ok(report({ clips: [clip('a'), clip('b')] }), 1))).toEqual(['CLIPS'])
+    expect(codes(ok(report({ clips: [clip('idle', 20.5)] }), 2))).toEqual(['CLIPS'])
+    expect(codes(ok(report({ clips: [clip('Idle Loop')] }), 2))).toEqual(['CLIPS'])
+    const r = report({ clips: [clip('idle')] })
+    expect(validateReport(r, { subject: 'x', tier: 2, manifestClips: [{ name: 'idle' }] })).toEqual([])
+    expect(codes(validateReport(r, { subject: 'x', tier: 2, manifestClips: [] }))).toEqual(['CLIPS'])
+  })
+
+  it('NAMING: whitespace in a node, mesh or material name', () => {
+    expect(codes(ok(report({ names: ['good-name', 'bad name'] })))).toEqual(['NAMING'])
+  })
+})
+
+describe('validateFileName', () => {
+  it('accepts <id>.t<tier>.<hash8>.glb for the right entry and tier', () => {
+    expect(validateFileName('core-crystal.t2.abcdef01.glb', 'core-crystal', 2)).toEqual([])
+  })
+  it('NAMING: wrong shape, wrong id, wrong tier, non-kebab id', () => {
+    expect(codes(validateFileName('Core Crystal.glb', 'core-crystal', 2))).toEqual(['NAMING'])
+    expect(codes(validateFileName('other.t2.abcdef01.glb', 'core-crystal', 2))).toEqual(['NAMING'])
+    expect(codes(validateFileName('core-crystal.t1.abcdef01.glb', 'core-crystal', 2))).toEqual(['NAMING'])
+    expect(codes(validateFileName('core_crystal.t2.abcdef01.glb', 'core_crystal', 2))).toContain('NAMING')
+  })
+})
+
+describe('validateHash', () => {
+  const bytes = new TextEncoder().encode('some model bytes')
+  const name = `x.t1.${sha256Hex(bytes).slice(0, 8)}.glb`
+  it('passes when integrity and the file name suffix both match', () => {
+    expect(validateHash(name, bytes, integrityOf(bytes))).toEqual([])
+  })
+  it('HASH: integrity differs, or the file name suffix differs', () => {
+    expect(codes(validateHash(name, bytes, integrityOf(new Uint8Array([1]))))).toEqual(['HASH'])
+    expect(codes(validateHash('x.t1.00000000.glb', bytes, integrityOf(bytes)))).toEqual(['HASH'])
+  })
+})
+
+describe('cross-file rules', () => {
+  it('BYTES: all tracked models over 1.5 MB', () => {
+    expect(validateRepoBytes([{ name: 'a', bytes: MODEL_REPO_BYTES }])).toEqual([])
+    expect(codes(validateRepoBytes([{ name: 'a', bytes: 1_000_000 }, { name: 'b', bytes: 500_001 }]))).toEqual(['BYTES'])
+  })
+
+  it('ORPHAN: a file the manifest does not reference, and a reference without a file', () => {
+    expect(validateOrphans(['a.glb'], ['a.glb'])).toEqual([])
+    expect(codes(validateOrphans(['a.glb', 'stale.glb'], ['a.glb']))).toEqual(['ORPHAN'])
+    expect(codes(validateOrphans(['a.glb'], ['a.glb', 'gone.glb']))).toEqual(['ORPHAN'])
+  })
+
+  it('COMPLETE: an enabled entry needs every tier its source asks for; a disabled one does not', () => {
+    expect(validateComplete({ id: 'x', enabled: true }, [1, 2], [1, 2])).toEqual([])
+    expect(codes(validateComplete({ id: 'x', enabled: true }, [1, 2, 3], [1, 2]))).toEqual(['COMPLETE'])
+    expect(validateComplete({ id: 'x', enabled: false }, [1, 2, 3], [1])).toEqual([])
+  })
+})
+
+describe('validateCredits', () => {
+  const row: Credit = {
+    assetId: 'core-crystal',
+    title: 'Core crystal',
+    author: 'Someone',
+    sourceUrl: 'https://kenney.nl/assets/x',
+    licence: 'CC0-1.0',
+    retrievedAt: '2026-10-02',
+  }
+  const enabled = [{ id: 'core-crystal', enabled: true }]
+
+  it('passes when the file equals the derived credits', () => {
+    expect(validateCredits(enabled, [row], [row])).toEqual([])
+    expect(validateCredits([{ id: 'core-crystal', enabled: false }], [], [])).toEqual([])
+  })
+  it('LICENCE: an enabled entry without a credit row', () => {
+    expect(codes(validateCredits(enabled, [row], []))).toContain('LICENCE')
+  })
+  it('LICENCE: a disabled entry that is credited, and a credit with no entry', () => {
+    expect(codes(validateCredits([{ id: 'core-crystal', enabled: false }], [], [row]))).toContain('LICENCE')
+    expect(codes(validateCredits([], [], [row]))).toContain('LICENCE')
+  })
+  it('LICENCE: a row outside the licence enum or with an http source', () => {
+    expect(codes(validateCredits(enabled, [row], [{ ...row, licence: 'CC-BY-NC-4.0' }]))).toContain('LICENCE')
+    expect(codes(validateCredits(enabled, [row], [{ ...row, sourceUrl: 'http://kenney.nl/x' }]))).toContain('LICENCE')
+  })
+  it('LICENCE: CC-BY without a licence URL', () => {
+    expect(codes(validateCredits(enabled, [row], [{ ...row, licence: 'CC-BY-4.0' }]))).toContain('LICENCE')
+  })
+  it('LICENCE: a file that drifted from sources.json', () => {
+    expect(codes(validateCredits(enabled, [row], [{ ...row, author: 'Someone else' }]))).toEqual(['LICENCE'])
+  })
+})
+
+describe('canonical JSON and the content hash', () => {
+  it('sorts keys, ends with one newline, and is stable', () => {
+    const text = canonicalJson({ b: 1, a: { d: [3, { z: 1, y: 2 }], c: 0 } })
+    expect(text).toBe('{\n  "a": {\n    "c": 0,\n    "d": [\n      3,\n      {\n        "y": 2,\n        "z": 1\n      }\n    ]\n  },\n  "b": 1\n}\n')
+    expect(contentHashOf([{ b: 1, a: 2 }])).toBe(contentHashOf([{ a: 2, b: 1 }]))
+    expect(contentHashOf([])).toMatch(/^[0-9a-f]{16}$/)
+  })
+})
+
+describe('scanGlb: the committed-file security scan', () => {
+  const modelsDir = path.join(defaultRoot(), 'apps', 'web', 'public', 'models')
+  const manifest = JSON.parse(readFileSync(path.join(modelsDir, 'manifest.json'), 'utf8')) as {
+    models: { variants: { tier: number; url: string }[] }[]
+  }
+  const tier1 = manifest.models[0]?.variants.find((x) => x.tier === 1)
+  const base = new Uint8Array(readFileSync(path.join(modelsDir, (tier1?.url ?? '').replace('/models/', ''))))
+
+  const mutate = (fn: (json: Record<string, unknown>) => void): Uint8Array => {
+    const { json, bin } = parseGlb(base)
+    fn(json)
+    return packGlb(json, bin)
+  }
+  const firstNode = (json: Record<string, unknown>) => (json['nodes'] as Record<string, unknown>[])[0] ?? {}
+
+  it('passes the committed gyroscope, which the pipeline wrote', () => {
+    expect(scanGlb(base, 'gyroscope')).toEqual([])
+    expect(buildReport(base).triangles).toBe(6_000)
+  })
+
+  const cases: [string, (json: Record<string, unknown>) => void, RegExp][] = [
+    ['extras on a node', (j) => void (firstNode(j)['extras'] = { note: 'x' }), /extras/],
+    ['extras at the asset level', (j) => void ((j['asset'] as Record<string, unknown>)['extras'] = {}), /extras|asset metadata/],
+    ['asset.generator', (j) => void ((j['asset'] as Record<string, unknown>)['generator'] = 'Blender 4.2'), /asset metadata/],
+    ['asset.copyright', (j) => void ((j['asset'] as Record<string, unknown>)['copyright'] = '(c) me'), /asset metadata/],
+    ['a Windows drive path in a name', (j) => void (firstNode(j)['name'] = 'C:\\Users\\wiesl\\model.blend'), /drive-letter/],
+    ['a forward-slash drive path', (j) => void (firstNode(j)['name'] = 'D:/work/model.blend'), /drive-letter/],
+    ['a Linux home path', (j) => void (firstNode(j)['name'] = '/home/wiesl/model.blend'), /home-directory/],
+    ['a macOS home path', (j) => void (firstNode(j)['name'] = '/Users/wiesl/model.blend'), /home-directory/],
+    ['an email address', (j) => void (firstNode(j)['name'] = 'made-by-info@rapidevlabs.com'), /email/],
+    ['a URL that is not allow-listed', (j) => void (firstNode(j)['name'] = 'see https://evil.example/model'), /not allow-listed/],
+    ['a file: URL', (j) => void (firstNode(j)['name'] = 'file:///etc/passwd'), /not allow-listed/],
+    ['an external image uri', (j) => void (j['images'] = [{ uri: 'textures/a.png' }]), /uri/],
+    ['a data: buffer uri', (j) => void (j['buffers'] = [{ byteLength: 4, uri: 'data:application/octet-stream;base64,AAAA' }]), /uri|data:/],
+    ['a second stored buffer', (j) => void (j['buffers'] as unknown[]).push({ byteLength: 4 }), /exactly one embedded buffer/],
+    ['Draco compression', (j) => void (j['extensionsUsed'] = ['KHR_draco_mesh_compression']), /allow-list/],
+    ['KTX2 textures', (j) => void (j['extensionsRequired'] = ['KHR_texture_basisu']), /allow-list/],
+    ['a punctual light extension', (j) => void (j['extensions'] = { KHR_lights_punctual: { lights: [] } }), /allow-list/],
+    ['a camera', (j) => void (j['cameras'] = [{ type: 'perspective' }]), /cameras/],
+    ['an image name', (j) => void (j['images'] = [{ name: 'brick.png', bufferView: 0, mimeType: 'image/webp' }]), /image names|WebP/],
+  ]
+
+  it.each(cases)('SECURITY: %s', (_label, change, expected) => {
+    const found = scanGlb(mutate(change), 'gyroscope')
+    expect(found.length).toBeGreaterThan(0)
+    expect(codes(found)).toEqual(found.map(() => 'SECURITY'))
+    expect(found.map((x) => x.message).join(' | ')).toMatch(expected)
+  })
+
+  it('allows material extensions and the documented URLs', () => {
+    const clean = mutate((j) => {
+      j['extensionsUsed'] = ['KHR_materials_clearcoat', 'KHR_texture_transform', 'EXT_texture_webp']
+      firstNode(j)['name'] = 'doc https://www.khronos.org/gltf'
+    })
+    expect(scanGlb(clean, 'gyroscope')).toEqual([])
+  })
+
+  it('does not echo the offending value, only where it is', () => {
+    const found = scanGlb(mutate((j) => void (firstNode(j)['name'] = 'C:\\Users\\secret-person\\x')), 'gyroscope')
+    expect(JSON.stringify(found)).not.toContain('secret-person')
+  })
+
+  it('SECURITY: a WebP carrying EXIF or XMP metadata', () => {
+    const riff = (chunks: [string, number][]) => {
+      const body: number[] = [...Buffer.from('WEBP')]
+      for (const [id, size] of chunks) {
+        body.push(...Buffer.from(id), size & 255, 0, 0, 0, ...new Array<number>(size).fill(0))
+        if (size % 2) body.push(0)
+      }
+      return new Uint8Array([...Buffer.from('RIFF'), body.length & 255, body.length >> 8, 0, 0, ...body])
+    }
+    const glbWith = (webp: Uint8Array) =>
+      packGlb(
+        {
+          asset: { version: '2.0' },
+          buffers: [{ byteLength: webp.length }],
+          bufferViews: [{ buffer: 0, byteLength: webp.length }],
+          images: [{ bufferView: 0, mimeType: 'image/webp' }],
+        },
+        webp,
+      )
+    expect(scanGlb(glbWith(riff([['VP8 ', 10]])), 'x')).toEqual([])
+    expect(codes(scanGlb(glbWith(riff([['VP8 ', 10], ['EXIF', 8]])), 'x'))).toEqual(['SECURITY'])
+    expect(codes(scanGlb(glbWith(riff([['XMP ', 8]])), 'x'))).toEqual(['SECURITY'])
+  })
+})

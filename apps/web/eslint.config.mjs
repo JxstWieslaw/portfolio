@@ -21,5 +21,26 @@ export default [
       globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
     },
   },
+  {
+    // The asset toolchain is build-time only. Nothing it pulls in (the glTF-Transform
+    // libraries, sharp, the Meshopt encoder) may be reachable from code that ships to the
+    // browser, so app code cannot import it or the scripts that wrap it.
+    files: ['app/**/*.{ts,tsx}', 'components/**/*.{ts,tsx}', 'lib/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'sharp', message: 'Build-time only: asset tooling must not reach the client bundle.' },
+            { name: 'meshoptimizer', message: 'Build-time only: asset tooling must not reach the client bundle.' },
+          ],
+          patterns: [
+            { group: ['@gltf-transform/*'], message: 'Build-time only: asset tooling must not reach the client bundle.' },
+            { group: ['**/scripts/assets/**'], message: 'Build-time only: scripts/assets is not importable from app code.' },
+          ],
+        },
+      ],
+    },
+  },
   { ignores: ['.next/**', 'next-env.d.ts'] },
 ]
