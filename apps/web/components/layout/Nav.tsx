@@ -13,10 +13,11 @@ import { HOME_HREF, NAV_CTA, NAV_ITEMS, type NavCta, type NavItem } from '@/lib/
  * The sticky header — design-home.md § 2, with the mobile half authored under
  * reconciliation § 3.3.
  *
- * Everything above 1024px is transcription: 72px tall, condensing to 56px past
- * `scrollY > 24`, `blur(12px)` in both states, background stepping from
+ * Everything above 1024px is transcription: 72px tall, condensing to a 56px bar
+ * past `scrollY > 24`, `blur(12px)` in both states, background stepping from
  * `rgba(13,17,23,0.35)` to `0.88`, a bottom hairline appearing at `--line-1`,
- * all three properties on the same `320ms cubic-bezier(.2,.8,.2,1)` ramp.
+ * all on the same `320ms cubic-bezier(.2,.8,.2,1)` ramp. The 72 to 56 move is a
+ * transform, not a height change: the layout box stays 72px (see `HEADER`).
  *
  * Everything below 1024px is new work. The export overflows at 390 by ~120px
  * and ships no hamburger, so § 3.3 replaces the pill row with a menu button and
@@ -43,15 +44,37 @@ const SPY_ROOT_MARGIN = '-72px 0px -55% 0px'
 /** Enough steps that a tall section reports coverage changes as it moves. */
 const SPY_THRESHOLDS = [0, 0.05, 0.25, 0.5, 0.75, 1]
 
+/**
+ * The header's layout box is 72px in BOTH states, so scrolling never moves the
+ * page or shifts layout. The condense is two compositor-only moves on inner
+ * elements, over the same `--d-3` ramp:
+ *
+ *   chrome   a 72px plate (background, hairline, blur) slides up 16px, so the
+ *            visible bar is 56px and the hairline stays one crisp pixel
+ *   content  the row slides up 8px, which re-centres it in the 56px bar
+ *
+ * The 16px left under the condensed bar is transparent, so the header does not
+ * take pointer events itself; only its three interactive groups do.
+ */
 const HEADER = [
-  'sticky top-0 z-50 h-[72px] border-b border-transparent bg-[rgba(13,17,23,0.35)]',
-  'backdrop-blur-[12px]',
-  'transition-[height,background-color,border-color] duration-[var(--d-3)] ease-[var(--ease)]',
-  'data-[condensed=true]:h-[56px] data-[condensed=true]:border-[var(--line-1)]',
-  'data-[condensed=true]:bg-[rgba(13,17,23,0.88)]',
+  'group pointer-events-none sticky top-0 z-50 h-[72px]',
   // § 3.2 principle 5. Applied to the header rather than to `Container`, whose
   // own `padding-inline` is the --page-x gutter and must not be overwritten.
   '[padding-inline:env(safe-area-inset-left)_env(safe-area-inset-right)]',
+].join(' ')
+
+const CHROME = [
+  'pointer-events-auto absolute inset-x-0 top-0 h-[72px] border-b border-transparent bg-[rgba(13,17,23,0.35)]',
+  'backdrop-blur-[12px]',
+  'transition-[translate,background-color,border-color] duration-[var(--d-3)] ease-[var(--ease)]',
+  'group-data-[condensed=true]:-translate-y-[16px] group-data-[condensed=true]:border-[var(--line-1)]',
+  'group-data-[condensed=true]:bg-[rgba(13,17,23,0.88)]',
+].join(' ')
+
+const ROW = [
+  'relative flex h-full items-center justify-between gap-8',
+  'transition-[translate] duration-[var(--d-3)] ease-[var(--ease)]',
+  'group-data-[condensed=true]:-translate-y-[8px]',
 ].join(' ')
 
 /**
@@ -238,11 +261,14 @@ export function Nav({
 
   return (
     <header data-condensed={condensed ? 'true' : 'false'} className={cx(HEADER, className)}>
-      <Container className="flex h-full items-center justify-between gap-8">
-        <Monogram href={homeHref} name={name} size="nav" />
+      <div aria-hidden="true" data-nav-chrome="" className={CHROME} />
+      <Container className={ROW}>
+        <div className="pointer-events-auto">
+          <Monogram href={homeHref} name={name} size="nav" />
+        </div>
 
         {/* ≥1024 only. Below that the same six links live in the sheet. */}
-        <nav aria-label="Primary" className="hidden items-center gap-1 lg:flex">
+        <nav aria-label="Primary" className="pointer-events-auto hidden items-center gap-1 lg:flex">
           {items.map((item) => (
             <a
               key={item.id}
@@ -255,7 +281,7 @@ export function Nav({
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-2">
           <Button href={cta.href} variant="secondary" size="md">
             {cta.label}
           </Button>
