@@ -20,7 +20,7 @@ const HERO_FRAME_MS = 50
 const RESIZE_DEBOUNCE_MS = 150
 
 /** A side canvas paints just before it scrolls into view, not once it is on screen. */
-const SEEN_ROOT_MARGIN = '200px 0px'
+const SEEN_ROOT_MARGIN = '200px'
 
 export interface FieldCanvasProps {
   readonly formation: FormationId
@@ -75,15 +75,14 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
     let disposed = false
     let frame = 0
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
-    let heroVisible = true
-    // Side canvases only: whether the canvas is near the viewport right now.
-    let seen = false
+    // The hero starts visible; a gated side canvas starts unseen and paints on
+    // first intersection (within the observer's margin).
+    const gateOnSeen = !animate && caps.intersectionObserver
+    let visible = !gateOnSeen
     let lastFrameAt = 0
     let revealed = false
     let observer: IntersectionObserver | null = null
     let glObserver: MutationObserver | null = null
-    // A side canvas waits for the first intersection; the hero never does.
-    const gateOnSeen = !animate && caps.intersectionObserver
     const lastBox = { w: 0, h: 0, vh: 0 }
 
     const paint = (timeSeconds?: number): void => {
@@ -98,7 +97,9 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
 
     /** The export's `drawAll` guard: repaint only when the geometry moved. */
     const paintIfResized = (): void => {
-      if (disposed) return
+      // A gated side canvas that is off-screen skips this; the geometry guard
+      // below catches up when it next intersects.
+      if (disposed || !visible) return
       const box = canvas.getBoundingClientRect()
       const w = Math.round(box.width)
       const h = Math.round(box.height)
@@ -110,22 +111,13 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
       paint()
     }
 
-    /**
-     * A gated canvas that is off-screen skips the repaint; the geometry guard
-     * in `paintIfResized` catches up when it next intersects.
-     */
-    const paintIfSeen = (): void => {
-      if (gateOnSeen && !seen) return
-      paintIfResized()
-    }
-
     const isGlLive = (): boolean => document.documentElement.dataset.gl === 'live'
 
     // The animated canvas re-measures on every frame, so only the static ones
     // need a resize listener.
     const onResize = (): void => {
       if (resizeTimer !== undefined) clearTimeout(resizeTimer)
-      resizeTimer = setTimeout(paintIfSeen, RESIZE_DEBOUNCE_MS)
+      resizeTimer = setTimeout(paintIfResized, RESIZE_DEBOUNCE_MS)
     }
 
     /**
@@ -137,30 +129,22 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
     const start = (): void => {
       if (disposed) return
 
-      if (gateOnSeen) {
-        // Paint on first intersection (and again if the box changed while it
-        // was away), instead of all six at idle.
-        observer = new IntersectionObserver(
-          (entries) => {
-            const entry = entries[entries.length - 1]
-            if (!entry) return
-            seen = entry.isIntersecting
-            if (seen) paintIfResized()
-          },
-          { rootMargin: SEEN_ROOT_MARGIN },
-        )
-        observer.observe(canvas)
-      } else {
-        paintIfResized()
-        observer =
-          caps.intersectionObserver && shouldAnimate
-            ? new IntersectionObserver((entries) => {
+      // Hero: plain visibility gate, painted at idle. Side canvas: paints on
+      // first intersection and again if its box changed while it was away.
+      if (!gateOnSeen) paintIfResized()
+      observer =
+        caps.intersectionObserver && (gateOnSeen || shouldAnimate)
+          ? new IntersectionObserver(
+              (entries) => {
                 const entry = entries[0]
-                if (entry) heroVisible = entry.isIntersecting
-              })
-            : null
-        observer?.observe(canvas)
-      }
+                if (!entry) return
+                visible = entry.isIntersecting
+                if (gateOnSeen) paintIfResized()
+              },
+              gateOnSeen ? { rootMargin: SEEN_ROOT_MARGIN } : undefined,
+            )
+          : null
+      observer?.observe(canvas)
 
       if (shouldAnimate) {
         const loop = (ts: number): void => {
@@ -174,17 +158,17 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
             return
           }
           frame = requestAnimationFrame(loop)
-          if (ts - lastFrameAt < HERO_FRAME_MS || !heroVisible) return
+          if (ts - lastFrameAt < HERO_FRAME_MS || !visible) return
           lastFrameAt = ts
           paint(ts / 1000)
         }
-        if (!isGlLive()) frame = requestAnimationFrame(loop)
+        frame = requestAnimationFrame(loop)
 
         glObserver = new MutationObserver(() => {
-          if (disposed || frame !== 0 || isGlLive()) return
+          if (frame !== 0 || isGlLive()) return
           frame = requestAnimationFrame(loop)
         })
-        glObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-gl'] })
+        glObserver.observe(document.documentElement, { attributeFilter: ['data-gl'] })
       } else {
         window.addEventListener('resize', onResize)
       }
@@ -193,7 +177,7 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
       // is drawn here, but the geometry guard needs a nudge once metrics
       // settle.
       if (!shouldAnimate && typeof document !== 'undefined' && document.fonts) {
-        void document.fonts.ready.then(paintIfSeen).catch(() => {})
+        void document.fonts.ready.then(paintIfResized).catch(() => {})
       }
     }
 

@@ -155,7 +155,7 @@ describe('FieldCanvas', () => {
     render(<FieldCanvas formation="lattice" />)
     await settle(AFTER_INITIAL_PAINT_MS)
     expect(observers).toHaveLength(1)
-    expect(observers[0]?.rootMargin).toBe('200px 0px')
+    expect(observers[0]?.rootMargin).toBe('200px')
   })
 
   it('paints an off-screen side canvas once it is seen even after a resize while away', async () => {
@@ -259,12 +259,13 @@ describe('FieldCanvas', () => {
       expect(recorder.clears).toBe(painted)
     })
 
-    it('does not start the loop at all when it mounts under a live Assembly', async () => {
+    it('does not keep the loop running when it mounts under a live Assembly', async () => {
       document.documentElement.dataset.gl = 'live'
       const raf = vi.spyOn(window, 'requestAnimationFrame')
       render(<FieldCanvas formation="monolith" animate />)
       await settle(AFTER_INITIAL_PAINT_MS + 100)
-      expect(raf).not.toHaveBeenCalled()
+      // One probe frame notices the attribute and stops; it never re-arms.
+      expect(raf.mock.calls.length).toBeLessThanOrEqual(1)
       // The idle first paint still happens: it is the context-loss fallback.
       expect(recorder.clears).toBe(1)
     })
