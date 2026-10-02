@@ -75,13 +75,13 @@ export interface HeroProps {
  * never silently render the export's rejected copy.
  */
 export const HERO_COPY = {
-  eyebrow: 'Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe',
+  eyebrow: 'Tech Lead @ Data Age · Team Lead @ Rapidev Labs',
   headline: 'I lead teams that ship production software — and I make the web move.',
   sub:
     'Hospital operations, learning platforms, creator-discovery tooling, procurement systems. ' +
     'Technical direction, code review and mentorship by day; real-time 3D on the web that holds ' +
     'frame rate on a mid-range phone. An AI agent fleet runs review, security and performance ' +
-    'passes inside the delivery loop; decisions, merges and standards stay with me.',
+    'passes inside the delivery loop; decisions and standards stay with me.',
   primaryCta: { label: 'See the work', href: '#work' },
   secondaryCta: { label: "Let's talk", href: '#contact' },
   scrollCue: { href: '#proof', label: 'Scroll', ariaLabel: 'Scroll to content' },

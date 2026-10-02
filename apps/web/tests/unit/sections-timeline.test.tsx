@@ -241,14 +241,13 @@ describe('Timeline', () => {
     expect(within(dataAge).getByText('2026 — present')).toBeInTheDocument()
   })
 
-  // The owner's explicit request: the rail must show he started as a Senior
-  // Software Engineer at each company and moved up. The step is stated in
-  // words, so it never depends on the dots or their colour.
-  it('marks each earlier role with the role it led to, in text', () => {
+  // The rail shows he started as a Senior Software Engineer at each company and
+  // moved up through the roles and their periods, newest first. The owner asked
+  // for the "Promoted to …" label to go (2026-10-02), so no step-up text exists.
+  it('marks current and earlier roles by order and period, with no step-up label', () => {
     const { container } = render(<Timeline entries={ENTRIES} />)
 
-    expect(screen.getByText('Promoted to Tech Lead')).toBeInTheDocument()
-    expect(screen.getByText('Promoted to Team Lead')).toBeInTheDocument()
+    expect(screen.queryByText(/Promoted to/)).toBeNull()
 
     expect(container.querySelectorAll('[data-rung="current"]')).toHaveLength(3)
     expect(container.querySelectorAll('[data-rung="earlier"]')).toHaveLength(2)

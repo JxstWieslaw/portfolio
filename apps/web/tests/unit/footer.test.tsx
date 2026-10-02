@@ -10,7 +10,7 @@ import { COLOPHON, Footer } from '@/components/layout/Footer'
  * nothing. They must be focusable, disabled and *audibly* unavailable.
  */
 
-const PROFILE = { name: 'Wieslaw Samushonga', location: 'Harare, Zimbabwe' }
+const PROFILE = { name: 'Wieslaw Samushonga' }
 
 function renderFooter(props: Partial<ComponentProps<typeof Footer>> = {}) {
   return render(<Footer {...PROFILE} {...props} />)
@@ -24,9 +24,10 @@ describe('Footer — content', () => {
     expect(screen.getByRole('contentinfo')).toBeInTheDocument()
   })
 
-  it('prints the name and location beside the static 40px mark', () => {
+  it('prints the name, and no location, beside the static 40px mark', () => {
     const { container } = renderFooter()
-    expect(screen.getByText('Wieslaw Samushonga · Harare, Zimbabwe')).toBeInTheDocument()
+    expect(screen.getByText('Wieslaw Samushonga')).toBeInTheDocument()
+    expect(screen.queryByText(/Harare/)).toBeNull()
 
     const mark = container.querySelector('.monogram')
     expect(mark).toHaveAttribute('data-size', 'footer')
