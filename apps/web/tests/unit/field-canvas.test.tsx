@@ -59,9 +59,14 @@ function stubCores(count: number): void {
 
 class StubIntersectionObserver {
   readonly root = null
-  readonly rootMargin = ''
+  readonly rootMargin: string
   readonly thresholds: readonly number[] = []
-  constructor(private readonly callback: IntersectionObserverCallback) {}
+  constructor(
+    private readonly callback: IntersectionObserverCallback,
+    options?: IntersectionObserverInit,
+  ) {
+    this.rootMargin = options?.rootMargin ?? ''
+  }
   observe(): void {}
   unobserve(): void {}
   disconnect(): void {}
@@ -83,7 +88,13 @@ async function settle(ms: number): Promise<void> {
   })
 }
 
+/** Scrolls every observed side canvas into range. */
+function scrollIntoRange(): void {
+  act(() => observers.forEach((o) => o.emit(true)))
+}
+
 beforeEach(() => {
+  delete document.documentElement.dataset.gl
   clearPointCache()
   recorder = new RecordingContext()
   contextAvailable = true
@@ -105,8 +116,8 @@ beforeEach(() => {
   vi.stubGlobal(
     'IntersectionObserver',
     class extends StubIntersectionObserver {
-      constructor(callback: IntersectionObserverCallback) {
-        super(callback)
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        super(callback, options)
         observers.push(this)
       }
     },
@@ -126,7 +137,44 @@ describe('FieldCanvas', () => {
     expect(canvas).toHaveAttribute('data-f', 'stream')
   })
 
-  it('paints a static formation exactly once', async () => {
+  it('paints a static formation exactly once, and only once it is seen', async () => {
+    render(<FieldCanvas formation="lattice" />)
+    await settle(AFTER_INITIAL_PAINT_MS)
+    expect(recorder.clears).toBe(0)
+
+    scrollIntoRange()
+    expect(recorder.clears).toBe(1)
+
+    // Leaving and re-entering with the same box does not repaint.
+    act(() => observers[0]?.emit(false))
+    scrollIntoRange()
+    expect(recorder.clears).toBe(1)
+  })
+
+  it('observes a side canvas with a 200 px margin', async () => {
+    render(<FieldCanvas formation="lattice" />)
+    await settle(AFTER_INITIAL_PAINT_MS)
+    expect(observers).toHaveLength(1)
+    expect(observers[0]?.rootMargin).toBe('200px 0px')
+  })
+
+  it('paints an off-screen side canvas once it is seen even after a resize while away', async () => {
+    render(<FieldCanvas formation="lattice" />)
+    await settle(AFTER_INITIAL_PAINT_MS)
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 500 })
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+    await settle(220)
+    expect(recorder.clears).toBe(0)
+
+    scrollIntoRange()
+    expect(recorder.clears).toBe(1)
+  })
+
+  it('paints a side canvas straight away when there is no IntersectionObserver', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined)
     render(<FieldCanvas formation="lattice" />)
     await settle(AFTER_INITIAL_PAINT_MS)
     expect(recorder.clears).toBe(1)
@@ -140,6 +188,7 @@ describe('FieldCanvas', () => {
     it('paints exactly one frame even when asked to animate', async () => {
       // The whole point: reduced motion is not slower motion. One frame, then
       // nothing — no rAF loop is ever started.
+      // The hero is never gated on intersection: it paints at idle.
       const { container } = render(<FieldCanvas formation="monolith" animate />)
       await settle(AFTER_INITIAL_PAINT_MS)
       expect(recorder.clears).toBe(1)
@@ -179,11 +228,58 @@ describe('FieldCanvas', () => {
     expect(recorder.clears).toBeGreaterThan(painted)
   })
 
-  it('never observes or animates a non-hero formation', async () => {
+  it('never animates a non-hero formation', async () => {
     render(<FieldCanvas formation="grid" />)
     await settle(AFTER_INITIAL_PAINT_MS)
-    expect(observers).toHaveLength(0)
+    scrollIntoRange()
+    await settle(200)
     expect(recorder.clears).toBe(1)
+  })
+
+  it('does not gate the hero on intersection', async () => {
+    render(<FieldCanvas formation="monolith" animate />)
+    await settle(AFTER_INITIAL_PAINT_MS)
+    // Painted at idle with no intersection ever reported; its observer is the
+    // plain visibility one, not the 200 px side-canvas one.
+    expect(recorder.clears).toBeGreaterThan(0)
+    expect(observers[0]?.rootMargin).toBe('')
+  })
+
+  describe('the hero loop while the Assembly is live', () => {
+    it('stops re-arming requestAnimationFrame once data-gl is live', async () => {
+      render(<FieldCanvas formation="monolith" animate />)
+      await settle(AFTER_INITIAL_PAINT_MS + 100)
+
+      document.documentElement.dataset.gl = 'live'
+      await settle(100) // let the in-flight frame notice and stop
+      const raf = vi.spyOn(window, 'requestAnimationFrame')
+      const painted = recorder.clears
+      await settle(200)
+      expect(raf).not.toHaveBeenCalled()
+      expect(recorder.clears).toBe(painted)
+    })
+
+    it('does not start the loop at all when it mounts under a live Assembly', async () => {
+      document.documentElement.dataset.gl = 'live'
+      const raf = vi.spyOn(window, 'requestAnimationFrame')
+      render(<FieldCanvas formation="monolith" animate />)
+      await settle(AFTER_INITIAL_PAINT_MS + 100)
+      expect(raf).not.toHaveBeenCalled()
+      // The idle first paint still happens: it is the context-loss fallback.
+      expect(recorder.clears).toBe(1)
+    })
+
+    it('resumes painting when data-gl is removed', async () => {
+      render(<FieldCanvas formation="monolith" animate />)
+      await settle(AFTER_INITIAL_PAINT_MS + 100)
+      document.documentElement.dataset.gl = 'live'
+      await settle(100)
+      const painted = recorder.clears
+
+      delete document.documentElement.dataset.gl
+      await settle(200)
+      expect(recorder.clears).toBeGreaterThan(painted)
+    })
   })
 
   it('falls to the wash rung when there is no 2D context, without shifting anything', async () => {
@@ -213,21 +309,25 @@ describe('FieldCanvas', () => {
   it('paints fewer instances on modest hardware', async () => {
     render(<FieldCanvas formation="ring" />)
     await settle(AFTER_INITIAL_PAINT_MS)
+    scrollIntoRange()
     const full = recorder.fills
 
     cleanup()
+    observers.length = 0
     recorder = new RecordingContext()
     stubCores(2)
     render(<FieldCanvas formation="ring" />)
     await settle(AFTER_INITIAL_PAINT_MS)
+    scrollIntoRange()
 
     expect(recorder.fills).toBeLessThan(full)
     expect(recorder.fills).toBeGreaterThan(0)
   })
 
-  it('repaints on resize once the resize settles', async () => {
+  it('repaints on resize once the resize settles, while visible', async () => {
     render(<FieldCanvas formation="lattice" />)
     await settle(AFTER_INITIAL_PAINT_MS)
+    scrollIntoRange()
     expect(recorder.clears).toBe(1)
 
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
