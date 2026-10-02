@@ -222,6 +222,8 @@ Not budgeted now, listed so growth is visible: KTX2 transcoder (262.7 kB gz, onl
 
 ### 5.1 Contracts (`packages/contracts/src/models.ts`, exported from `index.ts`)
 
+The manifest is GLB-only for `version: 1`: no USDZ or poster fields exist yet, and adding one is a version bump.
+
 Zod 3 (the repo's `zod ^3.24`). `slugSchema` and `formationIdSchema` already exist in `content.ts`.
 
 ```ts

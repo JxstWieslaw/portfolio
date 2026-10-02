@@ -23,3 +23,7 @@ playwright-report/
 
 # Agent worktrees (see ~/.claude/skills/senior-engineer-personas/fleet-protocol.md)
 .claude/worktrees/
+
+# Raw 3D sources and licence notes; never committed (the repo is public and history is permanent).
+# Only optimised, hashed output under apps/web/public/models is tracked. See docs/3d-asset-sourcing.md.
+assets-src/
