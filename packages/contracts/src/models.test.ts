@@ -73,13 +73,13 @@ describe('licence and credit schemas', () => {
 })
 
 describe('variant, entry and manifest schemas', () => {
-  it('parses a well-formed variant and defaults requires/extensions', () => {
-    const full: Record<string, unknown> = { ...variant(2) }
-    delete full['requires']
-    delete full['extensions']
-    const parsed = modelVariantSchema.parse(full)
-    expect(parsed.requires).toEqual([])
-    expect(parsed.extensions).toEqual([])
+  it('requires the codecs and extensions to be stated, never defaulted', () => {
+    expect(modelVariantSchema.safeParse(variant(2)).success).toBe(true)
+    for (const key of ['requires', 'extensions']) {
+      const partial: Record<string, unknown> = { ...variant(2) }
+      delete partial[key]
+      expect(modelVariantSchema.safeParse(partial).success).toBe(false)
+    }
   })
 
   it('rejects a bad integrity string', () => {

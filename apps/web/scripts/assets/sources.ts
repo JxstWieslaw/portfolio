@@ -29,7 +29,11 @@ const fileOrigin = z.object({
   /** Inside the gitignored `assets-src/<id>/`; the file ingest reads. */
   path: z
     .string()
-    .regex(/^assets-src\/[a-z0-9]+(?:-[a-z0-9]+)*\/[A-Za-z0-9._\-/]+\.glb$/, 'must be assets-src/<id>/...glb')
+    // A space is legal inside a segment (Kenney ships "Models/GLB format/x.glb"), never at its edges.
+    .regex(
+      /^assets-src\/[a-z0-9]+(?:-[a-z0-9]+)*\/(?:[A-Za-z0-9._-]+(?: [A-Za-z0-9._-]+)*\/)*[A-Za-z0-9._-]+(?: [A-Za-z0-9._-]+)*\.glb$/,
+      'must be assets-src/<id>/...glb',
+    )
     .refine((p) => !p.split('/').some((s) => s === '..' || s === '.' || s === ''), 'no relative or empty segments'),
   /** Where `assets:fetch` downloads it from. Must pass the host allow-list in fetch.ts. */
   url: httpsUrl,

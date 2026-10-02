@@ -1,21 +1,24 @@
 /**
- * `npm run assets:check`
+ * `npm run assets:check` (entry: `check.cli.ts`)
  *
  * Validates the committed result of an ingest: manifest, credits, every GLB in
- * `apps/web/public/models`. No raw input, no network, no toolchain beyond Zod: it runs in CI
- * on every push and exits 1 on any violation.
+ * `apps/web/public/models`. Every claim the manifest makes about a file is re-derived from the
+ * file itself and compared. No raw input, no network: it runs in CI on every push and exits 1
+ * on any violation.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import { modelManifestSchema, type ModelManifest } from '@repo/contracts'
 
+import { loadToolchain, measureBoundsRadius, type Toolchain } from './pipeline'
 import { defaultRoot, deriveCredit, layoutFor, loadSources, tiersOf, type SourceEntry } from './sources'
 import {
   GlbFormatError,
   buildReport,
   contentHashOf,
+  deriveVariantMeta,
+  describeError,
   scanGlb,
   validateComplete,
   validateCredits,
@@ -29,22 +32,26 @@ import {
 
 export interface CheckResult {
   readonly violations: readonly Violation[]
+  readonly sources: number
   readonly entries: number
   readonly files: number
 }
 
 const schema = (subject: string, message: string): Violation => ({ code: 'SCHEMA', subject, message })
+const sameSet = (a: readonly string[], b: readonly string[]) => [...a].sort().join('|') === [...b].sort().join('|')
+/** Manifest `boundsRadius` against a measurement: ingest normalises to 1, within quantisation error. */
+const BOUNDS_TOLERANCE = 1e-3
 
 function readJson(file: string): { ok: true; value: unknown } | { ok: false; message: string } {
   if (!existsSync(file)) return { ok: false, message: 'file is missing' }
   try {
-    return { ok: true, value: JSON.parse(readFileSync(file, 'utf8')) as unknown }
+    return { ok: true, value: JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) as unknown }
   } catch (error) {
-    return { ok: false, message: `not valid JSON (${error instanceof Error ? error.message : String(error)})` }
+    return { ok: false, message: `not valid JSON (${describeError(error)})` }
   }
 }
 
-export function runCheck(opts: { readonly root: string }): CheckResult {
+export async function runCheck(opts: { readonly root: string }): Promise<CheckResult> {
   const layout = layoutFor(opts.root)
   const violations: Violation[] = []
 
@@ -52,7 +59,7 @@ export function runCheck(opts: { readonly root: string }): CheckResult {
   try {
     sources = loadSources(layout)
   } catch (error) {
-    violations.push(schema('sources.json', error instanceof Error ? error.message : String(error)))
+    violations.push(schema('sources.json', describeError(error)))
   }
 
   let manifest: ModelManifest | null = null
@@ -86,7 +93,13 @@ export function runCheck(opts: { readonly root: string }): CheckResult {
   violations.push(...validateRepoBytes(diskSizes))
 
   const manifestFiles: string[] = []
+  let toolchain: Toolchain | null = null
   if (manifest) {
+    for (const source of sources) {
+      if (source.enabled && !manifest.models.some((m) => m.id === source.id))
+        violations.push({ code: 'COMPLETE', subject: source.id, message: 'enabled source has no manifest entry; run assets:ingest' })
+    }
+
     for (const entry of manifest.models) {
       const source = sources.find((s) => s.id === entry.id)
       if (!source) {
@@ -118,9 +131,22 @@ export function runCheck(opts: { readonly root: string }): CheckResult {
           const report = buildReport(bytes)
           violations.push(...validateReport(report, { subject: fileName, tier: variant.tier, manifestClips: entry.clips }))
           violations.push(...scanGlb(bytes, fileName))
+
           if (report.bytes !== variant.bytes) violations.push(schema(fileName, `manifest says ${variant.bytes} B, file is ${report.bytes} B`))
           if (report.triangles !== variant.triangles)
             violations.push(schema(fileName, `manifest says ${variant.triangles} triangles, file has ${report.triangles}`))
+          const meta = deriveVariantMeta(report)
+          if (!sameSet(meta.requires, variant.requires))
+            violations.push(schema(fileName, `manifest requires [${variant.requires.join(', ')}], file needs [${meta.requires.join(', ')}]`))
+          if (!sameSet(meta.extensions, variant.extensions))
+            violations.push(schema(fileName, `manifest extensions [${variant.extensions.join(', ')}], file uses [${meta.extensions.join(', ')}]`))
+          if (meta.maxTexturePx !== variant.maxTexturePx)
+            violations.push(schema(fileName, `manifest says max texture ${variant.maxTexturePx} px, file has ${meta.maxTexturePx} px`))
+
+          toolchain ??= await loadToolchain()
+          const radius = await measureBoundsRadius(toolchain, bytes)
+          if (Math.abs(radius - entry.boundsRadius) > BOUNDS_TOLERANCE)
+            violations.push(schema(fileName, `manifest boundsRadius ${entry.boundsRadius}, measured ${radius.toFixed(4)}`))
         } catch (error) {
           if (error instanceof GlbFormatError || error instanceof SyntaxError)
             violations.push(schema(fileName, `not a readable GLB: ${error.message}`))
@@ -139,20 +165,23 @@ export function runCheck(opts: { readonly root: string }): CheckResult {
   }
   violations.push(...validateOrphans(glbOnDisk, manifestFiles))
 
-  return { violations, entries: manifest?.models.length ?? 0, files: glbOnDisk.length }
+  return { violations, sources: sources.length, entries: manifest?.models.length ?? 0, files: glbOnDisk.length }
 }
 
-function main(): number {
-  const result = runCheck({ root: defaultRoot() })
-  for (const x of result.violations) console.error(`[${x.code}] ${x.subject}: ${x.message}`)
-  if (result.violations.length > 0) {
-    console.error(`assets:check failed with ${result.violations.length} violation(s)`)
+export async function main(root: string = defaultRoot()): Promise<number> {
+  try {
+    const result = await runCheck({ root })
+    for (const x of result.violations) console.error(`[${x.code}] ${x.subject}: ${x.message}`)
+    if (result.violations.length > 0) {
+      console.error(`assets:check failed with ${result.violations.length} violation(s)`)
+      return 1
+    }
+    if (result.entries === 0)
+      console.log(`assets:check ok, but nothing was validated: ${result.sources} source(s), 0 manifest entries, ${result.files} GLB file(s)`)
+    else console.log(`assets:check ok: ${result.entries} entr${result.entries === 1 ? 'y' : 'ies'}, ${result.files} GLB file(s)`)
+    return 0
+  } catch (error) {
+    console.error(`assets:check crashed: ${describeError(error)}`)
     return 1
   }
-  console.log(`assets:check ok: ${result.entries} entr${result.entries === 1 ? 'y' : 'ies'}, ${result.files} GLB file(s)`)
-  return 0
-}
-
-if (path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1] ?? '')) {
-  process.exitCode = main()
 }

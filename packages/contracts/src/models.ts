@@ -73,7 +73,7 @@ export const TIER_EXTENSIONS: Readonly<Record<ModelTier, readonly GltfExtension[
 export const modelVariantSchema = z.object({
   tier: modelTierSchema,
   /** Codecs the client must support to use this variant. */
-  requires: z.array(modelCapSchema).default([]),
+  requires: z.array(modelCapSchema),
   /** Same-origin committed path, or an https URL once the API serves it. */
   url: z.union([z.string().regex(/^\/models\/[a-z0-9]+(?:-[a-z0-9]+)*\.t[123]\.[0-9a-f]{8}\.glb$/), httpsUrl]),
   bytes: z.number().int().positive().max(MODEL_FILE_BYTES),
@@ -81,7 +81,7 @@ export const modelVariantSchema = z.object({
   maxTexturePx: z.number().int().nonnegative(),
   /** Subresource-Integrity string, passed to `fetch({ integrity })`. */
   integrity: z.string().regex(/^sha256-[A-Za-z0-9+/]{43}=$/),
-  extensions: z.array(gltfExtensionSchema).default([]),
+  extensions: z.array(gltfExtensionSchema),
 })
 export type ModelVariant = z.infer<typeof modelVariantSchema>
 

@@ -17,28 +17,22 @@
 import { crc32, inflateRawSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
 import { defaultRoot, layoutFor, loadSources, type Layout, type SourceEntry } from './sources'
-import { sha256Hex } from './validators'
+import { describeError, sha256Hex } from './validators'
 
 // ---------------------------------------------------------------------------------------------
 // URL policy
 // ---------------------------------------------------------------------------------------------
 
-/** Exact hostnames. A new host is a reviewed code change, never a flag. */
-export const ALLOWED_HOSTS: readonly string[] = ['polyhaven.com', 'dl.polyhaven.org', 'kenney.nl', 'quaternius.com']
-
-/** `owner/repo`, lowercase. github.com and its two download hosts are allowed for these repositories only. */
-export const ALLOWED_GITHUB_REPOS: readonly string[] = ['khronosgroup/gltf-sample-assets']
-const GITHUB_HOSTS: readonly string[] = ['github.com', 'raw.githubusercontent.com', 'codeload.github.com']
+/** Exact hostnames. A new host is a reviewed code change, never a flag. Kenney (CC0) is the only source today. */
+export const ALLOWED_HOSTS: readonly string[] = ['kenney.nl']
 
 export interface UrlPolicy {
   readonly hosts: readonly string[]
-  readonly githubRepos: readonly string[]
 }
-export const DEFAULT_POLICY: UrlPolicy = { hosts: ALLOWED_HOSTS, githubRepos: ALLOWED_GITHUB_REPOS }
+export const DEFAULT_POLICY: UrlPolicy = { hosts: ALLOWED_HOSTS }
 
 export type UrlDenyReason =
   | 'invalid-url'
@@ -47,7 +41,6 @@ export type UrlDenyReason =
   | 'port'
   | 'ip-literal'
   | 'host-not-allowed'
-  | 'repo-not-allowed'
 
 export type UrlVerdict = { readonly ok: true; readonly url: URL } | { readonly ok: false; readonly reason: UrlDenyReason }
 
@@ -63,13 +56,7 @@ export function checkUrl(input: string, policy: UrlPolicy = DEFAULT_POLICY): Url
   if (url.port !== '') return { ok: false, reason: 'port' }
   // The WHATWG parser has already folded 0x7f.1, 2130706433 and friends into dotted decimal.
   if (/^[0-9.]+$/.test(url.hostname) || url.hostname.startsWith('[')) return { ok: false, reason: 'ip-literal' }
-  if (policy.hosts.includes(url.hostname)) return { ok: true, url }
-  if (GITHUB_HOSTS.includes(url.hostname)) {
-    const [owner, repo] = url.pathname.split('/').filter(Boolean)
-    const named = owner && repo ? `${owner}/${repo}`.toLowerCase() : ''
-    return policy.githubRepos.includes(named) ? { ok: true, url } : { ok: false, reason: 'repo-not-allowed' }
-  }
-  return { ok: false, reason: 'host-not-allowed' }
+  return policy.hosts.includes(url.hostname) ? { ok: true, url } : { ok: false, reason: 'host-not-allowed' }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -322,27 +309,27 @@ export async function fetchSource(source: SourceEntry, layout: Layout, deps: Fet
   return files.map((f) => f.name)
 }
 
-async function main(): Promise<number> {
-  const { values } = parseArgs({ options: { id: { type: 'string' } }, strict: true })
-  if (!values.id) {
-    console.error('usage: npm run assets:fetch -- --id <id>')
-    return 2
-  }
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+  root: string = defaultRoot(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<number> {
   try {
-    const layout = layoutFor(defaultRoot())
+    const { values } = parseArgs({ args: [...args], options: { id: { type: 'string' } }, strict: true })
+    if (!values.id) {
+      console.error('usage: npm run assets:fetch -- --id <id>')
+      return 2
+    }
+    const layout = layoutFor(root)
     const source = loadSources(layout).find((s) => s.id === values.id)
     if (!source) throw new Error(`no source with id "${values.id}" in sources.json`)
-    const written = await fetchSource(source, layout, { fetch })
+    const written = await fetchSource(source, layout, { fetch: fetchImpl })
     console.log(`fetched ${written.length} file(s) into assets-src/${source.id}/`)
     for (const name of written) console.log(`  ${name}`)
-    console.log('Next: paste the licence page text into SOURCE.txt beside it, then npm run assets:ingest -- --id ' + source.id)
+    console.log(`Next: paste the licence page text into SOURCE.txt beside it, then npm run assets:ingest -- --id ${source.id}`)
     return 0
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
+    console.error(describeError(error))
     return 1
   }
-}
-
-if (path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1] ?? '')) {
-  process.exitCode = await main()
 }

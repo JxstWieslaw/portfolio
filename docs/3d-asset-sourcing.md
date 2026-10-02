@@ -82,8 +82,8 @@ For the **USDZ** (iOS AR): same model, exported via Blender's USD exporter or co
 
 ```bash
 # 1. Register the source in content/models/sources.json (url, sha256, licenceId, licenceEvidence), then
-#    download it. Only polyhaven.com, dl.polyhaven.org, kenney.nl, quaternius.com and named GitHub
-#    repos are reachable; the file lands in the gitignored assets-src/<id>/ and must match its sha256.
+#    download it. Only kenney.nl (CC0) is reachable; the file lands in the gitignored
+#    assets-src/<id>/ and must match its sha256.
 npm run assets:fetch -- --id artefact
 
 # 2. Optimise with the pinned toolchain (no unpinned `npx @gltf-transform/cli`): dedupe, weld,

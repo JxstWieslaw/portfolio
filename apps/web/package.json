@@ -13,9 +13,9 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint:content": "tsx scripts/lint-content.ts",
-    "assets:ingest": "tsx scripts/assets/ingest.ts",
-    "assets:check": "tsx scripts/assets/check.ts",
-    "assets:fetch": "tsx scripts/assets/fetch.ts",
+    "assets:ingest": "tsx scripts/assets/ingest.cli.ts",
+    "assets:check": "tsx scripts/assets/check.cli.ts",
+    "assets:fetch": "tsx scripts/assets/fetch.cli.ts",
     "size": "size-limit",
     "lighthouse": "lhci autorun"
   },

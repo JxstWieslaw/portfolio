@@ -27,36 +27,31 @@ const neverCalled = vi.fn<typeof fetch>(() => Promise.reject(new Error('the netw
 
 describe('checkUrl: allowed and denied', () => {
   const allowed = [
-    'https://polyhaven.com/a/rock',
-    'https://dl.polyhaven.org/file/ph-assets/Models/gltf/rock.glb',
     'https://kenney.nl/media/pages/assets/prototype-kit/x/kenney_prototype-kit.zip',
-    'https://quaternius.com/packs/x.html',
-    'HTTPS://POLYHAVEN.COM/UPPER',
-    'https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/Models/Box/glTF-Binary/Box.glb',
-    'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Box/glTF-Binary/Box.glb',
-    'https://codeload.github.com/khronosgroup/gltf-sample-assets/zip/refs/heads/main',
+    'https://kenney.nl/assets/prototype-kit',
+    'HTTPS://KENNEY.NL/UPPER',
   ]
   it.each(allowed)('allows %s', (url) => {
     expect(checkUrl(url).ok).toBe(true)
   })
 
   const denied: [string, UrlDenyReason][] = [
-    ['http://polyhaven.com/a/rock', 'not-https'],
-    ['ftp://polyhaven.com/x', 'not-https'],
+    ['http://kenney.nl/assets/x', 'not-https'],
+    ['ftp://kenney.nl/x', 'not-https'],
     ['javascript:alert(1)', 'not-https'],
     ['data:text/plain,hi', 'not-https'],
-    ['//polyhaven.com/x', 'invalid-url'],
+    ['//kenney.nl/x', 'invalid-url'],
     ['not a url', 'invalid-url'],
-    ['https://polyhaven.com@evil.example/x', 'userinfo'],
-    ['https://user:pass@polyhaven.com/x', 'userinfo'],
-    ['https://polyhaven.com:8443/x', 'port'],
-    ['https://polyhaven.com.evil.example/x', 'host-not-allowed'],
-    ['https://evil.example/polyhaven.com', 'host-not-allowed'],
-    ['https://polyhaven.com./x', 'host-not-allowed'],
-    ['https://www.polyhaven.com/x', 'host-not-allowed'],
+    ['https://kenney.nl@evil.example/x', 'userinfo'],
+    ['https://user:pass@kenney.nl/x', 'userinfo'],
+    ['https://kenney.nl:8443/x', 'port'],
+    ['https://kenney.nl.evil.example/x', 'host-not-allowed'],
+    ['https://evil.example/kenney.nl', 'host-not-allowed'],
+    ['https://kenney.nl./x', 'host-not-allowed'],
+    ['https://www.kenney.nl/x', 'host-not-allowed'],
     ['https://sub.kenney.nl/x', 'host-not-allowed'],
-    ['https://xn--polyhaven-9ze.com/x', 'host-not-allowed'],
-    ['https://p\u043elyhaven.com/x', 'host-not-allowed'], // Cyrillic "o" folds to a punycode host
+    ['https://xn--kenney-9ze.nl/x', 'host-not-allowed'],
+    ['https://kеnney.nl/x', 'host-not-allowed'], // Cyrillic "e" folds to a punycode host
     ['https://127.0.0.1/x', 'ip-literal'],
     ['https://0x7f.1/x', 'ip-literal'],
     ['https://2130706433/x', 'ip-literal'],
@@ -64,23 +59,20 @@ describe('checkUrl: allowed and denied', () => {
     ['https://[::1]/x', 'ip-literal'],
     ['https://[::ffff:7f00:1]/x', 'ip-literal'],
     ['https://localhost/x', 'host-not-allowed'],
-    ['https://github.com/evil/repo/raw/main/x.glb', 'repo-not-allowed'],
-    ['https://github.com/KhronosGroup/other-repo/x', 'repo-not-allowed'],
-    ['https://github.com/', 'repo-not-allowed'],
-    ['https://raw.githubusercontent.com/evil/repo/main/x.glb', 'repo-not-allowed'],
-    ['https://objects.githubusercontent.com/x', 'host-not-allowed'],
-    ['https://gist.github.com/x', 'host-not-allowed'],
+    ['https://quaternius.com/x', 'host-not-allowed'],
+    ['https://github.com/KhronosGroup/glTF-Sample-Assets/raw/main/x.glb', 'host-not-allowed'],
+    ['https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/x.glb', 'host-not-allowed'],
   ]
   it.each(denied)('denies %s as %s', (url, reason) => {
     expect(checkUrl(url)).toEqual({ ok: false, reason })
   })
 
   it('judges the host the request will actually reach, and hands fetch the parsed form', () => {
-    // WHATWG parsing treats a backslash as a path separator, so this is polyhaven.com, not evil.example.
-    const verdict = checkUrl('https://polyhaven.com\\@evil.example/x')
-    expect(verdict.ok && verdict.url.hostname).toBe('polyhaven.com')
-    const upper = checkUrl('https://POLYHAVEN.com/x')
-    expect(upper.ok && upper.url.href).toBe('https://polyhaven.com/x')
+    // WHATWG parsing treats a backslash as a path separator, so this is kenney.nl, not evil.example.
+    const verdict = checkUrl('https://kenney.nl\\@evil.example/x')
+    expect(verdict.ok && verdict.url.hostname).toBe('kenney.nl')
+    const upper = checkUrl('https://KENNEY.nl/x')
+    expect(upper.ok && upper.url.href).toBe('https://kenney.nl/x')
   })
 })
 
@@ -91,14 +83,14 @@ const redirectTo = (location: string, status = 302) => new Response(null, { stat
 describe('fetchChecked: injected fetch only', () => {
   it('downloads from an allowed host with redirect: manual', async () => {
     const fake = vi.fn<typeof fetch>(() => Promise.resolve(bodyOf('hello')))
-    const out = await fetchChecked('https://polyhaven.com/a', { fetch: fake })
+    const out = await fetchChecked('https://kenney.nl/a', { fetch: fake })
     expect(new TextDecoder().decode(out.bytes)).toBe('hello')
     expect(fake).toHaveBeenCalledTimes(1)
     expect(fake.mock.calls[0]?.[1]).toMatchObject({ redirect: 'manual' })
   })
 
   it('refuses a denied start URL without calling fetch', async () => {
-    for (const url of ['http://polyhaven.com/a', 'https://evil.example/a', 'https://127.0.0.1/a', 'https://polyhaven.com@evil.example/a']) {
+    for (const url of ['http://kenney.nl/a', 'https://evil.example/a', 'https://127.0.0.1/a', 'https://kenney.nl@evil.example/a']) {
       await expect(fetchChecked(url, { fetch: neverCalled })).rejects.toBeInstanceOf(FetchRefused)
     }
     expect(neverCalled).not.toHaveBeenCalled()
@@ -107,10 +99,10 @@ describe('fetchChecked: injected fetch only', () => {
   it('follows a redirect to another allowed host, re-checking each hop', async () => {
     const fake = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(redirectTo('https://dl.polyhaven.org/file.glb'))
+      .mockResolvedValueOnce(redirectTo('https://kenney.nl/file.glb'))
       .mockResolvedValueOnce(bodyOf('glb'))
-    const out = await fetchChecked('https://polyhaven.com/a', { fetch: fake })
-    expect(out.finalUrl).toBe('https://dl.polyhaven.org/file.glb')
+    const out = await fetchChecked('https://kenney.nl/a', { fetch: fake })
+    expect(out.finalUrl).toBe('https://kenney.nl/file.glb')
     expect(fake).toHaveBeenCalledTimes(2)
   })
 
@@ -125,28 +117,28 @@ describe('fetchChecked: injected fetch only', () => {
 
   it.each([
     ['a denied host', 'https://evil.example/x.glb', 'host-not-allowed'],
-    ['plain http', 'http://polyhaven.com/x.glb', 'not-https'],
+    ['plain http', 'http://kenney.nl/x.glb', 'not-https'],
     ['an IP literal', 'https://169.254.169.254/x', 'ip-literal'],
-    ['userinfo', 'https://polyhaven.com@evil.example/x', 'userinfo'],
+    ['userinfo', 'https://kenney.nl@evil.example/x', 'userinfo'],
     ['a protocol-relative host', '//evil.example/x', 'host-not-allowed'],
   ])('a redirect to %s is refused and never requested', async (_label, location, reason) => {
     const fake = vi.fn<typeof fetch>().mockResolvedValueOnce(redirectTo(location))
-    await expect(fetchChecked('https://polyhaven.com/a', { fetch: fake })).rejects.toMatchObject({ reason })
+    await expect(fetchChecked('https://kenney.nl/a', { fetch: fake })).rejects.toMatchObject({ reason })
     expect(fake).toHaveBeenCalledTimes(1)
   })
 
   it('stops a redirect loop', async () => {
-    const fake = vi.fn<typeof fetch>(() => Promise.resolve(redirectTo('https://polyhaven.com/again')))
-    await expect(fetchChecked('https://polyhaven.com/a', { fetch: fake })).rejects.toMatchObject({ reason: 'too-many-redirects' })
+    const fake = vi.fn<typeof fetch>(() => Promise.resolve(redirectTo('https://kenney.nl/again')))
+    await expect(fetchChecked('https://kenney.nl/a', { fetch: fake })).rejects.toMatchObject({ reason: 'too-many-redirects' })
     expect(fake).toHaveBeenCalledTimes(DEFAULT_LIMITS.maxRedirects + 1)
   })
 
   it('refuses a redirect with no Location, and a non-2xx answer', async () => {
     await expect(
-      fetchChecked('https://polyhaven.com/a', { fetch: () => Promise.resolve(new Response(null, { status: 302 })) }),
+      fetchChecked('https://kenney.nl/a', { fetch: () => Promise.resolve(new Response(null, { status: 302 })) }),
     ).rejects.toMatchObject({ reason: 'bad-redirect' })
     await expect(
-      fetchChecked('https://polyhaven.com/a', { fetch: () => Promise.resolve(bodyOf('no', {}, 404)) }),
+      fetchChecked('https://kenney.nl/a', { fetch: () => Promise.resolve(bodyOf('no', {}, 404)) }),
     ).rejects.toMatchObject({ reason: 'bad-status' })
   })
 
@@ -161,7 +153,7 @@ describe('fetchChecked: injected fetch only', () => {
       },
     })
     const res = new Response(stream, { headers: { 'content-length': '5000' } })
-    await expect(fetchChecked('https://polyhaven.com/a', { fetch: () => Promise.resolve(res), limits: small })).rejects.toMatchObject({
+    await expect(fetchChecked('https://kenney.nl/a', { fetch: () => Promise.resolve(res), limits: small })).rejects.toMatchObject({
       reason: 'too-large',
     })
     expect(pulled.mock.calls.length).toBeLessThanOrEqual(1)
@@ -177,13 +169,13 @@ describe('fetchChecked: injected fetch only', () => {
       },
     })
     await expect(
-      fetchChecked('https://polyhaven.com/a', { fetch: () => Promise.resolve(new Response(stream)), limits: small }),
+      fetchChecked('https://kenney.nl/a', { fetch: () => Promise.resolve(new Response(stream)), limits: small }),
     ).rejects.toMatchObject({ reason: 'too-large' })
     expect(chunks).toBeLessThan(10)
   })
 
   it('accepts a body exactly at the cap', async () => {
-    const out = await fetchChecked('https://polyhaven.com/a', {
+    const out = await fetchChecked('https://kenney.nl/a', {
       fetch: () => Promise.resolve(bodyOf(new Uint8Array(1_000))),
       limits: small,
     })
@@ -193,14 +185,14 @@ describe('fetchChecked: injected fetch only', () => {
   it('times out a server that never answers', async () => {
     const hang = () => new Promise<Response>(() => undefined)
     await expect(
-      fetchChecked('https://polyhaven.com/a', { fetch: hang, limits: { ...small, timeoutMs: 30 } }),
+      fetchChecked('https://kenney.nl/a', { fetch: hang, limits: { ...small, timeoutMs: 30 } }),
     ).rejects.toMatchObject({ reason: 'timeout' })
   })
 
   it('times out a server that sends headers and then stalls', async () => {
     const stalled = new ReadableStream<Uint8Array>({ pull: () => new Promise(() => undefined) })
     await expect(
-      fetchChecked('https://polyhaven.com/a', { fetch: () => Promise.resolve(new Response(stalled)), limits: { ...small, timeoutMs: 30 } }),
+      fetchChecked('https://kenney.nl/a', { fetch: () => Promise.resolve(new Response(stalled)), limits: { ...small, timeoutMs: 30 } }),
     ).rejects.toMatchObject({ reason: 'timeout' })
   })
 })
@@ -344,15 +336,15 @@ describe('fetchSource: writes only into assets-src/<id>/ and only after the hash
       kind: 'hero',
       enabled: false,
       licenceId: 'CC0-1.0',
-      licenceEvidence: { url: 'https://polyhaven.com/license', retrievedAt: '2026-10-02' },
-      credit: { author: 'Someone', sourceUrl: 'https://polyhaven.com/a/core', retrievedAt: '2026-10-02' },
+      licenceEvidence: { url: 'https://kenney.nl/license', retrievedAt: '2026-10-02' },
+      credit: { author: 'Someone', sourceUrl: 'https://kenney.nl/a/core', retrievedAt: '2026-10-02' },
       ...over,
     })
 
   it('saves a direct GLB whose sha256 matches', async () => {
     const glb = new TextEncoder().encode('pretend glb')
     const source = entry({
-      origin: { type: 'file', path: 'assets-src/core-crystal/model.glb', url: 'https://dl.polyhaven.org/m.glb', sha256: sha256Hex(glb) },
+      origin: { type: 'file', path: 'assets-src/core-crystal/model.glb', url: 'https://kenney.nl/m.glb', sha256: sha256Hex(glb) },
     })
     const layout = layoutFor(tmp)
     const written = await fetchSource(source, layout, { fetch: () => Promise.resolve(bodyOf(glb)) })
@@ -362,7 +354,7 @@ describe('fetchSource: writes only into assets-src/<id>/ and only after the hash
 
   it('writes nothing when the download hashes to something else', async () => {
     const source = entry({
-      origin: { type: 'file', path: 'assets-src/core-crystal/model.glb', url: 'https://dl.polyhaven.org/m.glb', sha256: 'a'.repeat(64) },
+      origin: { type: 'file', path: 'assets-src/core-crystal/model.glb', url: 'https://kenney.nl/m.glb', sha256: 'a'.repeat(64) },
     })
     await expect(fetchSource(source, layoutFor(tmp), { fetch: () => Promise.resolve(bodyOf('swapped')) })).rejects.toBeInstanceOf(FetchHashMismatch)
     expect(existsSync(path.join(tmp, 'assets-src'))).toBe(false)
@@ -428,18 +420,30 @@ describe('sources.json: the licence and provenance pins are required', () => {
     title: 'X',
     kind: 'prop',
     enabled: false,
-    origin: { type: 'file', path: 'assets-src/x/m.glb', url: 'https://polyhaven.com/x', sha256: 'c'.repeat(64) },
+    origin: { type: 'file', path: 'assets-src/x/m.glb', url: 'https://kenney.nl/x', sha256: 'c'.repeat(64) },
     licenceId: 'CC0-1.0',
-    licenceEvidence: { url: 'https://polyhaven.com/license', retrievedAt: '2026-10-02' },
-    credit: { author: 'A', sourceUrl: 'https://polyhaven.com/x', retrievedAt: '2026-10-02' },
+    licenceEvidence: { url: 'https://kenney.nl/license', retrievedAt: '2026-10-02' },
+    credit: { author: 'A', sourceUrl: 'https://kenney.nl/x', retrievedAt: '2026-10-02' },
   }
   it('accepts a complete entry', () => {
     expect(sourceEntrySchema.safeParse(base).success).toBe(true)
   })
+
+  it('allows a space inside a path segment (Kenney ships "Models/GLB format/x.glb"), never at its edges', () => {
+    const withPath = (p: string) => sourceEntrySchema.safeParse({ ...base, origin: { ...base.origin, path: p } }).success
+    expect(withPath('assets-src/x/Models/GLB format/crate large.glb')).toBe(true)
+    expect(withPath('assets-src/x/ Models/m.glb')).toBe(false)
+    expect(withPath('assets-src/x/Models /m.glb')).toBe(false)
+    expect(withPath('assets-src/x/Models/ m.glb')).toBe(false)
+    expect(withPath('assets-src/x/Models/m .glb')).toBe(false)
+    expect(withPath('assets-src/x/Models/../m.glb')).toBe(false)
+    expect(withPath('assets-src/x/./m.glb')).toBe(false)
+    expect(withPath('assets-src/x/a//m.glb')).toBe(false)
+  })
   it.each([
     ['a licence outside the enum', { licenceId: 'CC-BY-NC-4.0' }],
     ['no licence evidence', { licenceEvidence: undefined }],
-    ['licence evidence over http', { licenceEvidence: { url: 'http://polyhaven.com/license', retrievedAt: '2026-10-02' } }],
+    ['licence evidence over http', { licenceEvidence: { url: 'http://kenney.nl/license', retrievedAt: '2026-10-02' } }],
     ['a short sha256', { origin: { ...base.origin, sha256: 'abc' } }],
     ['no sha256', { origin: { ...base.origin, sha256: undefined } }],
     ['no download url', { origin: { ...base.origin, url: undefined } }],

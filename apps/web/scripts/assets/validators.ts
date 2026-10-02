@@ -15,9 +15,23 @@ import {
   TIER_EXTENSIONS,
   creditSchema,
   slugSchema,
+  gltfExtensionSchema,
   type Credit,
+  type GltfExtension,
+  type ModelCap,
   type ModelTier,
 } from '@repo/contracts'
+
+/** Message of an error and of every `cause` behind it, so a wrapped failure never hides its reason. */
+export function describeError(error: unknown): string {
+  const parts: string[] = []
+  let current: unknown = error
+  for (let depth = 0; depth < 5 && current !== undefined; depth++) {
+    parts.push(current instanceof Error ? current.message : String(current))
+    current = current instanceof Error ? current.cause : undefined
+  }
+  return parts.join(' <- ')
+}
 
 export type ViolationCode =
   | 'LICENCE'
@@ -111,8 +125,13 @@ export function parseGlb(bytes: Uint8Array): GlbParts {
     if (start + length > bytes.byteLength) throw new GlbFormatError('chunk runs past the end of the file')
     if (index === 0) {
       if (type !== CHUNK_JSON) throw new GlbFormatError('first chunk is not JSON')
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(start, start + length))
-      const parsed: unknown = JSON.parse(text)
+      let parsed: unknown
+      try {
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(start, start + length))
+        parsed = JSON.parse(text)
+      } catch (error) {
+        throw new GlbFormatError(`JSON chunk is unreadable (${error instanceof Error ? error.message : String(error)})`)
+      }
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
         throw new GlbFormatError('JSON chunk is not an object')
       json = parsed as Record<string, unknown>
@@ -235,6 +254,38 @@ function primitiveTriangles(primitive: Json, accessors: Json[]): number {
   return 0
 }
 
+/** The embedded bytes of an image, or a GlbFormatError when its view is missing or outside the BIN chunk. */
+function imageBytes(image: Json, bufferViews: Json[], bin: Uint8Array | null, index: number): Uint8Array {
+  const view = typeof image['bufferView'] === 'number' ? bufferViews[image['bufferView']] : undefined
+  if (!view) throw new GlbFormatError(`image ${index} has no readable bufferView`)
+  if (!bin) throw new GlbFormatError(`image ${index} needs a binary chunk, and there is none`)
+  const start = num(view['byteOffset'])
+  const end = start + num(view['byteLength'])
+  if (start < 0 || end > bin.byteLength) throw new GlbFormatError(`image ${index} runs past the end of the binary chunk`)
+  return bin.subarray(start, end)
+}
+
+/** The wire-level facts a manifest variant must agree with. Shared by ingest (writing) and check (comparing). */
+export interface VariantMeta {
+  readonly requires: ModelCap[]
+  readonly extensions: GltfExtension[]
+  readonly maxTexturePx: number
+  /** Extensions the contract cannot represent; never silently dropped. */
+  readonly unknownExtensions: string[]
+}
+
+export function deriveVariantMeta(report: GlbReport): VariantMeta {
+  const known = new Set<string>(gltfExtensionSchema.options)
+  const requires: ModelCap[] = ['meshopt']
+  if (report.textures.some((t) => t.mimeType === 'image/webp')) requires.push('webp')
+  return {
+    requires,
+    extensions: [...new Set(report.extensionsUsed)].filter((e): e is GltfExtension => known.has(e)).sort(),
+    maxTexturePx: report.textures.reduce((m, t) => Math.max(m, t.longEdge), 0),
+    unknownExtensions: report.extensionsUsed.filter((e) => !known.has(e)),
+  }
+}
+
 export function buildReport(bytes: Uint8Array): GlbReport {
   const { json, bin } = parseGlb(bytes)
   const accessors = arr(json['accessors'])
@@ -249,14 +300,13 @@ export function buildReport(bytes: Uint8Array): GlbReport {
   }, 0)
 
   const bufferViews = arr(json['bufferViews'])
-  const textures = arr(json['images']).map((image) => {
+  const textures = arr(json['images']).map((image, i) => {
     const mimeType = typeof image['mimeType'] === 'string' ? image['mimeType'] : null
-    const view = typeof image['bufferView'] === 'number' ? bufferViews[image['bufferView']] : undefined
-    if (!view || !bin) return { mimeType, longEdge: 0 }
-    const start = num(view['byteOffset'])
-    return { mimeType, longEdge: imageLongEdge(mimeType, bin.subarray(start, start + num(view['byteLength']))) }
+    const data = imageBytes(image, bufferViews, bin, i)
+    return { mimeType, longEdge: imageLongEdge(mimeType, data) }
   })
 
+  // 0 means "could not be read"; validateReport turns that into a violation instead of a pass.
   const clips = arr(json['animations']).map((animation) => {
     let seconds = 0
     for (const sampler of arr(animation['samplers'])) {
@@ -299,11 +349,14 @@ export function validateFileName(fileName: string, id: string, tier: ModelTier):
   return out
 }
 
+/** Manifest clip durations are stored to the millisecond. */
+export const roundSeconds = (s: number): number => Math.round(s * 1000) / 1000
+
 export interface ReportContext {
   readonly subject: string
   readonly tier: ModelTier
-  /** Clips the manifest entry declares; when given they must equal the file's clips by name. */
-  readonly manifestClips?: readonly { readonly name: string }[]
+  /** Clips the manifest entry declares; when given they must equal the file's clips by name and duration. */
+  readonly manifestClips?: readonly { readonly name: string; readonly seconds: number }[]
 }
 
 export function validateReport(report: GlbReport, ctx: ReportContext): Violation[] {
@@ -319,7 +372,8 @@ export function validateReport(report: GlbReport, ctx: ReportContext): Violation
     out.push(v('TEXTURE', subject, `${report.textures.length} textures exceed the tier ${tier} cap of ${budget.textures}`))
   for (const [i, t] of report.textures.entries()) {
     if (t.mimeType !== 'image/webp') out.push(v('TEXTURE', subject, `texture ${i} is ${t.mimeType ?? 'untyped'}; only image/webp is allowed`))
-    if (t.longEdge > budget.texturePx) out.push(v('TEXTURE', subject, `texture ${i} long edge ${t.longEdge} px exceeds ${budget.texturePx} px`))
+    if (t.longEdge === 0) out.push(v('TEXTURE', subject, `texture ${i} dimensions could not be read`))
+    else if (t.longEdge > budget.texturePx) out.push(v('TEXTURE', subject, `texture ${i} long edge ${t.longEdge} px exceeds ${budget.texturePx} px`))
   }
   if (tier === 3 && report.textures.filter((t) => t.longEdge > 1024).length > 1)
     out.push(v('TEXTURE', subject, 'at most one texture may exceed 1024 px'))
@@ -333,12 +387,14 @@ export function validateReport(report: GlbReport, ctx: ReportContext): Violation
 
   if (report.clips.length > budget.clips) out.push(v('CLIPS', subject, `${report.clips.length} clips exceed the tier ${tier} cap of ${budget.clips}`))
   for (const clip of report.clips) {
+    if (!(clip.seconds > 0)) out.push(v('CLIPS', subject, `clip "${clip.name}" duration unreadable`))
     if (clip.seconds > 20) out.push(v('CLIPS', subject, `clip "${clip.name}" runs ${clip.seconds} s; the cap is 20 s`))
     if (!slugSchema.safeParse(clip.name).success) out.push(v('CLIPS', subject, `clip name "${clip.name}" must be kebab-case`))
   }
   if (ctx.manifestClips) {
-    const declared = ctx.manifestClips.map((c) => c.name).sort().join(',')
-    const actual = report.clips.map((c) => c.name).sort().join(',')
+    const key = (c: { name: string; seconds: number }) => `${c.name}:${roundSeconds(c.seconds)}`
+    const declared = ctx.manifestClips.map(key).sort().join(',')
+    const actual = report.clips.map(key).sort().join(',')
     if (declared !== actual) out.push(v('CLIPS', subject, `clips in the file (${actual || 'none'}) differ from the manifest (${declared || 'none'})`))
   }
 
@@ -422,7 +478,7 @@ export function validateCredits(
 // ---------------------------------------------------------------------------------------------
 
 /** Any URL inside a committed GLB must start with one of these; our own output contains none. */
-export const ALLOWED_GLB_URL_PREFIXES: readonly string[] = ['https://www.khronos.org/', 'https://github.com/KhronosGroup/']
+export const ALLOWED_GLB_URL_PREFIXES: readonly string[] = []
 
 const ALLOWED_EXACT_EXTENSIONS = new Set([
   'KHR_mesh_quantization',
@@ -499,7 +555,12 @@ export function scanGlb(bytes: Uint8Array, subject: string): Violation[] {
       continue
     }
     const start = num(view['byteOffset'])
-    const data = bin.subarray(start, start + num(view['byteLength']))
+    const end = start + num(view['byteLength'])
+    if (start < 0 || end > bin.byteLength) {
+      out.push(v('SECURITY', `$.images[${i}]`, 'image bufferView runs past the end of the binary chunk'))
+      continue
+    }
+    const data = bin.subarray(start, end)
     const chunks = webpChunks(data)
     if (chunks === null) {
       if (image['mimeType'] === 'image/webp') out.push(v('SECURITY', `$.images[${i}]`, 'declared as WebP but is not a RIFF/WEBP file'))

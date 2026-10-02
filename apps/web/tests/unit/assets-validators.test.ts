@@ -7,9 +7,11 @@ import { describe, expect, it } from 'vitest'
 
 import { defaultRoot } from '../../scripts/assets/sources'
 import {
+  GlbFormatError,
   buildReport,
   canonicalJson,
   contentHashOf,
+  imageLongEdge,
   integrityOf,
   packGlb,
   parseGlb,
@@ -91,7 +93,7 @@ describe('validateReport: the budget table', () => {
     expect(codes(ok(report({ clips: [clip('idle', 20.5)] }), 2))).toEqual(['CLIPS'])
     expect(codes(ok(report({ clips: [clip('Idle Loop')] }), 2))).toEqual(['CLIPS'])
     const r = report({ clips: [clip('idle')] })
-    expect(validateReport(r, { subject: 'x', tier: 2, manifestClips: [{ name: 'idle' }] })).toEqual([])
+    expect(validateReport(r, { subject: 'x', tier: 2, manifestClips: [{ name: 'idle', seconds: 2 }] })).toEqual([])
     expect(codes(validateReport(r, { subject: 'x', tier: 2, manifestClips: [] }))).toEqual(['CLIPS'])
   })
 
@@ -235,10 +237,9 @@ describe('scanGlb: the committed-file security scan', () => {
     expect(found.map((x) => x.message).join(' | ')).toMatch(expected)
   })
 
-  it('allows material extensions and the documented URLs', () => {
+  it('allows material extensions, and no URL at all', () => {
     const clean = mutate((j) => {
       j['extensionsUsed'] = ['KHR_materials_clearcoat', 'KHR_texture_transform', 'EXT_texture_webp']
-      firstNode(j)['name'] = 'doc https://www.khronos.org/gltf'
     })
     expect(scanGlb(clean, 'gyroscope')).toEqual([])
   })
@@ -270,5 +271,121 @@ describe('scanGlb: the committed-file security scan', () => {
     expect(scanGlb(glbWith(riff([['VP8 ', 10]])), 'x')).toEqual([])
     expect(codes(scanGlb(glbWith(riff([['VP8 ', 10], ['EXIF', 8]])), 'x'))).toEqual(['SECURITY'])
     expect(codes(scanGlb(glbWith(riff([['XMP ', 8]])), 'x'))).toEqual(['SECURITY'])
+  })
+})
+
+describe('parseGlb: malformed containers are rejected, not tolerated', () => {
+  const u32 = (n: number) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]
+  const JSON_TYPE = 0x4e4f534a
+  const BIN_TYPE = 0x004e4942
+  const chunk = (type: number, body: number[]) => [...u32(body.length), ...u32(type), ...body]
+  const jsonChunk = (text = '{"asset":{"version":"2.0"}}') => {
+    const bytes = [...new TextEncoder().encode(text)]
+    while (bytes.length % 4) bytes.push(0x20)
+    return chunk(JSON_TYPE, bytes)
+  }
+  const glb = (chunks: number[][], over: { magic?: number; version?: number; length?: number } = {}) => {
+    const body = chunks.flat()
+    const total = 12 + body.length
+    return new Uint8Array([...u32(over.magic ?? 0x46546c67), ...u32(over.version ?? 2), ...u32(over.length ?? total), ...body])
+  }
+
+  it('accepts a JSON chunk alone, and a JSON chunk followed by one BIN chunk', () => {
+    expect(parseGlb(glb([jsonChunk()])).bin).toBeNull()
+    expect(parseGlb(glb([jsonChunk(), chunk(BIN_TYPE, [1, 2, 3, 4])])).bin?.byteLength).toBe(4)
+  })
+
+  it.each([
+    ['bad magic', glb([jsonChunk()], { magic: 0x12345678 }), /missing glTF magic/],
+    ['version 1', glb([jsonChunk()], { version: 1 }), /not glTF 2\.0/],
+    ['a header length that is not the file size', glb([jsonChunk()], { length: 999 }), /header length/],
+    ['a file too short to hold a header', new Uint8Array(8), /too short/],
+    ['a first chunk that is not JSON', glb([chunk(BIN_TYPE, [0, 0, 0, 0])]), /first chunk is not JSON/],
+    ['a second chunk that is not BIN', glb([jsonChunk(), chunk(JSON_TYPE, [0x7b, 0x7d, 0x20, 0x20])]), /unexpected chunk/],
+    ['a third chunk', glb([jsonChunk(), chunk(BIN_TYPE, [0, 0, 0, 0]), chunk(BIN_TYPE, [0, 0, 0, 0])]), /unexpected chunk/],
+    ['trailing bytes after the last chunk', glb([jsonChunk(), chunk(BIN_TYPE, [0, 0, 0, 0]), [1, 2, 3]]), /truncated chunk header/],
+    ['a chunk that runs past the end of the file', glb([[...u32(4000), ...u32(JSON_TYPE), 0x7b, 0x7d, 0x20, 0x20]]), /past the end/],
+    ['JSON that is not valid UTF-8', glb([chunk(JSON_TYPE, [0xff, 0xfe, 0xfd, 0xfc])]), /unreadable/],
+    ['JSON that does not parse', glb([jsonChunk('{nope')]), /unreadable/],
+    ['JSON that is an array', glb([jsonChunk('[1,2,3,4]')]), /not an object/],
+  ])('rejects %s', (_label, bytes, message) => {
+    expect(() => parseGlb(bytes)).toThrow(GlbFormatError)
+    expect(() => parseGlb(bytes)).toThrow(message)
+  })
+})
+
+describe('imageLongEdge: read from the header, 0 when it cannot be', () => {
+  const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0))
+  const riff = (chunkId: string, data: number[]) =>
+    new Uint8Array([...ascii('RIFF'), 0, 0, 0, 0, ...ascii('WEBP'), ...ascii(chunkId), data.length, 0, 0, 0, ...data])
+  const pad = (data: number[], to: number) => [...data, ...new Array<number>(Math.max(0, to - data.length)).fill(0)]
+
+  it('reads a PNG IHDR', () => {
+    const png = new Uint8Array(32)
+    new DataView(png.buffer).setUint32(16, 640)
+    new DataView(png.buffer).setUint32(20, 1024)
+    expect(imageLongEdge('image/png', png)).toBe(1024)
+  })
+
+  it('reads lossy WebP (VP8)', () => {
+    expect(imageLongEdge('image/webp', riff('VP8 ', pad([0, 0, 0, 0x9d, 0x01, 0x2a, 0x2c, 0x01, 0xc8, 0x00], 12)))).toBe(300)
+  })
+
+  it('reads lossless WebP (VP8L)', () => {
+    // 300 x 200: width-1 = 299, height-1 = 199 packed into 14-bit fields after the 0x2f signature.
+    expect(imageLongEdge('image/webp', riff('VP8L', pad([0x2f, 43, 193, 49, 0], 12)))).toBe(300)
+  })
+
+  it('reads extended WebP (VP8X)', () => {
+    expect(imageLongEdge('image/webp', riff('VP8X', pad([0, 0, 0, 0, 0xe7, 0x03, 0, 0xf3, 0x01, 0], 12)))).toBe(1000)
+  })
+
+  it('returns 0 for truncated, unknown and mislabelled data', () => {
+    expect(imageLongEdge('image/webp', new Uint8Array(20))).toBe(0)
+    expect(imageLongEdge('image/png', new Uint8Array(10))).toBe(0)
+    expect(imageLongEdge('image/jpeg', new Uint8Array(64))).toBe(0)
+    expect(imageLongEdge(null, new Uint8Array(64))).toBe(0)
+    expect(imageLongEdge('image/webp', riff('ALPH', pad([1, 2], 12)))).toBe(0)
+  })
+})
+
+describe('fail-open parsing becomes a violation', () => {
+  const ok = { bytes: 10, sha256: '0'.repeat(64), triangles: 1, materials: 1, extensionsUsed: [], names: [] }
+
+  it('TEXTURE: an image whose size could not be read', () => {
+    const found = validateReport(
+      { ...ok, textures: [{ mimeType: 'image/webp', longEdge: 0 }], clips: [] },
+      { subject: 'x', tier: 2 },
+    )
+    expect(found.map((x) => x.message)).toEqual(['texture 0 dimensions could not be read'])
+  })
+
+  it('CLIPS: a clip with no readable duration', () => {
+    const found = validateReport(
+      { ...ok, textures: [], clips: [{ name: 'idle', seconds: 0 }] },
+      { subject: 'x', tier: 2 },
+    )
+    expect(found.map((x) => x.message)).toEqual(['clip "idle" duration unreadable'])
+  })
+
+  const withImage = (view: Record<string, unknown> | null, binLength: number) =>
+    packGlb(
+      {
+        asset: { version: '2.0' },
+        buffers: [{ byteLength: binLength }],
+        bufferViews: view ? [view] : [],
+        images: [{ bufferView: 0, mimeType: 'image/webp' }],
+      },
+      new Uint8Array(binLength),
+    )
+
+  it('buildReport throws on an image whose view is missing or outside the BIN chunk', () => {
+    expect(() => buildReport(withImage(null, 16))).toThrow(/no readable bufferView/)
+    expect(() => buildReport(withImage({ buffer: 0, byteOffset: 8, byteLength: 64 }, 16))).toThrow(/past the end/)
+  })
+
+  it('scanGlb reports an image view outside the BIN chunk instead of reading past it', () => {
+    const found = scanGlb(withImage({ buffer: 0, byteOffset: 8, byteLength: 64 }, 16), 'x')
+    expect(found.map((x) => x.message)).toContain('image bufferView runs past the end of the binary chunk')
   })
 })

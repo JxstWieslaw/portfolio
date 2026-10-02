@@ -29,7 +29,6 @@ import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer
 import {
   MODEL_BUDGETS,
   TIER_EXTENSIONS,
-  gltfExtensionSchema,
   type GltfExtension,
   type ModelCap,
   type ModelTier,
@@ -39,6 +38,7 @@ import { buildGyroscope } from './generators/gyroscope'
 import { type Layout, type SourceEntry } from './sources'
 import {
   buildReport,
+  deriveVariantMeta,
   packGlb,
   parseGlb,
   scanGlb,
@@ -118,21 +118,39 @@ export function loadSource(
 // Steps
 // ---------------------------------------------------------------------------------------------
 
-function countTriangles(doc: Document): number {
+/**
+ * Triangles drawn by the default scene, counted exactly as `buildReport` counts them in the
+ * written file: per node (an instanced mesh counts once per node) and per primitive mode.
+ */
+export function countTriangles(doc: Document): number {
+  const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]
+  if (!scene) return 0
   let total = 0
-  for (const mesh of doc.getRoot().listMeshes()) {
-    for (const prim of mesh.listPrimitives()) total += primitiveTriangles(prim)
-  }
+  scene.traverse((node) => {
+    for (const prim of node.getMesh()?.listPrimitives() ?? []) total += primitiveTriangles(prim)
+  })
   return total
 }
 
 function primitiveTriangles(prim: Primitive): number {
   const count = prim.getIndices()?.getCount() ?? prim.getAttribute('POSITION')?.getCount() ?? 0
-  return Math.floor(count / 3)
+  const mode = prim.getMode()
+  if (mode === 4) return Math.floor(count / 3)
+  if (mode === 5 || mode === 6) return Math.max(0, count - 2)
+  return 0
 }
 
+/** Error limits tried in turn, as a fraction of mesh radius. Rising, bounded: never loops forever. */
+const SIMPLIFY_ERRORS = [0.001, 0.003, 0.01, 0.03] as const
+
 /** Strip: cameras, lights, extras, unused data; keep only the declared clips. Throws on anything unusable. */
-function strip(doc: Document, tier: ModelTier, clips: SourceEntry['clips'], subject: string): void {
+function strip(
+  doc: Document,
+  tier: ModelTier,
+  clips: SourceEntry['clips'],
+  subject: string,
+  log: ((line: string) => void) | undefined,
+): void {
   const root = doc.getRoot()
 
   for (const camera of root.listCameras()) camera.dispose()
@@ -151,7 +169,10 @@ function strip(doc: Document, tier: ModelTier, clips: SourceEntry['clips'], subj
   for (const animation of root.listAnimations()) {
     const from = animation.getName()
     const rename = wanted.get(from)
-    if (rename === undefined) animation.dispose()
+    if (rename === undefined) {
+      log?.(`  dropping animation "${from}": not listed in clips`)
+      animation.dispose()
+    }
     else {
       found.add(from)
       animation.setName(rename)
@@ -243,6 +264,7 @@ export interface BuildOptions {
   readonly subject: string
   readonly tier: ModelTier
   readonly clips?: SourceEntry['clips']
+  readonly log?: (line: string) => void
 }
 
 export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOptions): Promise<BuiltVariant> {
@@ -250,19 +272,25 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   const budget = MODEL_BUDGETS[tier]
   doc.setLogger(new Logger(Logger.Verbosity.WARN))
 
-  strip(doc, tier, opts.clips, subject)
+  strip(doc, tier, opts.clips, subject, opts.log)
   normalise(doc, subject)
 
   const animated = doc.getRoot().listAnimations().length > 0 || doc.getRoot().listSkins().length > 0
   await doc.transform(dedup(), flatten(), weld())
   if (!animated) await doc.transform(join())
 
-  const triangles = countTriangles(doc)
-  if (triangles > budget.triangles) {
+  let triangles = countTriangles(doc)
+  for (const error of SIMPLIFY_ERRORS) {
+    if (triangles <= budget.triangles) break
     await doc.transform(
-      simplify({ simplifier: MeshoptSimplifier, ratio: Math.min(1, budget.triangles / triangles), error: 0.001 }),
+      simplify({ simplifier: MeshoptSimplifier, ratio: Math.min(1, budget.triangles / triangles), error }),
     )
+    triangles = countTriangles(doc)
   }
+  if (triangles > budget.triangles)
+    throw new IngestRejected(subject, [
+      { code: 'TRIS', subject, message: `simplify stalled at ${triangles} triangles (budget ${budget.triangles})` },
+    ])
   await doc.transform(reorder({ encoder: MeshoptEncoder }), quantize(), prune())
 
   if (doc.getRoot().listTextures().length > 0) {
@@ -280,17 +308,12 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   const violations = [...validateReport(report, { subject, tier }), ...scanGlb(bytes, subject)]
   if (violations.length > 0) throw new IngestRejected(subject, violations)
 
-  const known = new Set<string>(gltfExtensionSchema.options)
-  const requires: ModelCap[] = ['meshopt']
-  if (report.textures.some((t) => t.mimeType === 'image/webp')) requires.push('webp')
-  return {
-    tier,
-    bytes,
-    report,
-    requires,
-    extensions: report.extensionsUsed.filter((e): e is GltfExtension => known.has(e)),
-    maxTexturePx: report.textures.reduce((m, t) => Math.max(m, t.longEdge), 0),
-  }
+  const meta = deriveVariantMeta(report)
+  if (meta.unknownExtensions.length > 0)
+    throw new IngestRejected(subject, [
+      { code: 'EXTENSIONS', subject, message: `${meta.unknownExtensions.join(', ')} cannot be represented in the manifest` },
+    ])
+  return { tier, bytes, report, requires: meta.requires, extensions: meta.extensions, maxTexturePx: meta.maxTexturePx }
 }
 
 /** Measures the bounding radius of a written GLB the same way `normalise` defines it. */
