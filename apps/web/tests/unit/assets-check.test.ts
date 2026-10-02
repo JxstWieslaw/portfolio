@@ -167,6 +167,19 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
     expect(messages(violations, 'SECURITY')).toEqual(['extras are not allowed'])
   })
 
+  it('SCHEMA: a file the reader cannot measure is one violation, not a crash of the whole run', async () => {
+    rewriteVariant({
+      json: (j) => {
+        const view = (j['bufferViews'] as Record<string, unknown>[])[2]
+        const meshopt = (view?.['extensions'] as Record<string, Record<string, unknown>>)['EXT_meshopt_compression']
+        if (meshopt) meshopt['byteLength'] = 10_000_000
+      },
+    })
+    const { violations } = await runCheck({ root })
+    expect(messages(violations, 'SECURITY').some((m) => /past the declared buffer/.test(m))).toBe(true)
+    expect(messages(violations, 'SCHEMA').some((m) => /bounds could not be measured/.test(m))).toBe(true)
+  })
+
   it('MATERIALS (validateReport): a file over its tier cap', async () => {
     rewriteVariant({ json: (j) => void (j['materials'] = [{}, {}, {}]) })
     const { violations } = await runCheck({ root })

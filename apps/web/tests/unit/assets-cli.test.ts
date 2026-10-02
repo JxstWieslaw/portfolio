@@ -84,6 +84,33 @@ describe('ingest: a raw source that changed upstream', () => {
     }
   }, 120_000)
 
+  it('B2: exit 3 never claims a write under --dry-run or --verify, and verify still prints its mismatches', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const said = (spy: typeof log) => spy.mock.calls.flat().join('\n')
+    try {
+      const { root, actual } = rawRoot('exit3-flags', 'a'.repeat(64))
+      expect(await ingestMain(['--accept-source-change', actual, '--dry-run'], root)).toBe(3)
+      expect(said(log)).toMatch(/dry run: \d+ file\(s\) would be written, nothing was/)
+      expect(said(log)).not.toMatch(/wrote/)
+      expect(existsSync(layoutFor(root).manifestFile)).toBe(false)
+
+      log.mockClear()
+      err.mockClear()
+      expect(await ingestMain(['--accept-source-change', actual, '--verify'], root)).toBe(3)
+      expect(said(log)).not.toMatch(/wrote/)
+      expect(said(err)).toContain('verify: manifest.json differs from a fresh ingest')
+      expect(existsSync(layoutFor(root).manifestFile)).toBe(false)
+
+      log.mockClear()
+      expect(await ingestMain(['--accept-source-change', actual], root)).toBe(3)
+      expect(said(log)).toMatch(/wrote \d+ file\(s\), manifest [0-9a-f]{16}$/)
+    } finally {
+      log.mockRestore()
+      err.mockRestore()
+    }
+  }, 120_000)
+
   it('a missing raw file points at assets:fetch', async () => {
     const { root } = rawRoot('missing', 'a'.repeat(64))
     rmSync(path.join(root, 'assets-src'), { recursive: true })
@@ -119,6 +146,16 @@ describe('fetch main(): the exit code the CLI file returns', () => {
   })
 })
 
+/** What the offline library files may never contain. fetch.ts is the only network code in the toolchain. */
+const NETWORK_PATTERNS: readonly (readonly [string, RegExp])[] = [
+  ['an import of ./fetch', /from\s+['"]\.\/fetch(?:\.[jt]s)?['"]/],
+  ['a dynamic import of ./fetch', /import\(\s*['"]\.\/fetch(?:\.[jt]s)?['"]\s*\)/],
+  ['a fetch( call', /\bfetch\(/],
+  ['globalThis.fetch(', /globalThis\.fetch\(/],
+  ['a network or process module', /['"](?:node:)?(?:https?|http2|net|dns|tls|dgram|child_process)['"]/],
+  ['undici', /['"]undici['"]/],
+]
+
 describe('the project files the toolchain relies on', () => {
   const root = defaultRoot()
   const read = (...p: string[]) => readFileSync(path.join(root, ...p), 'utf8')
@@ -148,12 +185,33 @@ describe('the project files the toolchain relies on', () => {
   })
 
   it('the library files are network-free and never import the fetcher', () => {
-    for (const file of ['ingest.ts', 'check.ts', 'pipeline.ts', 'validators.ts', 'sources.ts']) {
+    for (const file of ['ingest.ts', 'check.ts', 'pipeline.ts', 'validators.ts', 'sources.ts', 'hosts.ts']) {
       const source = read('apps', 'web', 'scripts', 'assets', file)
-      expect(source, file).not.toMatch(/from '\.\/fetch'/)
-      expect(source, file).not.toMatch(/\bfetch\(/)
-      expect(source, file).not.toMatch(/node:https?|node:net|node:dns|node:tls/)
+      for (const [label, pattern] of NETWORK_PATTERNS) expect(source, `${file}: ${label}`).not.toMatch(pattern)
     }
+  })
+
+  it.each([
+    ['import from ./fetch', `import { x } from './fetch'`],
+    ['a dynamic import of ./fetch', `const m = await import('./fetch')`],
+    ['fetch(', `await fetch(url)`],
+    ['globalThis.fetch(', `await globalThis.fetch(url)`],
+    ['node:http', `import h from 'node:http'`],
+    ['node:https', `import h from 'node:https'`],
+    ['node:http2', `import h from 'node:http2'`],
+    ['node:net', `import n from 'node:net'`],
+    ['node:dns', `import d from 'node:dns'`],
+    ['node:tls', `import t from 'node:tls'`],
+    ['node:dgram', `import d from 'node:dgram'`],
+    ['child_process', `import { spawn } from 'node:child_process'`],
+    ['a bare child_process', `const cp = require('child_process')`],
+    ['undici', `import { request } from 'undici'`],
+  ])('the no-network patterns catch %s', (_label, code) => {
+    expect(NETWORK_PATTERNS.some(([, pattern]) => pattern.test(code))).toBe(true)
+  })
+
+  it('CI refuses any tracked path containing assets-src, at any depth', () => {
+    expect(read('.github', 'workflows', 'ci.yml')).toContain(`run: test -z "$(git ls-files -- '*assets-src*')"`)
   })
 
   it('turbo caches the test task against the content folder that the tests read', () => {

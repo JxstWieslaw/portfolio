@@ -22,8 +22,17 @@ import {
 } from '@repo/contracts'
 import { z } from 'zod'
 
+import { SOURCE_HOSTS, isSourceHost } from './hosts'
+
 const httpsUrl = httpsUrlSchema
 const isoDate = isoDateSchema
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return null
+  }
+}
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'must be 64 lowercase hex characters')
 
 /** Generators are code in `scripts/assets/generators/`; a new one is a reviewed change to this list. */
@@ -70,7 +79,7 @@ export const sourceEntrySchema = z
       licenceUrl: httpsUrl.optional(),
       retrievedAt: isoDate,
     }).strict(),
-    clips: z.array(z.object({ from: z.string().min(1), as: slugSchema })).max(2).optional(),
+    clips: z.array(z.object({ from: z.string().min(1), as: slugSchema.max(40) })).max(2).optional(),
     tiers: z
       .array(modelTierSchema)
       .min(1)
@@ -86,8 +95,21 @@ export const sourceEntrySchema = z
       ctx.addIssue({ code: 'custom', path: ['licenceId'], message: 'own is only legal for generated origins' })
     if (e.origin.type === 'generated' && e.licenceId !== 'own')
       ctx.addIssue({ code: 'custom', path: ['licenceId'], message: 'generated origins must be own' })
-    if (e.origin.type === 'file' && new URL(e.licenceEvidence.url).hostname !== new URL(e.origin.url).hostname)
-      ctx.addIssue({ code: 'custom', path: ['licenceEvidence', 'url'], message: 'licence evidence must come from the same host as the download' })
+    if (e.origin.type === 'file') {
+      // `.url()` can fail without stopping this refine, so a bad URL is a path-scoped message, never a TypeError.
+      const downloadHost = hostOf(e.origin.url)
+      const evidenceHost = hostOf(e.licenceEvidence.url)
+      if (downloadHost === null) ctx.addIssue({ code: 'custom', path: ['origin', 'url'], message: 'not a URL whose host can be read' })
+      else if (!isSourceHost(downloadHost))
+        ctx.addIssue({ code: 'custom', path: ['origin', 'url'], message: `host ${downloadHost} is not a known source host (see scripts/assets/hosts.ts)` })
+      if (evidenceHost === null) ctx.addIssue({ code: 'custom', path: ['licenceEvidence', 'url'], message: 'not a URL whose host can be read' })
+      else if (downloadHost !== null && isSourceHost(downloadHost) && !(SOURCE_HOSTS[downloadHost].evidence as readonly string[]).includes(evidenceHost))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['licenceEvidence', 'url'],
+          message: `licence evidence must be on one of: ${SOURCE_HOSTS[downloadHost].evidence.join(', ')}`,
+        })
+    }
     if (e.origin.type === 'file' && !e.origin.path.startsWith(`assets-src/${e.id}/`))
       ctx.addIssue({ code: 'custom', path: ['origin', 'path'], message: `path must start with assets-src/${e.id}/` })
   })
@@ -146,6 +168,6 @@ export function layoutFor(root: string): Layout {
 }
 
 export function loadSources(layout: Layout): SourceEntry[] {
-  const raw: unknown = JSON.parse(readFileSync(layout.sourcesFile, 'utf8'))
+  const raw: unknown = JSON.parse(readFileSync(layout.sourcesFile, 'utf8').replace(/^\uFEFF/, ''))
   return sourcesFileSchema.parse(raw)
 }

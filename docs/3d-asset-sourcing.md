@@ -22,10 +22,10 @@ Everything else (skyboxes, characters, environments) is *not* needed and would f
 
 | Source | Best for | Licence | Notes |
 |---|---|---|---|
-| **Poly Haven** — polyhaven.com | HDRIs, PBR textures, some models | **CC0** | First stop for the HDRI. Download 1k HDR, convert to KTX2 (below). |
+| **Poly Haven** — polyhaven.com | HDRIs, PBR textures, some models | **CC0** | First stop for the HDRI. Download 1k HDR, convert to KTX2 (below). Not fetchable with `assets:fetch` (manual download). |
 | **Sketchfab** — sketchfab.com (filter: *Downloadable* → licence *CC0* or *CC-BY*) | Hero artefact, abstract sculptures, mechanisms | CC0 / CC-BY (credit required in the colophon) | Check triangle count before downloading; prefer ≤ 50 k tris. Avoid "Editorial" and non-commercial licences. |
 | **Kenney** — kenney.nl | Low-poly props, prototype kits | **CC0** | Great for Lab physics props; consistent style. |
-| **Quaternius** — quaternius.com | Low-poly models | **CC0** | Same as Kenney; slightly more organic. |
+| **Quaternius** — quaternius.com | Low-poly models | **CC0** | Same as Kenney; slightly more organic. Not fetchable with `assets:fetch` (manual download). |
 | **pmndrs Market** — market.pmnd.rs | HDRIs, models, materials curated for React Three Fiber | Mixed (each item states it) | Native to your toolchain; drag-and-drop into R3F. |
 | **ambientCG** — ambientcg.com | PBR textures | **CC0** | Only if the artefact needs a real material. |
 | **Spline** — spline.design (community) | Abstract 3D objects made for the web | Per item | Exports GLB; can also embed, but prefer GLB into R3F to stay one renderer. |

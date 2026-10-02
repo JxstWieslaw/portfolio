@@ -230,8 +230,10 @@ export function stripGlbMetadata(bytes: Uint8Array): Uint8Array {
   for (const collection of NAMED_COLLECTIONS) {
     const items = clean[collection]
     if (!Array.isArray(items)) continue
-    clean[collection] = items.map((item: Record<string, unknown>) => {
-      const rest = { ...item }
+    clean[collection] = items.map((item: unknown) => {
+      // A non-object element is left for the scanner to reject; spreading it would be wrong, not safe.
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) return item
+      const rest = { ...(item as Record<string, unknown>) }
       delete rest['name']
       if (collection === 'images') delete rest['uri']
       return rest

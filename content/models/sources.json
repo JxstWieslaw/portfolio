@@ -7,7 +7,7 @@
     "origin": { "type": "generated", "generator": "gyroscope" },
     "licenceId": "own",
     "licenceEvidence": {
-      "url": "https://github.com/JxstWieslaw/portfolio/blob/develop/apps/web/scripts/assets/generators/gyroscope.ts",
+      "url": "https://github.com/JxstWieslaw/portfolio/blob/cac18fb/apps/web/scripts/assets/generators/gyroscope.ts",
       "retrievedAt": "2026-10-02"
     },
     "credit": {

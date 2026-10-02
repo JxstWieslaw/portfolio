@@ -144,9 +144,15 @@ export async function runCheck(opts: { readonly root: string }): Promise<CheckRe
             violations.push(schema(fileName, `manifest says max texture ${variant.maxTexturePx} px, file has ${meta.maxTexturePx} px`))
 
           toolchain ??= await loadToolchain()
-          const radius = await measureBoundsRadius(toolchain, bytes)
-          if (Math.abs(radius - entry.boundsRadius) > BOUNDS_TOLERANCE)
-            violations.push(schema(fileName, `manifest boundsRadius ${entry.boundsRadius}, measured ${radius.toFixed(4)}`))
+          // A file the scanner already flags can still crash the reader (a view past the buffer, say):
+          // that is this file's violation, never the end of the run.
+          try {
+            const radius = await measureBoundsRadius(toolchain, bytes)
+            if (Math.abs(radius - entry.boundsRadius) > BOUNDS_TOLERANCE)
+              violations.push(schema(fileName, `manifest boundsRadius ${entry.boundsRadius}, measured ${radius.toFixed(4)}`))
+          } catch (error) {
+            violations.push(schema(fileName, `bounds could not be measured: ${describeError(error)}`))
+          }
         } catch (error) {
           if (error instanceof GlbFormatError || error instanceof SyntaxError)
             violations.push(schema(fileName, `not a readable GLB: ${error.message}`))
