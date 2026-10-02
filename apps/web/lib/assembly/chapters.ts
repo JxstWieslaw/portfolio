@@ -81,6 +81,11 @@ export function lerpChapter(a: Chapter, b: Chapter, mix: number): ChapterBlend {
   }
 }
 
+/** The camera's look-at point in world units: the damped model-unit offset times the live unit. Neutral rows give exactly the origin. */
+export function lookPoint(look: { readonly x: number; readonly y: number; readonly z: number }, unit: number): readonly [number, number, number] {
+  return [look.x * unit, look.y * unit, look.z * unit]
+}
+
 /** How much of `formation` is on screen: 1 at rest on it, 0 with it in neither slot. Same shape as `scatterWeight`. */
 export function modelWeight(from: BundleKind, to: BundleKind, mix: number, formation: FormationId): number {
   const f = formationOf(from)

@@ -81,4 +81,34 @@ describe('disposeModel', () => {
     expect(map.dispose).toHaveBeenCalledTimes(1)
     expect(removed).toHaveBeenCalledTimes(1)
   })
+
+  it('when one release throws, the others still run, the root still leaves its parent, and the first error is rethrown once', () => {
+    const bad = disposable()
+    bad.dispose.mockImplementation(() => {
+      throw new Error('first')
+    })
+    const good = disposable()
+    const second = disposable()
+    second.dispose.mockImplementation(() => {
+      throw new Error('second')
+    })
+    const goodTexture = texture()
+    const { root, removed } = makeRoot([{ geometry: bad, material: { ...disposable(), map: goodTexture } }, { geometry: good }, { geometry: second }])
+    expect(() => disposeModel(root)).toThrow('first')
+    expect(good.dispose).toHaveBeenCalledTimes(1)
+    expect(goodTexture.dispose).toHaveBeenCalledTimes(1)
+    expect(removed).toHaveBeenCalledTimes(1)
+  })
+
+  it('still removes the root when the traversal itself throws', () => {
+    const removed = vi.fn()
+    const root: DisposeRoot = {
+      traverse: () => {
+        throw new Error('walk failed')
+      },
+      removeFromParent: removed,
+    }
+    expect(() => disposeModel(root)).toThrow('walk failed')
+    expect(removed).toHaveBeenCalledTimes(1)
+  })
 })

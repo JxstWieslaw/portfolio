@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   gateReason,
   hasNoModelsFlag,
   parseTierOverride,
+  readGateInputs,
   readTier,
   shouldLoadModels,
   stubTier,
@@ -104,5 +105,25 @@ describe('the tier stub', () => {
     expect(hasNoModelsFlag('?a=b&nomodels=1')).toBe(true)
     expect(hasNoModelsFlag('?nomodels=0')).toBe(false)
     expect(hasNoModelsFlag('')).toBe(false)
+  })
+})
+
+describe('readGateInputs reads the live environment', () => {
+  const html = document.documentElement
+  afterEach(() => {
+    delete html.dataset.gl
+    window.history.replaceState(null, '', '/')
+    Reflect.deleteProperty(navigator, 'connection')
+  })
+
+  it('is neutral by default and not live', () => {
+    expect(readGateInputs('live')).toEqual({ rung: 'live', glLive: false, tier: 2, saveData: false, effectiveType: undefined, noModels: false })
+  })
+
+  it('sees data-gl, ?nomodels=1, ?tier= (a test build) and the connection', () => {
+    html.dataset.gl = 'live'
+    window.history.replaceState(null, '', '/?nomodels=1&tier=3')
+    Object.defineProperty(navigator, 'connection', { value: { saveData: true, effectiveType: '3g' }, configurable: true })
+    expect(readGateInputs('reduced-instances')).toEqual({ rung: 'reduced-instances', glLive: true, tier: 3, saveData: true, effectiveType: '3g', noModels: true })
   })
 })

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { assemblyBuilder, formationBuilder } from '@/lib/assembly/bundle-cache'
-import { CHAPTERS, type ModelPlacement } from '@/lib/assembly/chapters'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { PerspectiveCamera } from 'three'
+import { assemblyBuilder } from '@/lib/assembly/bundle-cache'
+import { damp } from '@/lib/assembly/camera'
+import { CHAPTERS, chapterFor, lerpChapter, lookPoint, type ModelPlacement } from '@/lib/assembly/chapters'
 import {
   INSTANCE_CAPACITY,
   buildModelBundle,
@@ -149,15 +154,60 @@ describe('clearSphere', () => {
   })
 })
 
-describe('the chapter ledger leaves the formations alone while every model is null', () => {
-  it.each(FORMATION_IDS)('%s: assemblyBuilder with the committed ledger equals the plain builder', (kind) => {
-    const plain = formationBuilder(INSTANCE_CAPACITY, 1)
-    const scene = assemblyBuilder(INSTANCE_CAPACITY, 1)
-    if (kind === 'monolith') return // the monolith carries the artefact's own clearance, tested in assembly-journey
-    expect(scene(kind).position).toEqual(plain(kind).position)
+describe('bundles are byte-identical to the pre-PR code while every model row is null', () => {
+  /**
+   * `tests/fixtures/assembly-bundles.golden.json` holds sha256 digests of the
+   * Float32Array bytes of position, colour and scale for every bundle kind at
+   * two instance fractions. They were captured by running the SAME
+   * `assemblyBuilder` from the commit before this work (2e0ecce, develop after
+   * #46) in a scratch checkout, not from this PR's own output.
+   */
+  const digest = (a: Float32Array) => createHash('sha256').update(Buffer.from(a.buffer, a.byteOffset, a.byteLength)).digest('hex')
+  const kinds = ['cloud', 'monolith', 'stream', 'lattice', 'orbit', 'scatter', 'grid', 'ring'] as const
+  const golden = JSON.parse(readFileSync(join(process.cwd(), 'tests/fixtures/assembly-bundles.golden.json'), 'utf8')) as Record<string, Record<string, { count: number; position: string; colour: string; live: string } | number>>
+
+  for (const keep of [1, 0.5]) {
+    it.each(kinds)(`${keep}: %s matches the golden digests`, (kind) => {
+      const capacity = instanceCount(keep)
+      const expected = golden[String(keep)]?.[kind] as { count: number; position: string; colour: string; live: string }
+      expect(golden[String(keep)]?.capacity).toBe(capacity)
+      const bundle = assemblyBuilder(capacity, keep)(kind)
+      expect({ count: bundle.count, position: digest(bundle.position), colour: digest(bundle.colour), live: digest(bundle.live) }).toEqual(expected)
+    })
+  }
+})
+
+describe('a model row composes with the artefact clearance in the right order', () => {
+  it('the monolith keeps the artefact hole and gains the exclusion on top of it', () => {
+    const ledger = {
+      ...CHAPTERS,
+      monolith: { ...CHAPTERS.monolith, model: { ...modelRow, position: [0.3, 0.1, 0] as const, exclusion: 0.3 } },
+    }
+    const base = assemblyBuilder(INSTANCE_CAPACITY, 1)('monolith')
+    const withRow = assemblyBuilder(INSTANCE_CAPACITY, 1, undefined, ledger)('monolith')
+    expect(withRow.position).not.toEqual(base.position)
+    for (let i = 0; i < withRow.count; i += 1) {
+      const x = withRow.position[i * 3] ?? 0
+      const y = withRow.position[i * 3 + 1] ?? 0
+      const z = withRow.position[i * 3 + 2] ?? 0
+      // Nothing inside the artefact's cleared shell (centre [0, 0.1, 0], radius CLEARANCE_RADIUS) ...
+      expect(Math.hypot(x, y - 0.1, z)).toBeGreaterThanOrEqual(0.42 - 1e-6)
+      // ... and nothing inside the model's exclusion sphere.
+      expect(Math.hypot(x - 0.3, y - 0.1, z)).toBeGreaterThanOrEqual(0.3 - 1e-6)
+    }
   })
 
-  it('applies a placement exclusion to that formation only, and the monolith keeps the artefact clearance on top', () => {
+  it('the cloud follows the monolith it is derived from, exclusion included', () => {
+    const ledger = { ...CHAPTERS, monolith: { ...CHAPTERS.monolith, model: { ...modelRow, exclusion: 0.5 } } }
+    const cloud = assemblyBuilder(INSTANCE_CAPACITY, 1, undefined, ledger)('cloud')
+    const monolith = assemblyBuilder(INSTANCE_CAPACITY, 1, undefined, ledger)('monolith')
+    expect(cloud.count).toBe(monolith.count)
+    expect(cloud.live).toEqual(monolith.live)
+  })
+})
+
+describe('formations other than the monolith', () => {
+  it('apply a placement exclusion to that formation only', () => {
     const ledger = {
       ...CHAPTERS,
       stream: { ...CHAPTERS.stream, model: { ...modelRow, position: [0, 0, 0] as const, exclusion: 0.4 } },
@@ -171,5 +221,24 @@ describe('the chapter ledger leaves the formations alone while every model is nu
     }
     expect(withRow('lattice').position).toEqual(base('lattice').position)
     expect(withRow('monolith').position).toEqual(base('monolith').position)
+  })
+})
+
+describe('the neutral chapter ledger leaves the camera exactly where it was', () => {
+  it('a frame with neutral rows looks at the origin: same matrices as camera.lookAt(0, 0, 0)', () => {
+    const a = new PerspectiveCamera(45, 1.6, 0.1, 100)
+    const b = new PerspectiveCamera(45, 1.6, 0.1, 100)
+    for (const camera of [a, b]) camera.position.set(1.2, 0.4, 10)
+    const chapter = lerpChapter(chapterFor('monolith'), chapterFor('stream'), 0.37)
+    // The canvas damps `look` toward the blended target from rest (0): one frame at 60 fps.
+    const look = { x: damp(0, chapter.target[0], 4, 1 / 60), y: damp(0, chapter.target[1], 4, 1 / 60), z: damp(0, chapter.target[2], 4, 1 / 60) }
+    a.lookAt(0, 0, 0)
+    a.updateMatrixWorld()
+    const [x, y, z] = lookPoint(look, 7.3)
+    b.lookAt(x, y, z)
+    b.updateMatrixWorld()
+    expect(x === 0 && y === 0 && z === 0).toBe(true)
+    expect(b.matrixWorld.elements).toEqual(a.matrixWorld.elements)
+    expect(b.quaternion.toArray()).toEqual(a.quaternion.toArray())
   })
 })

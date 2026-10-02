@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_RESIDENCY, GRACE_MS, MAX_RESIDENT, markFailed, planResidency, type ResidencyState } from '@/lib/models/residency'
+import { EMPTY_RESIDENCY, GRACE_MS as IMPORTED_GRACE_MS, MAX_RESIDENT, markFailed, planResidency, type ResidencyState } from '@/lib/models/residency'
 
 /** Applies a plan the way the slot does: the state it returns is the new truth. */
 const step = (state: ResidencyState, wanted: string[], now: number) => planResidency(state, wanted, now)
 
+/** Pinned literally: the spec says 2 s, and a changed constant must fail here rather than pass by agreeing with itself. */
+const GRACE_MS = 2000
+
 describe('planResidency', () => {
+  it('keeps the grace period at the spec value', () => {
+    expect(IMPORTED_GRACE_MS).toBe(2000)
+  })
+
+
   it('does nothing when nothing is wanted and nothing is held', () => {
     expect(step(EMPTY_RESIDENCY, [], 0)).toEqual({ state: EMPTY_RESIDENCY, load: [], evict: [] })
   })

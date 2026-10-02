@@ -25,7 +25,7 @@ import {
 import { ARTEFACT_CENTRE, ARTEFACT_LIGHT_INTENSITY, igniteScale } from '@/lib/assembly/artefact'
 import { ATTRACT_PULL_MODEL, ATTRACT_RADIUS, ATTRACT_RISE, attractorStore, boxCentre } from '@/lib/assembly/attractors'
 import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
-import { chapterFor, lerpChapter } from '@/lib/assembly/chapters'
+import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
@@ -534,7 +534,8 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     const sTo = scalars(to)
     // The look-at offset is in model units; the live unit turns it into world units.
     const lookUnit = lerp(sFrom.unit, sTo.unit, mix)
-    camera.lookAt(look.x * lookUnit, look.y * lookUnit, look.z * lookUnit)
+    const [lx, ly, lz] = lookPoint(look, lookUnit)
+    camera.lookAt(lx, ly, lz)
     camera.updateMatrixWorld()
 
     // Formation change: write the slot that is not holding `from`, flip uSwap.
