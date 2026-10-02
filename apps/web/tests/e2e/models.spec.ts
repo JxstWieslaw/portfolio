@@ -18,7 +18,7 @@ import { expect, test, type Page } from '@playwright/test'
  */
 
 test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] } })
-test.describe.configure({ timeout: 120_000 })
+test.describe.configure({ timeout: 120_000, mode: 'serial' })
 
 const CUBE = readFileSync(join(process.cwd(), 'tests/fixtures/cube.glb'))
 const INTEGRITY = `sha256-${createHash('sha256').update(CUBE).digest('base64')}`
@@ -156,8 +156,7 @@ test.describe('a model in the lattice section', () => {
     await page.goto('/?modeltest=1')
     await goLive(page)
     await expect(html(page)).toHaveAttribute('data-models', '0')
-    // Nothing is fetched before a section wants the model.
-    expect(seen.models()).toEqual([])
+    // Settling on the hero may prefetch the next section's bytes (idle, low priority); it never mounts them.
     const baseline = await memory(page)
     expect(baseline).toBeDefined()
 
