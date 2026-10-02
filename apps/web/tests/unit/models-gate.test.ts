@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  gateReason,
   hasNoModelsFlag,
   parseTierOverride,
   readTier,
@@ -26,6 +27,11 @@ describe('shouldLoadModels', () => {
     expect(shouldLoadModels(with_({ noModels: true }))).toBe(false)
   })
 
+  it('is an allow-list: only live and reduced-instances may load, every other rung is refused', () => {
+    for (const rung of ['reduced-motion', 'static', 'wash'] as const) expect(shouldLoadModels(with_({ rung }))).toBe(false)
+    for (const rung of ['live', 'reduced-instances'] as const) expect(shouldLoadModels(with_({ rung }))).toBe(true)
+  })
+
   it('says no under reduced motion, even if WebGL somehow mounted', () => {
     expect(shouldLoadModels(with_({ rung: 'reduced-motion' }))).toBe(false)
     expect(shouldLoadModels(with_({ rung: 'reduced-motion', glLive: true, tier: 3 }))).toBe(false)
@@ -40,6 +46,20 @@ describe('shouldLoadModels', () => {
   it('says yes on 3g and the reduced-instances rung (they are capped, not refused)', () => {
     expect(shouldLoadModels(with_({ effectiveType: '3g' }))).toBe(true)
     expect(shouldLoadModels(with_({ rung: 'reduced-instances' }))).toBe(true)
+  })
+})
+
+describe('gateReason', () => {
+  it.each([
+    [{ glLive: false }, 'gl-not-live'],
+    [{ noModels: true }, 'nomodels'],
+    [{ rung: 'static' as const }, 'rung'],
+    [{ saveData: true }, 'save-data'],
+    [{ effectiveType: '2g' }, '2g'],
+    [{ effectiveType: 'slow-2g' }, '2g'],
+    [{}, null],
+  ])('%j -> %s', (over, expected) => {
+    expect(gateReason(with_(over))).toBe(expected)
   })
 })
 
@@ -68,11 +88,14 @@ describe('the tier stub', () => {
   })
 
   it('lets ?tier=1|2|3 override it and ignores anything else', () => {
-    expect(readTier('live', '?tier=3')).toBe(3)
-    expect(readTier('reduced-instances', '?tier=2')).toBe(2)
-    expect(readTier('live', '?tier=4')).toBe(2)
-    expect(readTier('reduced-instances', '?tier=abc')).toBe(1)
-    expect(readTier('live', '')).toBe(2)
+    expect(readTier('live', '?tier=3', true)).toBe(3)
+    expect(readTier('reduced-instances', '?tier=2', true)).toBe(2)
+    expect(readTier('live', '?tier=4', true)).toBe(2)
+    expect(readTier('reduced-instances', '?tier=abc', true)).toBe(1)
+    expect(readTier('live', '', true)).toBe(2)
+    // A production visitor cannot pick a tier.
+    expect(readTier('live', '?tier=3', false)).toBe(2)
+    expect(readTier('reduced-instances', '?tier=3', false)).toBe(1)
     expect(parseTierOverride('?tier=')).toBeNull()
   })
 

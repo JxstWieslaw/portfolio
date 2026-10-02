@@ -7,6 +7,10 @@ const MODELS_CHUNK =
 
 const config: NextConfig = {
   reactStrictMode: true,
+  // Always defined, so the bundler inlines it either way and the model test seam
+  // (`lib/models/test-seam.ts`) folds to `false` and is removed in a normal production build.
+  // Only the e2e job's build sets NEXT_PUBLIC_MODEL_TEST=1.
+  env: { NEXT_PUBLIC_MODEL_TEST: process.env.NEXT_PUBLIC_MODEL_TEST === '1' ? '1' : '0' },
   // `@repo/contracts` ships TypeScript source rather than a build artefact
   // (`"main": "./src/index.ts"`), which is what lets a contract change fail this
   // app's typecheck in CI instead of at runtime. Next has to compile it.
@@ -56,14 +60,20 @@ const config: NextConfig = {
     return config
   },
   async headers() {
+    const safe = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+    ]
     return [
       {
         // Hashed file names (`<id>.t<tier>.<hash8>.glb`): a changed asset is a new file, so a year is safe.
-        source: '/models/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-        ],
+        source: String.raw`/models/:file([a-z0-9-]+\.t[123]\.[0-9a-f]{8}\.glb)`,
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }, ...safe],
+      },
+      {
+        // The manifest keeps its name across ingests, so it must always revalidate.
+        source: '/models/manifest.json',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }, ...safe],
       },
     ]
   },

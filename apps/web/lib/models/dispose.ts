@@ -48,35 +48,58 @@ function closeBitmap(texture: TextureLike): void {
   if (data && typeof data.close === 'function') data.close()
 }
 
-/** `mixerRoot` is the object the mixer was created on (the glTF scene), when that is not `root` itself. */
+/**
+ * `mixerRoot` is the object the mixer was created on (the glTF scene), when
+ * that is not `root` itself.
+ *
+ * Every release is attempted even when an earlier one throws, and the model
+ * always leaves its parent. If anything threw, the first error is rethrown
+ * once at the end so the caller can count and log it.
+ */
 export function disposeModel(root: DisposeRoot, mixer?: MixerLike | null, mixerRoot: unknown = root): void {
-  mixer?.stopAllAction()
-  mixer?.uncacheRoot(mixerRoot)
-
-  const geometries = new Set<DisposableLike>()
-  const materials = new Set<DisposableLike>()
-  const textures = new Set<TextureLike>()
-  const skeletons = new Set<DisposableLike>()
-
-  root.traverse((visited) => {
-    const node = visited as DisposeNode
-    if (node.geometry) geometries.add(node.geometry)
-    if (node.skeleton) skeletons.add(node.skeleton)
-    const list = Array.isArray(node.material) ? (node.material as unknown[]) : node.material ? [node.material] : []
-    for (const material of list) {
-      if (!isDisposable(material)) continue
-      materials.add(material)
-      for (const value of Object.values(material as unknown as Record<string, unknown>)) if (isTexture(value)) textures.add(value)
+  let firstError: unknown
+  let failed = false
+  const attempt = (release: () => void): void => {
+    try {
+      release()
+    } catch (error) {
+      if (!failed) firstError = error
+      failed = true
     }
-  })
-
-  for (const texture of textures) {
-    closeBitmap(texture)
-    texture.dispose()
   }
-  for (const material of materials) material.dispose()
-  for (const geometry of geometries) geometry.dispose()
-  for (const skeleton of skeletons) skeleton.dispose()
-  root.removeFromParent()
 
+  try {
+    attempt(() => mixer?.stopAllAction())
+    attempt(() => mixer?.uncacheRoot(mixerRoot))
+
+    const geometries = new Set<DisposableLike>()
+    const materials = new Set<DisposableLike>()
+    const textures = new Set<TextureLike>()
+    const skeletons = new Set<DisposableLike>()
+
+    attempt(() =>
+      root.traverse((visited) => {
+        const node = visited as DisposeNode
+        if (node.geometry) geometries.add(node.geometry)
+        if (node.skeleton) skeletons.add(node.skeleton)
+        const list = Array.isArray(node.material) ? (node.material as unknown[]) : node.material ? [node.material] : []
+        for (const material of list) {
+          if (!isDisposable(material)) continue
+          materials.add(material)
+          for (const value of Object.values(material as unknown as Record<string, unknown>)) if (isTexture(value)) textures.add(value)
+        }
+      }),
+    )
+
+    for (const texture of textures) {
+      attempt(() => closeBitmap(texture))
+      attempt(() => texture.dispose())
+    }
+    for (const material of materials) attempt(() => material.dispose())
+    for (const geometry of geometries) attempt(() => geometry.dispose())
+    for (const skeleton of skeletons) attempt(() => skeleton.dispose())
+  } finally {
+    attempt(() => root.removeFromParent())
+  }
+  if (failed) throw firstError
 }

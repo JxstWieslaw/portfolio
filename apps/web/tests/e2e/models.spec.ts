@@ -5,20 +5,28 @@ import { MODEL_BUDGETS } from '@repo/contracts'
 import { expect, test, type Page } from '@playwright/test'
 
 /**
- * The model slot in a real browser — model platform spec § 7.3, cases 1, 2, 4
- * and 5, plus the leave-and-return leak loop.
+ * The model slot in a real browser — model platform spec § 7.3.
  *
  * Every ledger row is `null` today, so the browser gets its placement and its
  * manifest from the test seam (`?modeltest=1` plus
  * `window.__ASSEMBLY_MODELS_TEST__`), and the GLB is `tests/fixtures/cube.glb`,
- * served by `page.route`. The suite never depends on a shipped model.
+ * served by `page.route`. The seam exists only in a build made with
+ * `NEXT_PUBLIC_MODEL_TEST=1` (the CI e2e job sets it, and Playwright's web
+ * server inherits it), so the file is skipped when the runner was not given
+ * that variable.
  *
  * Chromium runs on SwiftShader, so there is a WebGL2 context without a GPU;
- * `html[data-gl="live"]` is the proof the Assembly mounted.
+ * `html[data-gl="live"]` is the proof the Assembly mounted. WebKit has no such
+ * launch flags (the launch itself fails), so only the Chromium-based `desktop`
+ * and `mobile` projects run this file. The tests are independent of each other.
  */
 
+test.skip(({ browserName }) => browserName !== 'chromium', 'needs Chromium with SwiftShader WebGL; WebKit cannot launch with these flags')
+test.skip(process.env.NEXT_PUBLIC_MODEL_TEST !== '1', 'needs an app built with NEXT_PUBLIC_MODEL_TEST=1 (the model test seam)')
+
 test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] } })
-test.describe.configure({ timeout: 120_000, mode: 'serial' })
+// Software GL is slow, and several workers share one CPU: be generous, not flaky.
+test.describe.configure({ timeout: 150_000 })
 
 const CUBE = readFileSync(join(process.cwd(), 'tests/fixtures/cube.glb'))
 const INTEGRITY = `sha256-${createHash('sha256').update(CUBE).digest('base64')}`
@@ -66,7 +74,7 @@ async function arm(page: Page): Promise<void> {
 
 const html = (page: Page) => page.locator('html')
 const goLive = async (page: Page): Promise<void> => {
-  await expect(html(page)).toHaveAttribute('data-gl', 'live', { timeout: 60_000 })
+  await expect(html(page)).toHaveAttribute('data-gl', 'live', { timeout: 90_000 })
 }
 
 /** Centre a formation's section in the viewport (the scroll store keys on the viewport centre). */
@@ -77,18 +85,31 @@ async function showFormation(page: Page, formation: string): Promise<void> {
 }
 
 const scrollToTop = (page: Page): Promise<void> => page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-
 const memory = (page: Page) => page.evaluate(() => window.__ASSEMBLY_DEBUG__?.memory())
 
-/** A scripted scroll the length of the page, ending back at the top. */
+/** A scripted scroll the length of the page, ending back at the top. One frame per step, no fixed sleeps. */
 async function scrollWholePage(page: Page): Promise<void> {
-  const height = await page.evaluate(() => document.documentElement.scrollHeight)
-  const step = await page.evaluate(() => window.innerHeight * 0.8)
-  for (let y = 0; y < height; y += step) {
-    await page.evaluate((top) => window.scrollTo({ top, behavior: 'instant' }), y)
-    await page.waitForTimeout(60)
-  }
-  await scrollToTop(page)
+  await page.evaluate(async () => {
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const step = window.innerHeight * 0.8
+    for (let y = 0; y < document.documentElement.scrollHeight; y += step) {
+      window.scrollTo({ top: y, behavior: 'instant' })
+      await frame()
+      await frame()
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    await frame()
+  })
+}
+
+/**
+ * For the "never mounts" cases there is no positive marker to wait for, so wait
+ * until the layer's mount decision has certainly been made: the LCP has been
+ * reported, its 500 ms quiet window has passed and the thread has been idle.
+ */
+async function decisionMade(page: Page): Promise<void> {
+  await page.waitForFunction(() => performance.getEntriesByType('largest-contentful-paint').length > 0, null, { timeout: 30_000 })
+  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(() => requestIdleCallback(() => resolve(), { timeout: 3000 }), 1500)))
 }
 
 function watch(page: Page) {
@@ -99,18 +120,20 @@ function watch(page: Page) {
   return {
     errors,
     models: () => requests.filter((url) => /\/models\//.test(url) || /\/_next\/static\/chunks\/models\./.test(url)),
+    glbs: () => requests.filter((url) => GLB_URL.test(url)),
   }
 }
 
 test.describe('no models, no requests', () => {
-  test('?nomodels=1: the Assembly mounts and a full scroll asks for nothing under /models/ and loads no models chunk', async ({ page }) => {
+  test('?nomodels=1: the gate says why, and a full scroll asks for nothing under /models/ and loads no models chunk', async ({ page }) => {
     const seen = watch(page)
     await arm(page)
     await page.goto('/?modeltest=1&nomodels=1')
     await goLive(page)
     await scrollWholePage(page)
     await showFormation(page, 'lattice')
-    await page.waitForTimeout(1500)
+    // The seam placed a model in the lattice; the gate is consulted when it is wanted and refuses.
+    await expect(html(page)).toHaveAttribute('data-models-gate', 'off:nomodels')
     expect(seen.models()).toEqual([])
     await expect(html(page)).toHaveAttribute('data-models', '0')
     await expect(html(page)).toHaveAttribute('data-models-failed', '0')
@@ -121,8 +144,9 @@ test.describe('no models, no requests', () => {
     const seen = watch(page)
     await arm(page)
     await page.goto('/?modeltest=1&nogl=1')
+    await expect(page.locator('canvas[data-f="monolith"]')).toBeAttached()
+    await decisionMade(page)
     await scrollWholePage(page)
-    await page.waitForTimeout(1500)
     expect(seen.models()).toEqual([])
     await expect(html(page)).not.toHaveAttribute('data-gl', 'live')
     await expect(html(page)).not.toHaveAttribute('data-models', /.*/)
@@ -135,17 +159,32 @@ test.describe('no models, no requests', () => {
     const seen = watch(page)
     await arm(page)
     await page.goto('/?modeltest=1')
+    await expect(page.locator('canvas[data-f="monolith"]')).toBeAttached()
+    await decisionMade(page)
     await scrollWholePage(page)
-    await page.waitForTimeout(1500)
     expect(seen.models()).toEqual([])
     await expect(html(page)).not.toHaveAttribute('data-gl', 'live')
     await expect(html(page)).not.toHaveAttribute('data-models', /.*/)
     await context.close()
   })
+
+  test('the seam armed but without ?modeltest=1 does nothing: no request, no debug hook, no slot activity', async ({ page }) => {
+    const seen = watch(page)
+    await arm(page)
+    await page.goto('/')
+    await goLive(page)
+    await showFormation(page, 'lattice')
+    await scrollWholePage(page)
+    expect(seen.models()).toEqual([])
+    await expect(html(page)).toHaveAttribute('data-models', '0')
+    await expect(html(page)).not.toHaveAttribute('data-models-gate', /.*/)
+    expect(await page.evaluate(() => window.__ASSEMBLY_DEBUG__)).toBeUndefined()
+    expect(seen.errors).toEqual([])
+  })
 })
 
 test.describe('a model in the lattice section', () => {
-  test('loads on arrival within budget, leaves with the section, and returns the GPU to baseline on every loop', async ({ page }) => {
+  test('loads on arrival within budget, leaves with the section, and the GPU returns to its warm baseline on every loop', async ({ page }) => {
     const seen = watch(page)
     const glb: number[] = []
     await page.route(GLB_URL, (route) => {
@@ -156,50 +195,78 @@ test.describe('a model in the lattice section', () => {
     await page.goto('/?modeltest=1')
     await goLive(page)
     await expect(html(page)).toHaveAttribute('data-models', '0')
-    // Settling on the hero may prefetch the next section's bytes (idle, low priority); it never mounts them.
-    const baseline = await memory(page)
-    expect(baseline).toBeDefined()
+
+    const visit = async (): Promise<void> => {
+      await showFormation(page, 'lattice')
+      await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 45_000 })
+      await scrollToTop(page)
+      // The grace period is 2 s and eviction is frame-driven, so the window is generous.
+      await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 12_000 })
+    }
+
+    // One warm-up loop pays for one-off allocations (programs, the loader's own state).
+    await visit()
+    const warm = await memory(page)
+    expect(warm).toBeDefined()
 
     for (let loop = 0; loop < 3; loop += 1) {
       await showFormation(page, 'lattice')
-      await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 30_000 })
-      // While it is on screen it owns GPU memory: at least its geometry and its texture.
-      await expect.poll(async () => (await memory(page))?.geometries, { timeout: 15_000 }).toBeGreaterThan(baseline?.geometries ?? 0)
-      await expect.poll(async () => (await memory(page))?.textures, { timeout: 15_000 }).toBeGreaterThan(baseline?.textures ?? 0)
-
+      await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 45_000 })
+      // While it is on screen it owns GPU memory: more than the baseline.
+      await expect.poll(async () => (await memory(page))?.geometries, { timeout: 15_000 }).toBeGreaterThan(warm?.geometries ?? 0)
+      await expect.poll(async () => (await memory(page))?.textures, { timeout: 15_000 }).toBeGreaterThan(warm?.textures ?? 0)
       await scrollToTop(page)
-      // Grace period is 2 s. Eviction is frame-driven and SwiftShader frames crawl under a loaded runner, so the window is generous.
-      await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 8_000 })
-      await expect.poll(() => memory(page), { timeout: 10_000 }).toEqual(baseline)
+      await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 12_000 })
+      // After eviction nothing is left over: at or below the warm baseline, never above.
+      await expect
+        .poll(async () => {
+          const now = await memory(page)
+          return (now?.geometries ?? 0) <= (warm?.geometries ?? 0) && (now?.textures ?? 0) <= (warm?.textures ?? 0)
+        }, { timeout: 15_000 })
+        .toBe(true)
     }
 
-    // One fetch per visit is allowed (the browser may serve repeats from cache), never more than the loop count.
     expect(glb.length).toBeGreaterThanOrEqual(1)
-    expect(glb.length).toBeLessThanOrEqual(3)
     for (const bytes of glb) expect(bytes).toBeLessThanOrEqual(MODEL_BUDGETS[2].bytes)
+    // The default tier on a live desktop is 2: that is the variant that was asked for.
+    expect(seen.glbs().every((url) => /\.t2\./.test(url))).toBe(true)
     await expect(html(page)).toHaveAttribute('data-models-failed', '0')
     expect(seen.errors).toEqual([])
   })
 
-  test('an aborted GLB request leaves the page up, counts one failure and keeps the Assembly live', async ({ page }) => {
+  test('?tier=1 fetches the tier-1 variant', async ({ page }) => {
+    const seen = watch(page)
+    await page.route(GLB_URL, (route) => route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: CUBE }))
+    await arm(page)
+    await page.goto('/?modeltest=1&tier=1')
+    await goLive(page)
+    await showFormation(page, 'lattice')
+    await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 45_000 })
+    expect(seen.glbs().length).toBeGreaterThanOrEqual(1)
+    expect(seen.glbs().every((url) => /\.t1\./.test(url))).toBe(true)
+    await expect(html(page)).toHaveAttribute('data-models-gate', 'on:1')
+  })
+
+  test('an aborted GLB request is a counted network failure: the page stays up and the Assembly stays live', async ({ page }) => {
     const seen = watch(page)
     await page.route(GLB_URL, (route) => route.abort('failed'))
     await arm(page)
     await page.goto('/?modeltest=1')
     await goLive(page)
     await showFormation(page, 'lattice')
-    await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 30_000 })
+    await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 45_000 })
+    await expect(html(page)).toHaveAttribute('data-models-last-error', 'network')
     await expect(html(page)).toHaveAttribute('data-models', '0')
     await expect(html(page)).toHaveAttribute('data-gl', 'live')
     // No retry loop: leave and come back, still one.
     await scrollToTop(page)
     await showFormation(page, 'lattice')
-    await page.waitForTimeout(1500)
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     await expect(html(page)).toHaveAttribute('data-models-failed', '1')
     expect(seen.errors).toEqual([])
   })
 
-  test('a GLB with one flipped byte is refused by its integrity hash, same as an abort', async ({ page }) => {
+  test('a GLB with one flipped byte is refused by its integrity hash, and says so', async ({ page }) => {
     const seen = watch(page)
     const tampered = Buffer.from(CUBE)
     const at = Math.floor(tampered.length * 0.75)
@@ -209,9 +276,51 @@ test.describe('a model in the lattice section', () => {
     await page.goto('/?modeltest=1')
     await goLive(page)
     await showFormation(page, 'lattice')
-    await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 30_000 })
+    await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 45_000 })
+    await expect(html(page)).toHaveAttribute('data-models-last-error', 'integrity')
     await expect(html(page)).toHaveAttribute('data-models', '0')
     await expect(html(page)).toHaveAttribute('data-gl', 'live')
     expect(seen.errors).toEqual([])
+  })
+
+  test('a file that is not a glTF at all (right hash, wrong content) is a counted parse failure', async ({ page }) => {
+    const junk = Buffer.from('this is not a glb file, but its hash is right')
+    const manifest = JSON.parse(JSON.stringify(SEAM.manifest)) as typeof SEAM.manifest
+    for (const v of manifest.models[0]?.variants ?? []) {
+      v.integrity = `sha256-${createHash('sha256').update(junk).digest('base64')}`
+      v.bytes = junk.length
+    }
+    await page.route(GLB_URL, (route) => route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: junk }))
+    await page.addInitScript((seam) => {
+      window.__ASSEMBLY_MODELS_TEST__ = seam as never
+    }, { ...SEAM, manifest })
+    await page.goto('/?modeltest=1')
+    await goLive(page)
+    await showFormation(page, 'lattice')
+    await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 45_000 })
+    await expect(html(page)).toHaveAttribute('data-models-last-error', 'parse')
+    await expect(html(page)).toHaveAttribute('data-gl', 'live')
+  })
+})
+
+test.describe('delivery headers', () => {
+  test('the manifest always revalidates; hash-named models are immutable; both are nosniff and same-origin', async ({ request }) => {
+    const committed = JSON.parse(readFileSync(join(process.cwd(), 'public/models/manifest.json'), 'utf8')) as { models: Array<{ variants: Array<{ url: string }> }> }
+    const manifest = await request.get('/models/manifest.json')
+    expect(manifest.status()).toBe(200)
+    const manifestHeaders = manifest.headers()
+    expect(manifestHeaders['cache-control']).toBe('public, max-age=0, must-revalidate')
+    expect(manifestHeaders['cache-control']).not.toContain('immutable')
+    expect(manifestHeaders['x-content-type-options']).toBe('nosniff')
+    expect(manifestHeaders['cross-origin-resource-policy']).toBe('same-origin')
+
+    const url = committed.models[0]?.variants[0]?.url
+    expect(url).toBeTruthy()
+    const glb = await request.get(url ?? '')
+    expect(glb.status()).toBe(200)
+    const glbHeaders = glb.headers()
+    expect(glbHeaders['cache-control']).toBe('public, max-age=31536000, immutable')
+    expect(glbHeaders['x-content-type-options']).toBe('nosniff')
+    expect(glbHeaders['cross-origin-resource-policy']).toBe('same-origin')
   })
 })

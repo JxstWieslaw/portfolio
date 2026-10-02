@@ -14,14 +14,18 @@
 
 import type { ModelCap, ModelEntry, ModelManifest, ModelVariant } from '@repo/contracts'
 import committed from '@/public/models/manifest.json'
+import { ModelLoadError } from '@/lib/models/errors'
 import { testSeam } from '@/lib/models/test-seam'
+import { assertManifestShape } from '@/lib/models/validate'
 
 /** What this client can decode today: Meshopt geometry and WebP textures. */
 export const CLIENT_CAPS: ReadonlySet<ModelCap> = new Set<ModelCap>(['meshopt', 'webp'])
 
 export function loadManifest(): ModelManifest {
-  const override = testSeam()?.manifest
-  return (override ?? committed) as ModelManifest
+  // The seam's manifest gets the same structural guard as the committed one.
+  const body = testSeam()?.manifest ?? committed
+  assertManifestShape(body)
+  return body as ModelManifest
 }
 
 /**
@@ -43,10 +47,19 @@ export interface ResolvedModel {
   readonly variant: ModelVariant
 }
 
-/** The entry and variant to load for `id` at `tier`, or `null` when disabled, missing or without a usable variant. */
-export function resolveModel(id: string, tier: 1 | 2 | 3): ResolvedModel | null {
+export type Resolution =
+  | { readonly kind: 'resolved'; readonly model: ResolvedModel }
+  /** `enabled: false`, or no variant this client can use at this tier: the quiet, legitimate "stay procedural". */
+  | { readonly kind: 'unavailable'; readonly reason: 'disabled' | 'no-variant' }
+
+/**
+ * The entry and variant to load for `id` at `tier`. An id the ledger names but
+ * the manifest does not contain is a bug, not a rollback, so it throws.
+ */
+export function resolveModel(id: string, tier: 1 | 2 | 3): Resolution {
   const entry = loadManifest().models.find((m) => m.id === id)
-  if (!entry) return null
+  if (!entry) throw new ModelLoadError('missing', `ledger asset "${id}" is not in the manifest`)
+  if (!entry.enabled) return { kind: 'unavailable', reason: 'disabled' }
   const variant = pickVariant(entry, tier)
-  return variant ? { entry, variant } : null
+  return variant ? { kind: 'resolved', model: { entry, variant } } : { kind: 'unavailable', reason: 'no-variant' }
 }

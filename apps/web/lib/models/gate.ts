@@ -1,13 +1,18 @@
 /**
  * Whether the Assembly may load models, and which tier — model platform spec § 3.4.
  *
- * PURE. Reduced motion never mounts WebGL (`shouldMountWebGL`), so the platform
- * is inert there by construction; the `reduced-motion` rule below is asserted
- * anyway. Until the journey's `tier.ts` (detect-gpu) lands, the tier is a stub
- * read through `readTier`, the single seam to replace.
+ * PURE. An allow-list: only the `live` and `reduced-instances` rungs may load
+ * (reduced motion never mounts WebGL, so the platform is inert there by
+ * construction; any other rung, present or future, is refused by default).
+ * Until the journey's `tier.ts` (detect-gpu) lands, the tier is a stub read
+ * through `readTier`, the single seam to replace. `?tier=` is honoured only
+ * where the test seam is, never for a production visitor.
  */
 
 import type { FallbackRung } from '@/lib/formations/fallback'
+
+/** `?tier=` is a test aid: dev, or a build made with NEXT_PUBLIC_MODEL_TEST=1. Module-local so it folds away in production. */
+const TIER_OVERRIDE: boolean = process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_MODEL_TEST === '1'
 
 export type ModelTierNumber = 1 | 2 | 3
 
@@ -23,12 +28,22 @@ export interface ModelGateInputs {
   readonly noModels: boolean
 }
 
+export type GateReason = 'gl-not-live' | 'nomodels' | 'rung' | 'save-data' | '2g'
+
+const ALLOWED_RUNGS: readonly FallbackRung[] = ['live', 'reduced-instances']
+
+/** Why models may not load, or `null` when they may. The first matching rule wins. */
+export function gateReason(i: ModelGateInputs): GateReason | null {
+  if (!i.glLive) return 'gl-not-live'
+  if (i.noModels) return 'nomodels'
+  if (!ALLOWED_RUNGS.includes(i.rung)) return 'rung'
+  if (i.saveData) return 'save-data'
+  if (i.effectiveType === 'slow-2g' || i.effectiveType === '2g') return '2g'
+  return null
+}
+
 export function shouldLoadModels(i: ModelGateInputs): boolean {
-  if (!i.glLive || i.noModels) return false
-  if (i.rung === 'reduced-motion') return false
-  if (i.saveData) return false
-  if (i.effectiveType === 'slow-2g' || i.effectiveType === '2g') return false
-  return true
+  return gateReason(i) === null
 }
 
 /** The tier whose variants may load, or `null` when nothing may. 3g and the `reduced-instances` rung cap it at 1. */
@@ -53,9 +68,9 @@ export function hasNoModelsFlag(search: string): boolean {
   return new URLSearchParams(search).get('nomodels') === '1'
 }
 
-/** The single seam for the tier: today the rung stub with the `?tier=` override; later detect-gpu. */
-export function readTier(rung: FallbackRung, search: string): ModelTierNumber {
-  return parseTierOverride(search) ?? stubTier(rung)
+/** The single seam for the tier: the rung stub, overridden by `?tier=` only when `allowOverride`; later detect-gpu. */
+export function readTier(rung: FallbackRung, search: string, allowOverride: boolean): ModelTierNumber {
+  return (allowOverride ? parseTierOverride(search) : null) ?? stubTier(rung)
 }
 
 interface NetworkInformationLike {
@@ -70,7 +85,7 @@ export function readGateInputs(rung: FallbackRung): ModelGateInputs {
   return {
     rung,
     glLive: typeof document !== 'undefined' && document.documentElement.dataset.gl === 'live',
-    tier: readTier(rung, search),
+    tier: readTier(rung, search, TIER_OVERRIDE),
     saveData: connection.saveData === true,
     effectiveType: connection.effectiveType,
     noModels: hasNoModelsFlag(search),

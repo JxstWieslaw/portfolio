@@ -1,5 +1,9 @@
-import { selectVariantOrNull, type ModelCap, type ModelEntry, type ModelTier } from '@repo/contracts'
+import { modelManifestSchema, selectVariantOrNull, type ModelCap, type ModelEntry, type ModelTier } from '@repo/contracts'
 import { describe, expect, it } from 'vitest'
+import committed from '@/public/models/manifest.json'
+import { CHAPTERS } from '@/lib/assembly/chapters'
+import { ModelLoadError } from '@/lib/models/errors'
+import { assertManifestShape } from '@/lib/models/validate'
 import { CLIENT_CAPS, loadManifest, pickVariant, resolveModel } from '@/lib/models/manifest'
 
 /**
@@ -45,11 +49,32 @@ describe('pickVariant mirrors selectVariantOrNull', () => {
 })
 
 describe('the committed manifest', () => {
-  it('loads, and keeps the generated gyroscope disabled so nothing resolves', () => {
+  it('parses with the contracts schema, so a bad edit fails here and not in a visitor browser', () => {
+    expect(() => modelManifestSchema.parse(committed)).not.toThrow()
+  })
+
+  it('loads, and keeps the generated gyroscope disabled so it resolves to "unavailable"', () => {
     const manifest = loadManifest()
     expect(manifest.version).toBe(1)
     expect(manifest.models.find((m) => m.id === 'gyroscope')?.enabled).toBe(false)
-    expect(resolveModel('gyroscope', 2)).toBeNull()
-    expect(resolveModel('does-not-exist', 2)).toBeNull()
+    expect(resolveModel('gyroscope', 2)).toEqual({ kind: 'unavailable', reason: 'disabled' })
+  })
+
+  it('treats an id the manifest does not contain as a bug (it throws), not as a quiet rollback', () => {
+    expect(() => resolveModel('does-not-exist', 2)).toThrow(/not in the manifest/)
+  })
+
+  it('every non-null ledger asset resolves to a manifest entry', () => {
+    const ids = new Set(loadManifest().models.map((m) => m.id))
+    for (const chapter of Object.values(CHAPTERS)) if (chapter.model) expect(ids.has(chapter.model.asset)).toBe(true)
+  })
+})
+
+describe('the structural guard on a manifest body', () => {
+  it.each([null, {}, { models: 'x' }, { models: [{}] }, { models: [{ id: 'a' }] }, { models: [{ id: 3, variants: [] }] }])('rejects %j', (body) => {
+    expect(() => assertManifestShape(body)).toThrow(ModelLoadError)
+  })
+  it('accepts a well-formed one', () => {
+    expect(() => assertManifestShape({ models: [{ id: 'a', variants: [] }] })).not.toThrow()
   })
 })

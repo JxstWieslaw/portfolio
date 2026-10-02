@@ -45,7 +45,7 @@ import {
 } from '@/lib/assembly/targets'
 import { FORMATIONS, washCss, type FormationId } from '@/lib/formations/config'
 import { createArtefact, type Artefact } from './Artefact'
-import { createModelSlot, type ModelSlot, type ModelSlotOptions } from './models/ModelSlot'
+import { createModelSlot, type ModelSlot } from './models/ModelSlot'
 import { attachSlots, createAssemblyMaterial, createAssemblyUniforms, type AssemblySlots, type AssemblyUniforms } from './AssemblyMaterial'
 
 /**
@@ -192,14 +192,13 @@ interface Rig {
   readonly slots: AssemblySlots
   readonly uniforms: AssemblyUniforms
   readonly artefact: Artefact
-  readonly models: ModelSlot
   readonly hemisphere: HemisphereLight
   readonly sun: DirectionalLight
   readonly inverse: Matrix4
   dispose(): void
 }
 
-function createRig(capacity: number, slot: Omit<ModelSlotOptions, 'parent'>): Rig {
+function createRig(capacity: number): Rig {
   // A plain Mesh over an InstancedBufferGeometry: position, scale and rotation
   // live in the vertex program, so there is no instance matrix to upload
   // (an InstancedMesh would carry 192 kB of identity matrices for nothing).
@@ -219,7 +218,6 @@ function createRig(capacity: number, slot: Omit<ModelSlotOptions, 'parent'>): Ri
 
   const group = new Group()
   group.add(mesh, artefact.group)
-  const models = createModelSlot({ ...slot, parent: group })
 
   // Sky a dim violet, ground near-black; one key light from above-left so the
   // top faces read lit, like the 2D painter's highlight band.
@@ -234,12 +232,10 @@ function createRig(capacity: number, slot: Omit<ModelSlotOptions, 'parent'>): Ri
     slots,
     uniforms,
     artefact,
-    models,
     hemisphere,
     sun,
     inverse: new Matrix4(),
     dispose() {
-      models.dispose()
       geometry.dispose()
       material.dispose()
       artefact.dispose()
@@ -318,7 +314,10 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   }, [capacity, keep])
 
   const rung = keep < 1 ? 'reduced-instances' : 'live'
-  const rig = useMemo(() => createRig(capacity, { gl, scene, camera, rung, invalidate }), [capacity, gl, scene, camera, rung, invalidate])
+  const rig = useMemo(() => createRig(capacity), [capacity])
+  // Created and disposed with the scene (not with the memoised rig) so StrictMode's mount, cleanup, mount
+  // leaves a live slot and its markers. `null` once a throw has killed it: the procedural artefact carries on.
+  const models = useRef<ModelSlot | null>(null)
   const slotState = useRef<SlotState>(EMPTY_SLOTS)
   // The environment is baked *before* the programs are compiled so the variant
   // that links is the final one (the envMap define is part of the program key).
@@ -350,6 +349,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   )
   useEffect(() => {
     scene.add(rig.group, rig.hemisphere, rig.sun)
+    models.current = createModelSlot({ gl, scene, camera, parent: rig.group, rung, invalidate })
     // Fresh buffers on the GPU: the slots hold nothing until written.
     slotState.current = EMPTY_SLOTS
     const cancel = prepare(invalidate)
@@ -359,9 +359,19 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       scene.environment = null
       environment.current?.dispose()
       environment.current = null
-      rig.dispose()
+      // The cube rig is released first, so a throw from the model slot cannot skip it.
+      try {
+        rig.dispose()
+      } finally {
+        try {
+          models.current?.dispose()
+        } catch (error) {
+          console.warn('[assembly] disposing the model slot threw', error)
+        }
+        models.current = null
+      }
     }
-  }, [scene, rig, prepare, invalidate])
+  }, [gl, scene, camera, rung, rig, prepare, invalidate])
 
   // The camera and the framing maths share `frame`'s FOV; its distance and
   // pitch follow the rig table per frame (§ 3.8).
@@ -640,8 +650,20 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
 
     // Models (platform spec § 3): placed, scaled in and animated here, never on a loop of their own.
     // A loaded `artefact`-role model takes the artefact's place; scale 0, never `visible` (it holds a light).
-    const modelFrame = rig.models.update({ from, to, mix, settled, dt, time: t, unitOf: (formation) => scalars(formation).unit })
-    if (modelFrame.suppressArtefact) artefact.group.scale.setScalar(0)
+    // A throw here must never break the page: the slot is killed and the procedural artefact carries on.
+    try {
+      const modelFrame = models.current?.update({ from, to, mix, settled, dt, time: t, unitOf: (formation) => scalars(formation).unit })
+      if (modelFrame?.suppressArtefact) artefact.group.scale.setScalar(0)
+    } catch (error) {
+      console.warn('[assembly] the model slot failed and was turned off', error)
+      const dead = models.current
+      models.current = null
+      try {
+        dead?.dispose()
+      } catch {
+        // Already logged above; the cube rig does not depend on it.
+      }
+    }
     artefact.tick(t)
 
     if (!live.current) {

@@ -1,5 +1,4 @@
-import type * as ModelLoaderModule from './ModelLoader'
-import { AnimationMixer, Group, type AnimationAction, type Camera, type Scene, type WebGLRenderer } from 'three'
+import type { AnimationAction, AnimationMixer, Group, Camera, Scene, WebGLRenderer } from 'three'
 import {
   CHAPTERS,
   formationOf,
@@ -14,22 +13,29 @@ import {
 import type { BundleKind } from '@/lib/assembly/targets'
 import { FORMATION_IDS, type FormationId } from '@/lib/formations/config'
 import type { FallbackRung } from '@/lib/formations/fallback'
-import { disposeModel } from '@/lib/models/dispose'
-import { readGateInputs, variantTier, type ModelTierNumber } from '@/lib/models/gate'
+import { ModelLoadError, errorCode } from '@/lib/models/errors'
+import { gateReason, readGateInputs, variantTier, type ModelTierNumber } from '@/lib/models/gate'
 import { EMPTY_RESIDENCY, markFailed, planResidency, type ResidencyState } from '@/lib/models/residency'
 import { testSeam } from '@/lib/models/test-seam'
+import type * as ModelLoaderModule from './ModelLoader'
 
 /**
  * The model slot — model platform spec § 3.2, § 3.3, § 3.5.
  *
  * Lives in the Assembly's lazy core chunk and imports three; the loaders
- * themselves are behind a dynamic import of ./ModelLoader, reached only once the gate
- * says yes and a ledger row actually wants an asset. With every ledger row
- * `null` (the merge state) `update` returns after one cheap check and nothing
- * is ever fetched.
+ * themselves are behind a dynamic import of ./ModelLoader, reached only once
+ * the gate says yes and a ledger row actually wants an asset. With every
+ * ledger row `null` (the merge state) `update` returns after one cheap check
+ * and nothing is ever fetched.
  *
  * No loop of its own: `update` runs inside the scene's priority-1 `useFrame`,
  * and the mixer is driven from there (decision M11).
+ *
+ * Nothing fails silently: every failure is counted in `html[data-models-failed]`,
+ * its short code lands in `data-models-last-error`, and it is warned once. A
+ * model that is legitimately off (`enabled: false`) is counted separately in
+ * `data-models-unavailable`. A failed asset stays failed for the session; there
+ * is deliberately no retry or backoff.
  */
 
 export interface ModelSlotOptions {
@@ -80,6 +86,9 @@ interface Resident {
   scrubbed: number
 }
 
+/** The debug hook exists only where the test seam does; module-local so it folds away in production. */
+const DEBUG_HOOK: boolean = process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_MODEL_TEST === '1'
+
 type LoaderModule = typeof ModelLoaderModule
 
 const NONE: ModelFrameResult = { suppressArtefact: false }
@@ -114,52 +123,81 @@ export function createModelSlot(options: ModelSlotOptions): ModelSlot {
   let state: ResidencyState = EMPTY_RESIDENCY
   const resident = new Map<string, Resident>()
   const pending = new Set<string>()
+  const aborts = new Map<string, AbortController>()
+  const warned = new Set<string>()
   let failures = 0
+  let unavailable = 0
+  let lastError = ''
   /** Bumped by `dispose`: a load that started before it must not land after it. */
   let generation = 0
   let tier: ModelTierNumber | null | undefined
   let lastSettled: BundleKind | null = null
   let cancelPrefetch: (() => void) | null = null
   let loaderChunk: Promise<LoaderModule> | null = null
+  /** Set once the loader chunk has arrived; a resident model implies it has, so disposal can use it synchronously. */
+  let loaderModule: LoaderModule | null = null
 
-  const chunk = (): Promise<LoaderModule> => (loaderChunk ??= import('./ModelLoader'))
+  /** The loader chunk, memoised; a rejected import is forgotten so a later load can try again. */
+  const chunk = (): Promise<LoaderModule> =>
+    (loaderChunk ??= import('./ModelLoader').then(
+      (module) => (loaderModule = module),
+      (error: unknown) => {
+        loaderChunk = null
+        throw error
+      },
+    ))
 
   const publish = (): void => {
     root.dataset.models = String(resident.size)
     root.dataset.modelsFailed = String(failures)
+    root.dataset.modelsUnavailable = String(unavailable)
+    if (lastError) root.dataset.modelsLastError = lastError
   }
   publish()
 
-  const seamOn = testSeam() !== null
-  if (seamOn) window.__ASSEMBLY_DEBUG__ = { memory: () => ({ geometries: gl.info.memory.geometries, textures: gl.info.memory.textures }) }
+  if (DEBUG_HOOK && testSeam() !== null) {
+    window.__ASSEMBLY_DEBUG__ = { memory: () => ({ geometries: gl.info.memory.geometries, textures: gl.info.memory.textures }) }
+  }
+
+  const warnOnce = (key: string, message: string): void => {
+    if (warned.has(key)) return
+    warned.add(key)
+    console.warn(message)
+  }
+
+  /** Counts a failure, publishes it and warns. Always runs; only the residency bookkeeping is conditional. */
+  const record = (id: string, error: unknown): void => {
+    failures += 1
+    lastError = errorCode(error)
+    publish()
+    console.warn(`[assembly] model "${id}" skipped (${lastError}): ${error instanceof Error ? error.message : String(error)}`)
+  }
 
   /** The tier to load at, decided once WebGL is live; `null` for the session when the gate says no. */
   const decideTier = (): ModelTierNumber | null | undefined => {
     if (tier !== undefined) return tier
     const inputs = readGateInputs(rung)
     if (!inputs.glLive) return undefined
+    const reason = gateReason(inputs)
     tier = variantTier(inputs)
+    root.dataset.modelsGate = reason ? `off:${reason}` : `on:${tier}`
     return tier
   }
 
   const evict = (id: string): void => {
+    aborts.get(id)?.abort()
+    aborts.delete(id)
     const held = resident.get(id)
     if (!held) return
     resident.delete(id)
-    disposeModel(held.root, held.mixer, held.scene)
-    publish()
-    if (process.env.NODE_ENV !== 'production') console.info(`[assembly] model "${id}" evicted`, { ...gl.info.memory })
-    invalidate()
-  }
-
-  const fail = (id: string, error: unknown, gen: number): void => {
-    if (gen !== generation) return
-    const wasHeld = state.held.includes(id)
-    state = markFailed(state, id)
-    if (!wasHeld) return
-    failures += 1
-    publish()
-    console.warn(`[assembly] model "${id}" skipped: ${String(error)}`)
+    try {
+      loaderModule?.disposeModel(held.root, held.mixer, held.scene)
+    } catch (error) {
+      console.warn(`[assembly] disposing model "${id}" threw`, error)
+    } finally {
+      publish()
+      invalidate()
+    }
   }
 
   const findPlacement = (id: string): ModelPlacement | null => {
@@ -169,49 +207,50 @@ export function createModelSlot(options: ModelSlotOptions): ModelSlot {
 
   const load = async (id: string, atTier: ModelTierNumber): Promise<void> => {
     const gen = generation
+    const controller = new AbortController()
+    aborts.set(id, controller)
     pending.add(id)
     try {
-      const { loadModel } = await chunk()
-      const result = await loadModel(id, atTier)
-      if (gen !== generation) {
-        if (result.kind === 'loaded') disposeModel(result.model.scene)
-        return
-      }
-      if (result.kind === 'unavailable') {
-        // Disabled or absent: the rollback switch, not a fault. Nothing to count.
-        state = markFailed(state, id)
-        if (process.env.NODE_ENV !== 'production') console.info(`[assembly] ${result.reason}`)
-        return
-      }
-      const wrapper = new Group()
-      wrapper.add(result.model.scene)
-      wrapper.visible = false
-      wrapper.scale.setScalar(0)
+      const loader = await chunk()
       const placement = findPlacement(id)
-      const clip = placement?.clip ? result.model.clips.find((c) => c.name === placement.clip?.name) : undefined
-      const mixer = clip ? new AnimationMixer(result.model.scene) : null
-      try {
-        // Programs link before the model can reach the scene (lights from the real scene).
-        await gl.compileAsync(wrapper, camera, scene)
-      } catch (error) {
-        disposeModel(wrapper, mixer, result.model.scene)
-        throw error
-      }
-      if (gen !== generation || !state.held.includes(id)) {
-        disposeModel(wrapper, mixer, result.model.scene)
+      const made = await loader.prepareModel(id, atTier, controller.signal, gl, camera, scene, placement?.clip)
+      if (made.kind === 'ready' && (gen !== generation || !state.held.includes(id))) {
+        // Evicted or disposed while it was loading: it never reaches the scene.
+        try {
+          loader.disposeModel(made.wrapper, made.mixer, made.inner)
+        } catch (error) {
+          console.warn('[assembly] disposing a discarded model threw', error)
+        }
         return
       }
-      const action = clip && mixer ? mixer.clipAction(clip) : null
-      if (action && placement?.clip?.mode === 'scrub') action.paused = true
-      action?.play()
-      parent.add(wrapper)
-      resident.set(id, { root: wrapper, scene: result.model.scene, mixer, action, scrubbed: -1 })
+      if (gen !== generation) return
+      if (made.kind === 'unavailable') {
+        // `enabled: false` is the rollback switch: legitimate, but visible.
+        state = markFailed(state, id)
+        unavailable += 1
+        publish()
+        warnOnce(`unavailable:${id}`, `[assembly] model ${made.reason}`)
+        return
+      }
+      if (made.clipMissing) record(id, new ModelLoadError('validation', `clip "${placement?.clip?.name}" is not in the model`))
+      parent.add(made.wrapper)
+      resident.set(id, { root: made.wrapper, scene: made.inner, mixer: made.mixer, action: made.action, scrubbed: -1 })
       publish()
       invalidate()
     } catch (error) {
-      fail(id, error, gen)
+      if (gen === generation) {
+        // An abort caused by our own eviction is not a failure.
+        const evicted = controller.signal.aborted && !state.held.includes(id)
+        if (!evicted) {
+          record(id, error)
+          state = markFailed(state, id)
+        }
+      }
     } finally {
-      if (gen === generation) pending.delete(id)
+      if (gen === generation) {
+        pending.delete(id)
+        if (aborts.get(id) === controller) aborts.delete(id)
+      }
     }
   }
 
@@ -226,7 +265,7 @@ export function createModelSlot(options: ModelSlotOptions): ModelSlot {
       if (!atTier || state.held.includes(next) || state.failed.includes(next)) return
       void chunk()
         .then((m) => m.prefetchModel(next, atTier))
-        .catch(() => {})
+        .catch((error: unknown) => warnOnce(`prefetch:${next}`, `[assembly] prefetching model "${next}" failed (${errorCode(error)}): ${String(error)}`))
     })
   }
 
@@ -304,16 +343,24 @@ export function createModelSlot(options: ModelSlotOptions): ModelSlot {
 
     dispose() {
       generation += 1
+      for (const controller of aborts.values()) controller.abort()
+      aborts.clear()
       pending.clear()
       state = EMPTY_RESIDENCY
       tier = undefined
       lastSettled = null
       cancelPrefetch?.()
       cancelPrefetch = null
-      for (const id of [...resident.keys()]) evict(id)
-      delete root.dataset.models
-      delete root.dataset.modelsFailed
-      if (seamOn) delete window.__ASSEMBLY_DEBUG__
+      try {
+        for (const id of [...resident.keys()]) evict(id)
+      } finally {
+        delete root.dataset.models
+        delete root.dataset.modelsFailed
+        delete root.dataset.modelsUnavailable
+        delete root.dataset.modelsLastError
+        delete root.dataset.modelsGate
+        if (DEBUG_HOOK) delete window.__ASSEMBLY_DEBUG__
+      }
     },
   }
 }

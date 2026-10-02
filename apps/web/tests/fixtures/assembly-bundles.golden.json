@@ -1,0 +1,104 @@
+{
+  "1": {
+    "capacity": 3000,
+    "cloud": {
+      "count": 2756,
+      "position": "c186e186e5026d7713aaa95fb0060bf0380e5f4bd26a2906417ef99160472c8f",
+      "colour": "28435bd104103e54dd930d388433c58bc108391a8b3c4ab282160fd2ec4d058f",
+      "live": "95b7250e09a599afc5bfa54e87bbc3e58aca6ec5acdfff7ea62b27687e273dff"
+    },
+    "monolith": {
+      "count": 2756,
+      "position": "cb065ce9f53f150197c63c9a38f1222a3b94e711298095da58836c4013357212",
+      "colour": "28435bd104103e54dd930d388433c58bc108391a8b3c4ab282160fd2ec4d058f",
+      "live": "95b7250e09a599afc5bfa54e87bbc3e58aca6ec5acdfff7ea62b27687e273dff"
+    },
+    "stream": {
+      "count": 1600,
+      "position": "79cad7d5a21921a20a5eeab8bc985c70696f72c54300aa5d77d7b2b1dbb225bd",
+      "colour": "000c1242ccbd79dd80532636799db900ca652f311f919d6579ec18279abedd0d",
+      "live": "f360e709c9c2668f5a6afc98f09ff9869d9eca273cc43ae0f737654c5cc30df3"
+    },
+    "lattice": {
+      "count": 1157,
+      "position": "f512de91d6f1ce11686fc4fdd35733fedbb846a58c7afb7810c561f6c7876237",
+      "colour": "8e963aa593c076049a2c766061bfc8525a8c3bc3f54a554ee112054d49abb311",
+      "live": "8fa0d951c2e81a7c64c3585665f5f09478ba5195028988247e4f6c5c70db2577"
+    },
+    "orbit": {
+      "count": 1896,
+      "position": "446195d05e60c6c7b8a6bec26d9703a157d4df801f230b75134de396e0c8459c",
+      "colour": "685b9eb1930d741692f23d91e2209a47665bb340a8891fe5ed17de0a6ca5c722",
+      "live": "3032560aba6c2f1b418cadf5a82d4a0d6351658c2b90e8457a41497e505de36a"
+    },
+    "scatter": {
+      "count": 2000,
+      "position": "c029283dbeb236e6a44749231fffdff5711bee4445c7f98f1433beb53722b697",
+      "colour": "48fe380b1ec1ee0fb4c9cd7f92e20fcd91eb87959ec7575c93f1f406d164107d",
+      "live": "9c3c77ea3b9a3c4c9603367922facd18fa23371c133a61cea38c3c70b3e99486"
+    },
+    "grid": {
+      "count": 1338,
+      "position": "16a453c5cf8d5760467c7637cd16fdd814e16a30a971216d2423064a0fe59378",
+      "colour": "669b3111293a7b015972a428d9f1140bb7b491c7f695c76d3be59614d5da4292",
+      "live": "a08280363e2619414fa078618e0bdd94e37658d20e07dd0d4c2275a44ceee40c"
+    },
+    "ring": {
+      "count": 2200,
+      "position": "b63f28fae8e81008f0f68e4820664ba987cba9a65f753706fb5f636362ee52ed",
+      "colour": "c779c5cdb9461d0355197444cfc157e7e61f40680a9bb700988b84df55992729",
+      "live": "6146cf125db305496b2e5c4d9d6900b99f20bb2ce34ced3bb8535659cc723d30"
+    }
+  },
+  "0.5": {
+    "capacity": 1500,
+    "cloud": {
+      "count": 1378,
+      "position": "61b113edfb9de9216fc3196437eedd30cfc7cbcfc2fa81b733502bd51e63b306",
+      "colour": "4aee15cb4c40a1d460cf5645fa11bdb1e7a94d5b37e14c0485c5ed8f8da0e1d2",
+      "live": "24b41fab7a0c1dda2a032421ce31f8abc8d9d4cd0349f3a6be3fe84346628ee5"
+    },
+    "monolith": {
+      "count": 1378,
+      "position": "9793a1496deda304a38a57549c04a5fdf182bd83c6db04fbe4d2119c2c8d746d",
+      "colour": "4aee15cb4c40a1d460cf5645fa11bdb1e7a94d5b37e14c0485c5ed8f8da0e1d2",
+      "live": "24b41fab7a0c1dda2a032421ce31f8abc8d9d4cd0349f3a6be3fe84346628ee5"
+    },
+    "stream": {
+      "count": 800,
+      "position": "06f83705298d9740591eaef32ad89423ac20b44a55da3d7dd29bc8b042bd0407",
+      "colour": "87406bce25488ab7280951065162c92db791f72e8dd4749ab29b4f14330eb3ea",
+      "live": "e2c0cad043c81a15851f35cad005c4e01fdcf335d2a3060ff03c28b854bde3b3"
+    },
+    "lattice": {
+      "count": 587,
+      "position": "ed1b59ce3f96e618be17125b948f9ffdc4c9040e6c1d02e5a18c5212ed3ba6f1",
+      "colour": "97b8d0767d31cc571e914f430cd6da5298b295d683e865a924ff4c766cddcc11",
+      "live": "0b1c65e336dfe7b857201a0bb5f6b238b0058c52e9d4e2331dd69ad231ae6daa"
+    },
+    "orbit": {
+      "count": 948,
+      "position": "bd97876d631ac7a26a298e970a5911ed8e091edc4e8558092912ddd30601b76c",
+      "colour": "32c7c5670a0c35cd21d90addafbbfcce9705b4531c8bb898cd9d51c118a88bee",
+      "live": "bd9e79fcefcce3e2c5742acdc114d4303aafd408b33d93bb7bf33f820fa77bff"
+    },
+    "scatter": {
+      "count": 1000,
+      "position": "01e2ae141a603f8750943aaded2707435f65b550facb271f4daf614fdef28d63",
+      "colour": "86cae2b7ca2f7393b677f65fdfdb7fe126996282262dcabba99dcf58a52559e9",
+      "live": "ecdaf747a47ea248a40e1a9f8bc43e6f8ee50bc58cf5ed7c0ff97345e4d5e409"
+    },
+    "grid": {
+      "count": 691,
+      "position": "09bab60a6152cc7e972266cbc575d885519013305862026595b7c7284d1b01dd",
+      "colour": "e3426b774064bb57691977e19645879f259dca90a344a7e19975bfc0eb3b0c14",
+      "live": "41d04737b68eab1ab4c9d4417ee399db40ca94ebddb3e8a8aac7dc8d8144f948"
+    },
+    "ring": {
+      "count": 1100,
+      "position": "d5eeae1440ba9621207f3d956e8d989f7d3fbf6b78d8e7304310a6067f75f0f5",
+      "colour": "c35bc403c883b2f0d3112b16194dfb3f509d927aa2cb0e5475704175e9556105",
+      "live": "dd4ada0ff528b745b7f8dd6c29d023a2d237ae59ba0d02b5fc384b5bc53d8c0b"
+    }
+  }
+}

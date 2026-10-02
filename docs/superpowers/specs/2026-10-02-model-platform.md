@@ -65,7 +65,7 @@ Budget headroom today (`apps/web/.size-limit.json`, skills assessment): initial 
 | M8 | Texture codec | WebP first (`EXT_texture_webp`, native in `GLTFLoader`); KTX2 later | KTX2 now | KTX2 costs 24.3 kB code plus a 262.7 kB transcoder fetch (self-hosted) to save VRAM: a 1024 px RGBA texture with mips is about 5.6 MB decoded, 1 to 1.4 MB as BC7/ASTC. At 1 to 2 textures per model and one resident pair, the saving is under 10 MB on devices that already hold a 3 000-cube scene in about 40 MB. Needs `toktx` (an external binary) in CI and on the owner's machine too. Revisit trigger: a tier-3 model needing a texture over 1024 px, or `gl.info.memory.textures` above 25 MB measured on a phone |
 | M9 | Ingest tooling | `@gltf-transform/{core,extensions,functions}` + `meshoptimizer` + `sharp` as exact-pinned devDependencies, driven by a `tsx` script | `@gltf-transform/cli`; `gltfpack` | Library API is what the smoke test used. The CLI adds 20 direct deps for a one-line wrapper. `gltfpack` is a second toolchain with no hook into our validators |
 | M10 | Integrity | `fetch(url, { integrity })` then `loader.parse(buffer)` | Hash in JS with `crypto.subtle`; trust the URL | Native SRI check, zero JS bytes. Mismatch rejects the fetch and the slot falls back to procedural. `GLTFLoader.load` cannot pass `integrity`, so the slot fetches itself |
-| M11 | Frame loop | Models ride the existing `frameloop="demand"` and the 20/30 fps idle ticker | `frameloop="always"`; a per-model rAF | See 3.5 |
+| M11 | Frame loop | Models ride the existing `frameloop="demand"` and the 20 fps idle ticker | `frameloop="always"`; a per-model rAF | See 3.5 |
 | M12 | Crossfade | Scale-in with the artefact's `easeOutBack`, plus bundle-level cube clearance | Alpha fade of the model | Transparent PBR meshes need sorting and a second draw per material; scale-in reuses the shipped ignition and costs nothing |
 | M13 | Texture non-power-of-two | Not enforced | Keep `3d-asset-sourcing.md` rule "power of two" | WebGL2 handles NPOT with mips. The cap is on the long edge (section 4.3) |
 
@@ -163,13 +163,13 @@ Rules, in order: no `glLive` or `noModels` -> `false`. `reduced-motion` rung -> 
 
 ### 3.5 Frame loop and animation clips
 
-The scene's frame loop is `demand`. R3F renders on `invalidate`; scroll, pointer, resize, attractors and a 30 fps (20 on touch) idle ticker invalidate (`AssemblyCanvas.tsx`, the `setInterval` ticker and the priority-1 `useFrame`). GLTF clips need time to advance, and there are three ways to get it:
+The scene's frame loop is `demand`. R3F renders on `invalidate`; scroll, pointer, resize, attractors and a 20 fps idle ticker (`BREATH_FPS`, 20 on every device) invalidate (`AssemblyCanvas.tsx`, the `setInterval` ticker and the priority-1 `useFrame`). GLTF clips need time to advance, and there are three ways to get it:
 
-1. `frameloop="always"`: rejected. 60 fps on every section on every device for a decorative layer, against the 30/20 fps design the perf review set.
+1. `frameloop="always"`: rejected. 60 fps on every section on every device for a decorative layer, against the 20 fps design the perf review set.
 2. A per-model rAF: rejected. A second clock that has to be paused for `document.hidden`, opacity 0 and context loss, all of which the ticker already handles.
 3. **Chosen**: one `AnimationMixer` per resident model, updated inside the existing priority-1 `useFrame` with the real `dt` (clamped to 0.1 as today). Two modes:
    - `scrub`: `action.time = progress * clip.seconds` where `progress` is the model's formation weight, then `mixer.update(0)`. Deterministic, needs no ticker, and is a pure function of scroll, so it is testable. Default.
-   - `loop`: `mixer.update(dt)` only when the formation is settled (`settledFormation`) and `weight > 0.5`. It advances at the ticker rate (20 or 30 fps) using real `dt`, so speed is correct and sampling is coarse, which is right for ambient motion. Nothing runs under `document.hidden` or at opacity 0 because the frame body already returns early.
+   - `loop`: `mixer.update(dt)` only when the formation is settled (`settledFormation`) and `weight > 0.5`. It advances at the ticker rate (20 fps) using real `dt`, so speed is correct and sampling is coarse, which is right for ambient motion. Nothing runs under `document.hidden` or at opacity 0 because the frame body already returns early.
 
 Cost of the mixer is nil in the bundle: R3F's namespace import already carries `AnimationMixer` and `SkinnedMesh`.
 
@@ -192,7 +192,17 @@ Network: a tier-2 hero is <= 180 kB plus the 21.5 kB `models` chunk, fetched aft
 
 ### 3.7 Delivery headers
 
-Files in `public/` are served by Next with a revalidating `Cache-Control` by default (to be confirmed against the installed Next 15.5 in the PR). Hashed filenames make `public, max-age=31536000, immutable` safe, so the runtime slice adds a `headers()` entry in `next.config.ts` for `/models/:path*`. `manifest.json` itself is not served (it is imported into the chunk), so there is no stale-manifest case.
+Files in `public/` are served by Next with a revalidating `Cache-Control` by default. `next.config.ts` adds `headers()` entries:
+
+- `/models/<id>.t<1-3>.<hash8>.glb` (a path-to-regexp pattern that matches hash-named files only): `Cache-Control: public, max-age=31536000, immutable`. Hashed filenames make a year safe.
+- `/models/manifest.json`: `Cache-Control: public, max-age=0, must-revalidate`. **The manifest is served** (it is a file in `public/`), and its name never changes, so it must revalidate. It is also imported into the `models` chunk, which is what the runtime reads; the served copy is for inspection and the future API fallback. An earlier draft said "manifest.json itself is not served"; that was wrong, and an `/models/:path*` rule would have made the manifest immutable for a year.
+- Both: `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`.
+
+A unit test reads the resolved `headers()` config and the e2e checks the built server's response headers, so the manifest can never become immutable unnoticed.
+
+**Decision: a failed asset stays failed for the session.** A fetch, integrity, parse or compile failure marks the asset failed until reload. There is deliberately no retry or backoff policy; the procedural artefact is always the fallback, and a retry loop is the failure mode this avoids.
+
+**Decision: the test seam is compiled out of production.** `?modeltest=1` plus `window.__ASSEMBLY_MODELS_TEST__` (and the `gl.info.memory` debug hook) exist only when `NODE_ENV !== 'production'` or the app was built with `NEXT_PUBLIC_MODEL_TEST=1`, which only the e2e job sets. The budgets job greps the production chunks for the seam and fails if it is there. `?tier=` is honoured only where the seam is.
 
 ---
 
