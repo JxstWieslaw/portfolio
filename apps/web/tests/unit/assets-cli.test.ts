@@ -84,6 +84,33 @@ describe('ingest: a raw source that changed upstream', () => {
     }
   }, 120_000)
 
+  it('B2: exit 3 never claims a write under --dry-run or --verify, and verify still prints its mismatches', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const said = (spy: typeof log) => spy.mock.calls.flat().join('\n')
+    try {
+      const { root, actual } = rawRoot('exit3-flags', 'a'.repeat(64))
+      expect(await ingestMain(['--accept-source-change', actual, '--dry-run'], root)).toBe(3)
+      expect(said(log)).toMatch(/dry run: \d+ file\(s\) would be written, nothing was/)
+      expect(said(log)).not.toMatch(/wrote/)
+      expect(existsSync(layoutFor(root).manifestFile)).toBe(false)
+
+      log.mockClear()
+      err.mockClear()
+      expect(await ingestMain(['--accept-source-change', actual, '--verify'], root)).toBe(3)
+      expect(said(log)).not.toMatch(/wrote/)
+      expect(said(err)).toContain('verify: manifest.json differs from a fresh ingest')
+      expect(existsSync(layoutFor(root).manifestFile)).toBe(false)
+
+      log.mockClear()
+      expect(await ingestMain(['--accept-source-change', actual], root)).toBe(3)
+      expect(said(log)).toMatch(/wrote \d+ file\(s\), manifest [0-9a-f]{16}$/)
+    } finally {
+      log.mockRestore()
+      err.mockRestore()
+    }
+  }, 120_000)
+
   it('a missing raw file points at assets:fetch', async () => {
     const { root } = rawRoot('missing', 'a'.repeat(64))
     rmSync(path.join(root, 'assets-src'), { recursive: true })

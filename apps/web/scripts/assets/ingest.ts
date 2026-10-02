@@ -257,7 +257,10 @@ ${USAGE}`)
     })
     if (result.acceptedChanges.length > 0) {
       for (const c of result.acceptedChanges) console.error(`${c.id} changed upstream and was accepted for this run: now pin sha256 in sources.json: ${c.sha256}`)
-      console.log(`wrote ${result.files.size} file(s), manifest ${result.manifest.contentHash}`)
+      // Nothing was written under --verify or --dry-run, so do not say it was; verify still owes its findings.
+      if (values.verify) for (const m of result.mismatches) console.error(`verify: ${m}`)
+      else if (values['dry-run']) console.log(`dry run: ${result.files.size} file(s) would be written, nothing was`)
+      else console.log(`wrote ${result.files.size} file(s), manifest ${result.manifest.contentHash}`)
       return 3
     }
     if (values.verify) {
