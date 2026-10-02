@@ -321,11 +321,21 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   return { tier, bytes, report, requires: meta.requires, extensions: meta.extensions, maxTexturePx: meta.maxTexturePx }
 }
 
-/** Measures the bounding radius of a written GLB the same way `normalise` defines it. */
-export async function measureBoundsRadius(tc: Toolchain, bytes: Uint8Array): Promise<number> {
+/** Bounding radius and centre of a written GLB, measured the way `normalise` defines them. */
+export async function measureBounds(
+  tc: Toolchain,
+  bytes: Uint8Array,
+): Promise<{ readonly radius: number; readonly centre: readonly [number, number, number] }> {
   const doc = await tc.io.readBinary(bytes)
   const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]
-  if (!scene) return 0
+  if (!scene) return { radius: 0, centre: [0, 0, 0] }
   const { min, max } = getBounds(scene)
-  return Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2
+  return {
+    radius: Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2,
+    centre: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2],
+  }
+}
+
+export async function measureBoundsRadius(tc: Toolchain, bytes: Uint8Array): Promise<number> {
+  return (await measureBounds(tc, bytes)).radius
 }

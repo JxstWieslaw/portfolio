@@ -10,7 +10,7 @@ import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { runIngest } from '../../scripts/assets/ingest'
-import { IngestRejected, buildVariant, loadToolchain, measureBoundsRadius, type Toolchain } from '../../scripts/assets/pipeline'
+import { IngestRejected, buildVariant, loadToolchain, measureBounds, type Toolchain } from '../../scripts/assets/pipeline'
 import { defaultRoot, layoutFor } from '../../scripts/assets/sources'
 import { buildReport, parseGlb, scanGlb, sha256Hex } from '../../scripts/assets/validators'
 
@@ -80,7 +80,10 @@ describe('pipeline: a 5 000 triangle generated document', () => {
     expect(out.bytes.byteLength).toBeLessThanOrEqual(budget.bytes)
     for (const ext of out.report.extensionsUsed) expect(TIER_EXTENSIONS[tier]).toContain(ext)
     expect(out.requires).toEqual(['meshopt'])
-    expect(await measureBoundsRadius(tc, out.bytes)).toBeCloseTo(1, 3)
+    const bounds = await measureBounds(tc, out.bytes)
+    expect(bounds.radius).toBeCloseTo(1, 3)
+    // The source sits at (3, 4, 5); normalising must have moved its centre to the origin, not just scaled it.
+    for (const c of bounds.centre) expect(Math.abs(c)).toBeLessThan(1e-3)
     expect(scanGlb(out.bytes, subject)).toEqual([])
   }, 60_000)
 

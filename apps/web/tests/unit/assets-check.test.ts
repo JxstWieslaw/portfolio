@@ -173,6 +173,12 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
     expect(messages(violations, 'MATERIALS')).toEqual(['3 materials exceed the tier 2 cap of 2'])
   })
 
+  it('SCHEMA (the contract): a file name that says another tier than the variant', async () => {
+    rewriteVariant({ rename: (hash8) => `gyroscope.t1.${hash8}.glb` })
+    const found = messages((await runCheck({ root })).violations, 'SCHEMA')
+    expect(found.some((x) => x.includes('file name says tier 1, the variant says tier 2'))).toBe(true)
+  })
+
   it('SCHEMA: manifest bytes and triangles that disagree with the file', async () => {
     editManifest((m) => {
       const v = (m[0]?.['variants'] as Record<string, unknown>[])[1]
@@ -231,8 +237,8 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
     expect(found).toContain('clips in the file (idle:2.5) differ from the manifest (idle:3)')
   })
 
-  it('NAMING (validateFileName): a file whose name belongs to another tier', async () => {
-    rewriteVariant({ rename: (hash8) => `gyroscope.t1.${hash8}.glb` })
+  it('NAMING (validateFileName): a file whose name belongs to another entry', async () => {
+    rewriteVariant({ rename: (hash8) => `other.t2.${hash8}.glb` })
     const { violations } = await runCheck({ root })
     expect(messages(violations, 'NAMING').some((x) => x.includes('does not belong to entry "gyroscope" tier 2'))).toBe(true)
   })

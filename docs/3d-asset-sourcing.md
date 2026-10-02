@@ -84,6 +84,9 @@ For the **USDZ** (iOS AR): same model, exported via Blender's USD exporter or co
 # 1. Register the source in content/models/sources.json (url, sha256, licenceId, licenceEvidence), then
 #    download it. Only kenney.nl (CC0) is reachable; the file lands in the gitignored
 #    assets-src/<id>/ and must match its sha256.
+#    The pinned sha256 is trust-on-first-use: it records what you read the licence page for. If the
+#    download later changes, ingest refuses it until you re-read the licence and rerun with
+#    --accept-source-change <the new sha256> (exit code 3 reminds you to pin it in sources.json).
 npm run assets:fetch -- --id artefact
 
 # 2. Optimise with the pinned toolchain (no unpinned `npx @gltf-transform/cli`): dedupe, weld,

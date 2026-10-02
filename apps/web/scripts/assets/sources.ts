@@ -10,14 +10,20 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { creditSchema, licenceSchema, modelTierSchema, slugSchema, type Credit, type ModelTier } from '@repo/contracts'
+import {
+  creditSchema,
+  httpsUrlSchema,
+  isoDateSchema,
+  licenceSchema,
+  modelTierSchema,
+  slugSchema,
+  type Credit,
+  type ModelTier,
+} from '@repo/contracts'
 import { z } from 'zod'
 
-const httpsUrl = z
-  .string()
-  .url()
-  .refine((u) => u.startsWith('https://'), 'must be an https URL')
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+const httpsUrl = httpsUrlSchema
+const isoDate = isoDateSchema
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'must be 64 lowercase hex characters')
 
 /** Generators are code in `scripts/assets/generators/`; a new one is a reviewed change to this list. */
