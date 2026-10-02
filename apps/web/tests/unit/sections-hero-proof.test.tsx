@@ -160,7 +160,7 @@ describe('Hero — copy', () => {
     render(<Hero kpis={HERO_KPIS} />)
 
     expect(
-      screen.getByText('Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe')
+      screen.getByText('Tech Lead @ Data Age · Team Lead @ Rapidev Labs')
     ).toBeInTheDocument()
     expect(
       screen.getByRole('heading', {
@@ -208,9 +208,7 @@ describe('Hero — copy', () => {
   })
 
   it('keeps HERO_COPY aligned with the canonical strings', () => {
-    expect(HERO_COPY.eyebrow).toBe(
-      'Tech Lead @ Data Age · Team Lead @ Rapidev Labs · Harare, Zimbabwe'
-    )
+    expect(HERO_COPY.eyebrow).toBe('Tech Lead @ Data Age · Team Lead @ Rapidev Labs')
     expect(HERO_COPY.headline).toBe(
       'I lead teams that ship production software — and I make the web move.'
     )

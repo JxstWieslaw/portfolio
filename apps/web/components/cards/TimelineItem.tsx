@@ -73,9 +73,9 @@ interface RungProps {
  * reads above the title as a mono label. One node, both layouts: the period is
  * never duplicated and never read twice.
  *
- * The step up is stated in words ("Promoted to Tech Lead") on the earlier
- * rung, so the progression never depends on the rail's dots or their colour.
- * The current rung's dot is filled; earlier rungs are hollow.
+ * The progression reads from the periods (text) and the order, newest first,
+ * so it never depends on the rail's dots or their colour. The current rung's
+ * dot is filled; earlier rungs are hollow.
  */
 function Rung({ role, next, tone, placeholder }: RungProps) {
   const current = next === undefined
@@ -101,11 +101,6 @@ function Rung({ role, next, tone, placeholder }: RungProps) {
           >
             {role.title}
           </h4>
-          {next === undefined ? null : (
-            <p className="mt-1 mb-0 font-[family-name:var(--font-mono)] text-[length:0.6875rem] tracking-[0.08em] text-[color:var(--fg-2)] uppercase">
-              Promoted to {next.title}
-            </p>
-          )}
           <BulletList variant="timeline" className="mt-3" items={role.highlights} />
         </div>
       </div>

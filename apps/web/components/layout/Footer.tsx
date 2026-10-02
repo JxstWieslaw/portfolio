@@ -91,8 +91,6 @@ function FooterNavLink({ link }: { link: FooterLink }) {
 export type FooterProps = {
   /** Printed next to the mark and in the copyright line. */
   name: string
-  /** Printed after the name, separated by a middle dot. */
-  location: string
   columns?: readonly FooterColumn[]
   colophon?: string
   /**
@@ -106,7 +104,6 @@ export type FooterProps = {
 
 export function Footer({
   name,
-  location,
   columns = FOOTER_COLUMNS,
   colophon = COLOPHON,
   perfHref,
@@ -132,9 +129,7 @@ export function Footer({
           <div className="mb-6 flex items-center gap-4">
             {/* 40px, static and aria-hidden — the name beside it is the text. */}
             <Monogram name={name} size="footer" />
-            <span className="text-[0.9375rem] text-[var(--fg-2)]">
-              {name} · {location}
-            </span>
+            <span className="text-[0.9375rem] text-[var(--fg-2)]">{name}</span>
           </div>
 
           <p className="mt-0 mb-3 max-w-[60ch] text-[0.875rem] leading-[1.6] text-[var(--fg-2)]">
