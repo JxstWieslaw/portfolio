@@ -19,6 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 
+import { SOURCE_HOSTS } from './hosts'
 import { defaultRoot, layoutFor, loadSources, type Layout, type SourceEntry } from './sources'
 import { describeError, sha256Hex } from './validators'
 
@@ -26,8 +27,8 @@ import { describeError, sha256Hex } from './validators'
 // URL policy
 // ---------------------------------------------------------------------------------------------
 
-/** Exact hostnames. A new host is a reviewed code change, never a flag. Kenney (CC0) is the only source today. */
-export const ALLOWED_HOSTS: readonly string[] = ['kenney.nl']
+/** Exact hostnames, derived from `hosts.ts`, the single source of truth. A new host is a reviewed code change, never a flag. */
+export const ALLOWED_HOSTS: readonly string[] = Object.values(SOURCE_HOSTS).flatMap((h) => h.download)
 
 export interface UrlPolicy {
   readonly hosts: readonly string[]
