@@ -213,8 +213,10 @@ const HERO_CSS = `
   transition: color var(--d-2) var(--ease);
 }
 
-.hero-cue:hover,
 .hero-cue:focus-visible { color: var(--fg-1); }
+@media (hover: hover) {
+  .hero-cue:hover { color: var(--fg-1); }
+}
 
 .hero-cue-rule {
   display: inline-block;

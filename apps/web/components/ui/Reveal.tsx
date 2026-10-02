@@ -11,7 +11,8 @@ import { type HTMLAttributes, type ReactNode, type RefObject, useEffect, useRef 
  *
  *   hidden      opacity: 0; transform: translateY(24px)
  *   revealed    opacity: 1; transform: none
- *   transition  560ms cubic-bezier(.2,.8,.2,1), delayed by siblingIndex * 70ms
+ *   transition  560ms cubic-bezier(.2,.8,.2,1), delayed by batch position * 70ms
+ *               (capped at 3 steps; see `batchStaggerMs`)
  *   observer    threshold 0.12, rootMargin '0px 0px -4% 0px'
  *
  * Two properties carry the whole design, and both are availability guarantees
@@ -42,6 +43,8 @@ const HIDDEN_TRANSFORM = 'translateY(24px)'
 const DURATION_MS = 560
 const EASING = 'cubic-bezier(.2,.8,.2,1)'
 const STAGGER_MS = 70
+/** The stagger stops growing after this many steps: 3 * 70 = 210ms at most. */
+const MAX_STAGGER_STEPS = 3
 const POLL_MS = 450
 const DEADLINE_MS = 4000
 /** Anything at or above this fraction of the viewport is never hidden. */
@@ -52,6 +55,20 @@ const POLL_REVEAL_RATIO = 0.96
 const OBSERVER_OPTIONS: IntersectionObserverInit = {
   threshold: 0.12,
   rootMargin: '0px 0px -4% 0px',
+}
+
+/**
+ * The delay for the element at `position` inside one batch of elements that
+ * enter the viewport together (one observer callback, or one poll tick).
+ *
+ * Position in the batch, not the DOM sibling index: a list item that scrolls in
+ * alone has position 0 and waits for nothing, however far down its list it
+ * sits. The step count is capped, so a big batch carries at most 210ms of
+ * stagger instead of trailing off for a second.
+ */
+export function batchStaggerMs(position: number): number {
+  if (!Number.isFinite(position) || position <= 0) return 0
+  return Math.min(Math.floor(position), MAX_STAGGER_STEPS) * STAGGER_MS
 }
 
 function prefersReducedMotion(): boolean {
@@ -82,11 +99,13 @@ class RevealController {
 
     if (this.observer === null && typeof IntersectionObserver !== 'undefined') {
       this.observer = new IntersectionObserver((entries) => {
+        const batch: HTMLElement[] = []
         for (const entry of entries) {
           if (entry.isIntersecting && entry.target instanceof HTMLElement) {
-            this.reveal(entry.target)
+            batch.push(entry.target)
           }
         }
+        this.revealBatch(batch)
       }, OBSERVER_OPTIONS)
     }
 
@@ -125,27 +144,25 @@ class RevealController {
     }
   }
 
-  private reveal(element: HTMLElement): void {
-    if (element.dataset['revealed'] === 'true') return
+  /** Reveals elements that entered together, staggered by position in the batch. */
+  private revealBatch(batch: readonly HTMLElement[]): void {
+    let position = 0
+    for (const element of batch) {
+      if (element.dataset['revealed'] === 'true') continue
+      this.reveal(element, batchStaggerMs(position))
+      position += 1
+    }
+  }
+
+  private reveal(element: HTMLElement, delay: number): void {
     element.dataset['revealed'] = 'true'
 
-    const delay = this.staggerDelay(element)
     element.style.transition =
       `opacity ${DURATION_MS}ms ${EASING} ${delay}ms, ` +
       `transform ${DURATION_MS}ms ${EASING} ${delay}ms`
     element.style.opacity = '1'
     element.style.transform = 'none'
     this.observer?.unobserve(element)
-  }
-
-  /** `siblingIndex * 70ms`, counting only siblings that are reveal targets. */
-  private staggerDelay(element: HTMLElement): number {
-    const parent = element.parentElement
-    if (parent === null) return 0
-    const siblings = Array.from(parent.children).filter((child) =>
-      child.hasAttribute('data-reveal')
-    )
-    return Math.max(0, siblings.indexOf(element)) * STAGGER_MS
   }
 
   private startPolling(): void {
@@ -169,14 +186,12 @@ class RevealController {
       return
     }
 
-    for (const element of pending) {
-      if (
-        late ||
-        element.getBoundingClientRect().top < window.innerHeight * POLL_REVEAL_RATIO
-      ) {
-        this.reveal(element)
-      }
-    }
+    this.revealBatch(
+      pending.filter(
+        (element) =>
+          late || element.getBoundingClientRect().top < window.innerHeight * POLL_REVEAL_RATIO
+      )
+    )
   }
 }
 
@@ -239,8 +254,8 @@ export type RevealProps = {
 } & Omit<HTMLAttributes<HTMLElement>, 'children' | 'className'>
 
 /**
- * The wrapper form. Renders a real element carrying `data-reveal`, so sibling
- * stagger works off the DOM exactly as the export's does.
+ * The wrapper form. Renders a real element carrying `data-reveal`, which is
+ * what the shared controller keys on.
  */
 export function Reveal({ children, as = 'div', className, ...rest }: RevealProps) {
   const ref = useReveal<HTMLDivElement>()

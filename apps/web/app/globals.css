@@ -174,8 +174,12 @@
     text-decoration: none;
   }
 
-  a:hover {
-    color: var(--violet-300);
+  /* Hover rules are gated on `(hover: hover)` so a tap on a touch screen does
+     not leave the colour stuck until the next tap elsewhere. */
+  @media (hover: hover) {
+    a:hover {
+      color: var(--violet-300);
+    }
   }
 
   ::selection {
@@ -479,14 +483,24 @@
   /* Primary — solid heading-white, inverting to the sanctioned gradient on
      hover. This is one of only three places --gradient may appear. */
   &[data-variant='primary'] {
+    /* The one reference to --gradient in this layer. The hover and the focus
+       rules below share it, now that they are separate rules (hover is gated
+       on `(hover: hover)`, focus is not). */
+    --btn-primary-active: var(--gradient);
     background: var(--fg-0);
     color: var(--bg-0);
   }
 
-  &[data-variant='primary']:not(:disabled):not([aria-disabled='true']):hover,
   &[data-variant='primary']:not(:disabled):not([aria-disabled='true']):focus-visible {
-    background: var(--gradient);
+    background: var(--btn-primary-active);
     color: var(--fg-0);
+  }
+
+  @media (hover: hover) {
+    &[data-variant='primary']:not(:disabled):not([aria-disabled='true']):hover {
+      background: var(--btn-primary-active);
+      color: var(--fg-0);
+    }
   }
 
   /* Secondary — outline pill, cyan border + cyan glow on hover. */
@@ -495,11 +509,18 @@
     color: var(--fg-1);
   }
 
-  &[data-variant='secondary']:not(:disabled):not([aria-disabled='true']):hover,
   &[data-variant='secondary']:not(:disabled):not([aria-disabled='true']):focus-visible {
     border-color: var(--cyan-400);
     color: var(--fg-0);
     box-shadow: var(--glow-cyan);
+  }
+
+  @media (hover: hover) {
+    &[data-variant='secondary']:not(:disabled):not([aria-disabled='true']):hover {
+      border-color: var(--cyan-400);
+      color: var(--fg-0);
+      box-shadow: var(--glow-cyan);
+    }
   }
 
   /* Ghost — the nav pill. */
@@ -507,10 +528,16 @@
     color: var(--fg-2);
   }
 
-  &[data-variant='ghost']:not(:disabled):not([aria-disabled='true']):hover,
   &[data-variant='ghost']:not(:disabled):not([aria-disabled='true']):focus-visible {
     color: var(--fg-0);
     background: rgba(255, 255, 255, 0.04);
+  }
+
+  @media (hover: hover) {
+    &[data-variant='ghost']:not(:disabled):not([aria-disabled='true']):hover {
+      color: var(--fg-0);
+      background: rgba(255, 255, 255, 0.04);
+    }
   }
 
   /* Icon — square 44px outline, violet on hover (the menu button). */
@@ -522,10 +549,16 @@
     color: var(--fg-1);
   }
 
-  &[data-variant='icon']:not(:disabled):not([aria-disabled='true']):hover,
   &[data-variant='icon']:not(:disabled):not([aria-disabled='true']):focus-visible {
     border-color: var(--violet-400);
     color: var(--fg-0);
+  }
+
+  @media (hover: hover) {
+    &[data-variant='icon']:not(:disabled):not([aria-disabled='true']):hover {
+      border-color: var(--violet-400);
+      color: var(--fg-0);
+    }
   }
 
   /* Unsupported — a DESIGNED permanent state (reconciliation § 8), not a bug.
@@ -656,10 +689,16 @@
     cursor: pointer;
   }
 
-  &[data-variant='filter']:hover,
   &[data-variant='filter']:focus-visible {
     border-color: var(--line-2);
     color: var(--fg-0);
+  }
+
+  @media (hover: hover) {
+    &[data-variant='filter']:hover {
+      border-color: var(--line-2);
+      color: var(--fg-0);
+    }
   }
 
   &[data-selected='true'] {
@@ -814,9 +853,14 @@
     height: 40px;
   }
 
-  &[data-interactive='true']:hover,
   &[data-interactive='true']:focus-visible {
     border-color: var(--violet-400);
+  }
+
+  @media (hover: hover) {
+    &[data-interactive='true']:hover {
+      border-color: var(--violet-400);
+    }
   }
 }
 
@@ -869,16 +913,26 @@
 
   /* Hover is border-colour + glow only. No transform, no scale (§ 6.9).
      :focus-visible carries the same shift so the hover has a keyboard peer. */
-  &[data-glow='cyan']:hover,
   &[data-glow='cyan']:focus-visible {
     border-color: var(--cyan-400);
     box-shadow: var(--glow-cyan);
   }
 
-  &[data-glow='violet']:hover,
   &[data-glow='violet']:focus-visible {
     border-color: var(--violet-400);
     box-shadow: var(--glow-violet);
+  }
+
+  @media (hover: hover) {
+    &[data-glow='cyan']:hover {
+      border-color: var(--cyan-400);
+      box-shadow: var(--glow-cyan);
+    }
+
+    &[data-glow='violet']:hover {
+      border-color: var(--violet-400);
+      box-shadow: var(--glow-violet);
+    }
   }
 }
 
@@ -912,9 +966,14 @@
     background: rgba(17, 22, 29, 0.88);
   }
 
-  &[data-interactive='true']:hover,
   &[data-interactive='true']:focus-within {
     background: rgba(22, 27, 34, 0.95);
+  }
+
+  @media (hover: hover) {
+    &[data-interactive='true']:hover {
+      background: rgba(22, 27, 34, 0.95);
+    }
   }
 }
 
@@ -1010,6 +1069,41 @@
   margin: 0;
   color: var(--fg-2);
   text-wrap: pretty;
+}
+
+/* The section heading un-masks as it enters the viewport: a bottom-to-top
+   `clip-path` wipe with a short rise, driven by the scroll position itself
+   (`animation-timeline: view()`), so it costs no JavaScript and no observer.
+
+   Progressive enhancement, three ways:
+   - the markup and the base styles are the finished, visible heading; the
+     animation only ever plays FROM the clipped state (`backwards` fill), so a
+     browser without scroll-driven animations just shows the heading;
+   - it is inside `prefers-reduced-motion: no-preference`, so reduced motion
+     gets the static heading exactly as before;
+   - the hero h1 is not a `.section-head-title h2` and is never touched.
+
+   The end clip is slightly larger than the box so descenders and the italic
+   overshoot are not shaved. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .section-head-title h2 {
+      animation: heading-unmask var(--ease) backwards;
+      animation-timeline: view();
+      animation-range: entry 5% entry 50%;
+    }
+  }
+}
+
+@keyframes heading-unmask {
+  from {
+    clip-path: inset(0 0 100% -0.1em);
+    translate: 0 0.3em;
+  }
+  to {
+    clip-path: inset(-0.1em -0.1em -0.25em -0.1em);
+    translate: 0 0;
+  }
 }
 
 /* --- BulletList ---------------------------------------------------------- */
