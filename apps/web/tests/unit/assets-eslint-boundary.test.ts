@@ -43,6 +43,28 @@ describe('the asset toolchain cannot reach the client bundle', () => {
     expect(await lint('lib/x.ts', `export const load = () => import('ndarray-pixels')\n`)).toEqual([TOOLCHAIN])
   })
 
+  it.each([
+    ['require with a template literal', 'const s = require(`sharp`)\nexport default s\n'],
+    ['require with a template literal subpath', 'const s = require(`sharp/lib/index`)\nexport default s\n'],
+    ['import x = require()', `import s = require('sharp')\nexport default s\n`],
+    ['import x = require() of a gltf-transform package', `import g = require('@gltf-transform/core')\nexport default g\n`],
+    ['require.resolve', `export const where = require.resolve('sharp')\n`],
+    ['require.resolve of a subpath', `export const where = require.resolve('meshoptimizer/meshopt_encoder.js')\n`],
+    ['require.resolve with a template literal', 'export const where = require.resolve(`sharp`)\n'],
+    ['import() with a template literal', 'export const load = () => import(`sharp`)\n'],
+  ])('rejects %s, spelled so a plain-string rule would miss it', async (_label, code) => {
+    const found = await lint('lib/x.ts', code)
+    expect(found).toHaveLength(1)
+    expect(found[0]).toContain(TOOLCHAIN)
+  })
+
+  it('leaves the same spellings alone for look-alikes and for scripts', async () => {
+    expect(await lint('lib/x.ts', 'const s = require(`sharpen-text`)\nexport default s\n')).toEqual([])
+    expect(await lint('lib/x.ts', `import s = require('sharpen-text')\nexport default s\n`)).toEqual([])
+    expect(await lint('lib/x.ts', `export const where = require.resolve('./sharp-mask')\n`)).toEqual([])
+    expect(await lint('scripts/assets/x.ts', `import s = require('sharp')\nexport default s\n`)).toEqual([])
+  })
+
   it('covers every app folder and any new top-level file, not a short list of folders', async () => {
     const code = `import sharp from 'sharp'\nexport const a = sharp\n`
     for (const file of ['components/z.tsx', 'lib/deep/er/x.ts', 'app/api/route.ts', 'middleware.ts', 'hooks/use-x.ts', 'src/anything.js', 'proxy.ts'])

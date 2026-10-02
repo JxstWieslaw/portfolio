@@ -53,6 +53,11 @@ export default [
         'error',
         { selector: `CallExpression[callee.name='require'][arguments.0.value=${TOOLCHAIN_RE}]`, message: TOOLCHAIN },
         { selector: `ImportExpression[source.value=${TOOLCHAIN_RE}]`, message: TOOLCHAIN },
+        // The same specifiers spelled another way: a template literal and require.resolve. TypeScript's import x = require() is already covered by no-restricted-imports.
+        { selector: `CallExpression[callee.name='require'][arguments.0.type='TemplateLiteral'][arguments.0.quasis.0.value.cooked=${TOOLCHAIN_RE}]`, message: TOOLCHAIN },
+        { selector: `ImportExpression[source.type='TemplateLiteral'][source.quasis.0.value.cooked=${TOOLCHAIN_RE}]`, message: TOOLCHAIN },
+        { selector: `CallExpression[callee.type='MemberExpression'][callee.object.name='require'][callee.property.name='resolve'][arguments.0.value=${TOOLCHAIN_RE}]`, message: TOOLCHAIN },
+        { selector: `CallExpression[callee.type='MemberExpression'][callee.object.name='require'][callee.property.name='resolve'][arguments.0.type='TemplateLiteral'][arguments.0.quasis.0.value.cooked=${TOOLCHAIN_RE}]`, message: TOOLCHAIN },
       ],
     },
   },
