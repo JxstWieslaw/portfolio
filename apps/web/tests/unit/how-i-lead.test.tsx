@@ -101,12 +101,13 @@ describe('HowILead — copy reconciliation', () => {
   })
 
   // The fourth pillar is concrete about what the agents do and what stays human.
-  it('says what the agents do and that decisions, merges and standards stay human', () => {
+  it('says what the agents do and that decisions and standards stay human', () => {
     const fourth = LEAD_PILLARS[3]
     expect(fourth?.title).toBe('AI-native delivery')
     const body = fourth?.practices.join(' ') ?? ''
     expect(body).toMatch(/code review, security and performance/)
-    expect(body).toMatch(/Decisions, merges and standards stay with me/)
+    expect(body).toMatch(/Decisions and standards stay with me/)
+    expect(body).not.toMatch(/merges/)
     expect(fourth?.practices).toHaveLength(3)
   })
 

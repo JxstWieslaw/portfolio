@@ -65,7 +65,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
         <main id="main">{children}</main>
 
-        <Footer name={profile.name} location={profile.location} />
+        <Footer name={profile.name} />
       </body>
     </html>
   )

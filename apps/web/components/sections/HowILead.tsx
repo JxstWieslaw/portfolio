@@ -63,7 +63,7 @@ export interface HowILeadProps {
  * · `Mentorship & delivery`); the practices are the spec's parentheticals
  * written out as concrete sentences. Tints are the export's, verbatim. The
  * fourth pillar (`AI-native delivery`, 2026-10-01) is the owner's addition: an
- * agent fleet in the delivery loop, with decisions, merges and standards human.
+ * agent fleet in the delivery loop, with decisions and standards human.
  */
 export const LEAD_PILLARS: readonly PillarProps[] = [
   {
@@ -111,7 +111,7 @@ export const LEAD_PILLARS: readonly PillarProps[] = [
     practices: [
       'An agent fleet sits inside the delivery loop: a lead agent dispatches specialists for code review, security and performance passes, and drafts the first cut of specs and handover notes.',
       'Every agent pass is evidence for a human review, not a replacement for one — findings arrive with file and line, and the suite has to be green before anything is read.',
-      'Decisions, merges and standards stay with me: no agent merges, ships or changes a rule.',
+      'Decisions and standards stay with me: no agent ships or changes a rule.',
     ],
   },
 ]
