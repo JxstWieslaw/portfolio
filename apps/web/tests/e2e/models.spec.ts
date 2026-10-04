@@ -239,8 +239,12 @@ test.describe('a model in the lattice section', () => {
 
     expect(glb.length).toBeGreaterThanOrEqual(1)
     for (const bytes of glb) expect(bytes).toBeLessThanOrEqual(MODEL_BUDGETS[2].bytes)
-    // The default tier on a live desktop is 2: that is the variant that was asked for.
-    expect(seen.glbs().every((url) => /\.t2\./.test(url))).toBe(true)
+    // The variant asked for is the one the gate published: tier 2 on capable hardware, tier 1 on a
+    // modest runner (4 cores or fewer reads as `reduced-instances`, which caps at tier 1).
+    const gate = await html(page).getAttribute('data-models-gate')
+    expect(gate).toMatch(/^on:[12]$/)
+    const tier = gate?.slice(-1)
+    expect(seen.glbs().every((url) => url.includes(`.t${tier}.`))).toBe(true)
     await expect(html(page)).toHaveAttribute('data-models-failed', '0')
     expect(seen.errors).toEqual([])
   })

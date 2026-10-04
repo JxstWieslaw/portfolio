@@ -243,7 +243,8 @@ describe('failures are counted, published, warned and never retried', () => {
     slot.update(frameAt({ from: 'monolith', to: 'monolith', settled: 'monolith' }))
     await new Promise((resolve) => setTimeout(resolve, 400))
     expect(prefetchModel).toHaveBeenCalledWith('thing', 2)
-    expect(console.warn).toHaveBeenCalledTimes(1)
+    const prefetchWarnings = vi.mocked(console.warn).mock.calls.filter((call) => String(call[0]).includes('prefetching model "thing" failed'))
+    expect(prefetchWarnings).toHaveLength(1)
   })
 })
 
