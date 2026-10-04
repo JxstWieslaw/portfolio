@@ -63,6 +63,24 @@ const generatedOrigin = z.object({
   generator: z.enum(GENERATOR_IDS),
 }).strict()
 
+const hexColour = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be an sRGB hex colour like #7C3AED')
+
+/**
+ * How a flat-colour, multi-material source is made to fit the site (see `look.ts` for the rule).
+ * Present means: merge every material into one by baking colours into COLOR_0.
+ */
+export const sourceLookSchema = z
+  .object({
+    /** Source material name to the sRGB colour it becomes. A material not listed keeps its source colour. */
+    palette: z.record(z.string().min(1).max(60), hexColour).optional(),
+    metallic: z.number().min(0).max(1).optional(),
+    roughness: z.number().min(0).max(1).optional(),
+    /** A uniform emissive accent on the merged material: `amount` scales the colour, 0..1. */
+    emissive: z.object({ color: hexColour, amount: z.number().min(0).max(1) }).strict().optional(),
+  })
+  .strict()
+export type SourceLook = z.infer<typeof sourceLookSchema>
+
 export const sourceEntrySchema = z
   .object({
     id: slugSchema,
@@ -79,6 +97,7 @@ export const sourceEntrySchema = z
       licenceUrl: httpsUrl.optional(),
       retrievedAt: isoDate,
     }).strict(),
+    look: sourceLookSchema.optional(),
     clips: z.array(z.object({ from: z.string().min(1), as: slugSchema.max(40) })).max(2).optional(),
     tiers: z
       .array(modelTierSchema)

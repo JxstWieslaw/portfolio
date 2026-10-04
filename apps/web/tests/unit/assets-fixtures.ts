@@ -1,5 +1,5 @@
 /** Shared fixtures for the assets-*.test.ts files. Not a test itself. */
-import { readFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { crc32, deflateRawSync } from 'node:zlib'
 
@@ -8,7 +8,7 @@ import { KHRMaterialsIOR, KHRMaterialsTransmission, KHRMaterialsVolume, KHRTextu
 import sharp from 'sharp'
 
 import { defaultRoot } from '../../scripts/assets/sources'
-import { packGlb } from '../../scripts/assets/validators'
+import { canonicalJson, contentHashOf, packGlb } from '../../scripts/assets/validators'
 
 /** A UV sphere offset and scaled away from the origin: `lat * lon * 2` triangles. */
 export function uvSphere(lat: number, lon: number, withUv = false): Document {
@@ -265,13 +265,13 @@ export async function richDoc(tier: 2 | 3): Promise<Document> {
   return doc
 }
 
-/** The committed gyroscope at one tier, as the pipeline wrote it. */
-export function committedGlb(tier: 1 | 2): Uint8Array {
+/** A committed model (the gyroscope by default) at one tier, as the pipeline wrote it. */
+export function committedGlb(tier: 1 | 2, id = 'gyroscope'): Uint8Array {
   const modelsDir = path.join(defaultRoot(), 'apps', 'web', 'public', 'models')
   const manifest = JSON.parse(readFileSync(path.join(modelsDir, 'manifest.json'), 'utf8')) as {
-    models: { variants: { tier: number; url: string }[] }[]
+    models: { id: string; variants: { tier: number; url: string }[] }[]
   }
-  const url = manifest.models[0]?.variants.find((x) => x.tier === tier)?.url ?? ''
+  const url = manifest.models.find((m) => m.id === id)?.variants.find((x) => x.tier === tier)?.url ?? ''
   return new Uint8Array(readFileSync(path.join(modelsDir, url.replace('/models/', ''))))
 }
 
@@ -297,4 +297,34 @@ export function rawGlb(jsonText: string, bin: Uint8Array | null): Uint8Array {
     out.set(bin, at + 8)
   }
   return out
+}
+
+/**
+ * The gyroscope entry of the committed sources.json in the shape these tests were written against:
+ * `enabled: false`, so it has no credit row. Once more models were committed (and the gyroscope turned
+ * on), the first entry of the real file stopped being a stable fixture; the tests that need "one
+ * generated source, nothing enabled" take it from here instead and stay independent of what ships.
+ */
+export function gyroscopeSource(): Record<string, unknown> {
+  const sources = JSON.parse(readFileSync(path.join(defaultRoot(), 'content', 'models', 'sources.json'), 'utf8')) as Record<string, unknown>[]
+  const found = sources.find((s) => s['id'] === 'gyroscope')
+  if (!found) throw new Error('committed sources.json has no gyroscope entry')
+  return { ...found, enabled: false }
+}
+
+/**
+ * Copies the committed tree into `root` reduced to that fixture: sources.json holds only the gyroscope
+ * (disabled), credits.json is empty, and only the gyroscope's files and manifest entry come along.
+ */
+export function copyGyroscopeTree(root: string): void {
+  const src = path.join(defaultRoot(), 'apps', 'web', 'public', 'models')
+  const out = path.join(root, 'apps', 'web', 'public', 'models')
+  mkdirSync(out, { recursive: true })
+  mkdirSync(path.join(root, 'content', 'models'), { recursive: true })
+  writeFileSync(path.join(root, 'content', 'models', 'sources.json'), JSON.stringify([gyroscopeSource()]))
+  writeFileSync(path.join(root, 'content', 'credits.json'), '[]\n')
+  const manifest = JSON.parse(readFileSync(path.join(src, 'manifest.json'), 'utf8')) as { models: { id: string; enabled: boolean }[]; contentHash: string }
+  const models = manifest.models.filter((m) => m.id === 'gyroscope').map((m) => ({ ...m, enabled: false }))
+  writeFileSync(path.join(out, 'manifest.json'), canonicalJson({ ...manifest, contentHash: contentHashOf(models), models }))
+  for (const name of readdirSync(src)) if (name.startsWith('gyroscope.')) copyFileSync(path.join(src, name), path.join(out, name))
 }

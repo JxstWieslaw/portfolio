@@ -141,7 +141,7 @@ export async function runIngest(opts: IngestOptions): Promise<IngestResult> {
     let clips: ModelEntry['clips'] | null = null
     for (const tier of tiersOf(source)) {
       const subject = `${source.id} tier ${tier}`
-      const result = await buildVariant(tc, await loaded.makeDocument(), { subject, tier, clips: source.clips, log })
+      const result = await buildVariant(tc, await loaded.makeDocument(), { subject, tier, clips: source.clips, look: source.look, log })
       const variant = toVariant(source, result)
       variants.push(variant)
       files.set(variant.url.slice('/models/'.length), result.bytes)

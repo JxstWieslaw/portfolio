@@ -9,6 +9,7 @@ import { main, runCheck } from '../../scripts/assets/check'
 import * as images from '../../scripts/assets/images'
 import * as pipeline from '../../scripts/assets/pipeline'
 import { defaultRoot, layoutFor, type Layout } from '../../scripts/assets/sources'
+import { copyGyroscopeTree } from './assets-fixtures'
 import {
   buildReport,
   canonicalJson,
@@ -41,10 +42,7 @@ beforeEach(() => {
   tmp = mkdtempSync(path.join(tmpdir(), 'check-'))
   root = path.join(tmp, 'repo')
   l = layoutFor(root)
-  mkdirSync(path.dirname(l.sourcesFile), { recursive: true })
-  cpSync(committed.sourcesFile, l.sourcesFile)
-  cpSync(committed.creditsFile, l.creditsFile)
-  cpSync(committed.modelsDir, l.modelsDir, { recursive: true })
+  copyGyroscopeTree(root)
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -375,7 +373,8 @@ describe('decoders only ever see a file the scanner passed', () => {
   it('a clean file is decoded and measured (the spies see the real calls)', async () => {
     const { violations } = await runCheck({ root: defaultRoot() })
     expect(violations).toEqual([])
-    expect(calls()).toEqual([2, 2])
+    // three committed models (gyroscope, crystal-cluster, gate-complex) at two tiers each
+    expect(calls()).toEqual([6, 6])
   })
 
   it('a meshopt view that claims 4294967295 elements of 252 bytes is refused, and its decoder never runs', async () => {

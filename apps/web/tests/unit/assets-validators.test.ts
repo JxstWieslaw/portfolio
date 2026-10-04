@@ -192,9 +192,9 @@ describe('canonical JSON and the content hash', () => {
 describe('scanGlb: the committed-file security scan', () => {
   const modelsDir = path.join(defaultRoot(), 'apps', 'web', 'public', 'models')
   const manifest = JSON.parse(readFileSync(path.join(modelsDir, 'manifest.json'), 'utf8')) as {
-    models: { variants: { tier: number; url: string }[] }[]
+    models: { id: string; variants: { tier: number; url: string }[] }[]
   }
-  const tier1 = manifest.models[0]?.variants.find((x) => x.tier === 1)
+  const tier1 = manifest.models.find((m) => m.id === 'gyroscope')?.variants.find((x) => x.tier === 1)
   const base = new Uint8Array(readFileSync(path.join(modelsDir, (tier1?.url ?? '').replace('/models/', ''))))
 
   type Json = Record<string, unknown>

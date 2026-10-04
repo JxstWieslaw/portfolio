@@ -207,6 +207,13 @@ describe('A3: structural keys', () => {
   it('never rejects what the pipeline writes: both committed GLBs and textured, animated, transmissive output', () => {
     expect(scanGlb(committed(1), 'gyroscope', 1)).toEqual([])
     expect(scanGlb(committed(2), 'gyroscope', 2)).toEqual([])
+    // The merged third-party pieces: one material, COLOR_0 vertex colour, no UVs.
+    for (const id of ['crystal-cluster', 'gate-complex'])
+      for (const tier of [1, 2] as const) {
+        const bytes = committedGlb(tier, id)
+        expect(scanGlb(bytes, id, tier), `${id} tier ${tier}`).toEqual([])
+        expect(JSON.stringify(parseGlb(bytes).json)).toMatch(/"COLOR_0"/)
+      }
     expect(scanGlb(kenney(2), 'kenney-like', 2)).toEqual([])
     expect(scanGlb(kenney(3), 'kenney-like', 3)).toEqual([])
     const json = parseGlb(kenney(3)).json

@@ -1,10 +1,90 @@
 {
-  "contentHash": "11f8cb6e2dfc45f4",
+  "contentHash": "d22f93568abde230",
   "models": [
     {
       "boundsRadius": 1,
       "clips": [],
-      "enabled": false,
+      "enabled": true,
+      "id": "crystal-cluster",
+      "kind": "prop",
+      "title": "Crystal cluster",
+      "variants": [
+        {
+          "bytes": 6624,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-prsvE2JR1/zA2o2RYnHpPFb4q27MLJsuHR6jfEZ+vlA=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 1,
+          "triangles": 380,
+          "url": "/models/crystal-cluster.t1.a6bb2f13.glb"
+        },
+        {
+          "bytes": 6624,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-prsvE2JR1/zA2o2RYnHpPFb4q27MLJsuHR6jfEZ+vlA=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 2,
+          "triangles": 380,
+          "url": "/models/crystal-cluster.t2.a6bb2f13.glb"
+        }
+      ]
+    },
+    {
+      "boundsRadius": 1,
+      "clips": [],
+      "enabled": true,
+      "id": "gate-complex",
+      "kind": "prop",
+      "title": "Gate",
+      "variants": [
+        {
+          "bytes": 6952,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-vRTsWgknkrFNYpadSqG1qPbiWV4PkVzJO981muj27g0=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 1,
+          "triangles": 460,
+          "url": "/models/gate-complex.t1.bd14ec5a.glb"
+        },
+        {
+          "bytes": 6952,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-vRTsWgknkrFNYpadSqG1qPbiWV4PkVzJO981muj27g0=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 2,
+          "triangles": 460,
+          "url": "/models/gate-complex.t2.bd14ec5a.glb"
+        }
+      ]
+    },
+    {
+      "boundsRadius": 1,
+      "clips": [],
+      "enabled": true,
       "id": "gyroscope",
       "kind": "prop",
       "title": "Gyroscope",

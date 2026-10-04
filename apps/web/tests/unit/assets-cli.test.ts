@@ -11,6 +11,7 @@ import { main as ingestMain, runIngest } from '../../scripts/assets/ingest'
 import { SourceHashMismatch } from '../../scripts/assets/pipeline'
 import { defaultRoot, layoutFor, sourceEntrySchema } from '../../scripts/assets/sources'
 import { sha256Hex } from '../../scripts/assets/validators'
+import { gyroscopeSource } from './assets-fixtures'
 
 let tmp: string
 beforeAll(() => {
@@ -32,7 +33,7 @@ function rawRoot(name: string, pinned: string): { root: string; actual: string }
   mkdirSync(path.join(root, 'assets-src', 'raw-one'), { recursive: true })
   writeFileSync(path.join(root, 'assets-src', 'raw-one', 'm.glb'), bytes)
   mkdirSync(path.dirname(l.sourcesFile), { recursive: true })
-  const [gyro] = JSON.parse(readFileSync(committed.sourcesFile, 'utf8')) as Record<string, unknown>[]
+  const gyro = gyroscopeSource()
   writeFileSync(
     l.sourcesFile,
     JSON.stringify([
@@ -142,7 +143,7 @@ describe('fetch main(): the exit code the CLI file returns', () => {
   })
 
   it('fetchSource itself writes nothing for a generated source', async () => {
-    const source = sourceEntrySchema.parse(JSON.parse(readFileSync(committed.sourcesFile, 'utf8'))[0])
+    const source = sourceEntrySchema.parse(gyroscopeSource())
     await expect(fetchSource(source, layoutFor(tmp), { fetch: body(new Uint8Array(1)) })).rejects.toThrow(/generated/)
   })
 })
