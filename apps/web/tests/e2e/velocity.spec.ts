@@ -83,5 +83,5 @@ test('a slow, reading-speed scroll does not stretch the cubes', async ({ page })
     }
     return high
   })
-  expect(peak).toBeLessThan(0.05)
+  expect(peak).toBe(0)
 })
