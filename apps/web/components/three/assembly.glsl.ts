@@ -243,6 +243,8 @@ void main() {
 
   csm_Position = centre + local;
   csm_Normal = rotateAxis(normal, axis, angle);
+  // uVelocity: the normal follows the stretch (inverse transpose of the scale above).
+  if (uVelocity > 0.0) csm_Normal = normalize(csm_Normal * vec3(sqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity), 1.0 / (1.0 + ${VELOCITY_STRETCH} * uVelocity), sqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity)));
   vInstanceColor = mix(shade(fromT), shade(toT), m);
 }
 `

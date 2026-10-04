@@ -169,8 +169,12 @@ export const VELOCITY_FALL = 6
 export const VELOCITY_EPSILON = 0.002
 /** A gap between two frames longer than this (a hidden layer, a stalled tab) is not a scroll speed. */
 export const VELOCITY_MAX_GAP = 0.5
-/** Frames closer together than this are measured as if they were this far apart. */
-export const VELOCITY_MIN_DT = 1 / 90
+/**
+ * A speed is measured over at least this long (a little under two 60 Hz frames),
+ * so on a faster display it spans a few frames and the reading does not depend
+ * on the refresh rate, and a whole-pixel step over one frame is not mistaken for speed.
+ */
+export const VELOCITY_WINDOW = 1 / 30 - 0.002
 
 /**
  * 0 at rest, 1 at `VELOCITY_FULL`: the stretch weight of a scroll speed in
@@ -188,30 +192,53 @@ export function velocityWeight(vel: number): number {
  * scroll position and the clock once per drawn frame; it returns the weight.
  * `active` is false exactly when the weight is 0, which is what lets the
  * frame loop stop asking for frames once the scroll has stopped.
+ *
+ * The speed is the distance over the true elapsed time of a measuring window
+ * (`VELOCITY_WINDOW` or longer), and the damping absorbs the jitter between
+ * windows. A jump of a whole viewport or more inside one window (an anchor
+ * link) is a jump, not a speed. While reduced motion is on the weight is
+ * held at 0.
  */
 export class ScrollVelocity {
   weight = 0
-  private y = Number.NaN
   private t = Number.NaN
+  /** The start of the current measuring window. */
+  private windowY = Number.NaN
+  private windowT = Number.NaN
+  private target = 0
+  private reduced = false
 
   get active(): boolean {
     return this.weight > 0
   }
 
   step(y: number, t: number, viewport: number): number {
+    if (this.reduced) return 0
     const dt = t - this.t
     // The first sample, or two draws in the same instant: nothing to measure yet.
     if (!(dt > 0)) {
       if (Number.isNaN(this.t)) {
-        this.y = y
-        this.t = t
+        this.windowY = y
+        this.t = this.windowT = t
       }
       return this.weight
     }
-    const measured = dt <= VELOCITY_MAX_GAP && viewport > 0
-    const target = measured ? velocityWeight((y - this.y) / viewport / Math.max(dt, VELOCITY_MIN_DT)) : 0
-    this.y = y
+    if (dt > VELOCITY_MAX_GAP || !(viewport > 0)) {
+      // A stalled or hidden layer: no speed, and a fresh window from here.
+      this.target = 0
+      this.windowY = y
+      this.windowT = t
+    } else {
+      const span = t - this.windowT
+      if (span >= VELOCITY_WINDOW) {
+        const dy = y - this.windowY
+        this.target = Math.abs(dy) >= viewport ? 0 : velocityWeight(dy / viewport / span)
+        this.windowY = y
+        this.windowT = t
+      }
+    }
     this.t = t
+    const target = this.target
     // Exponential approach: the ease stays inside (0, 1), so the weight never overshoots its target or changes sign.
     const ease = 1 - Math.exp(-(target > this.weight ? VELOCITY_RISE : VELOCITY_FALL) * Math.min(dt, 0.1))
     this.weight += (target - this.weight) * ease
@@ -219,11 +246,36 @@ export class ScrollVelocity {
     return this.weight
   }
 
+  /** Reduced motion on: the weight drops to 0 now and stays there. Off: measuring starts afresh. */
+  setReduced(reduced: boolean): void {
+    this.reduced = reduced
+    this.reset()
+  }
+
   reset(): void {
     this.weight = 0
-    this.y = Number.NaN
-    this.t = Number.NaN
+    this.target = 0
+    this.t = this.windowY = this.windowT = Number.NaN
   }
+}
+
+/**
+ * Keeps `velocity` in step with a live `prefers-reduced-motion` query: applies
+ * the current answer now, follows changes, and returns the cleanup. `onChange`
+ * runs after each change so the caller can redraw (and the stretch go).
+ */
+export function bindReducedMotion(
+  velocity: ScrollVelocity,
+  query: Pick<MediaQueryList, 'matches' | 'addEventListener' | 'removeEventListener'>,
+  onChange?: () => void,
+): () => void {
+  velocity.setReduced(query.matches)
+  const listener = (event: { matches: boolean }): void => {
+    velocity.setReduced(event.matches)
+    onChange?.()
+  }
+  query.addEventListener('change', listener)
+  return () => query.removeEventListener('change', listener)
 }
 
 // --- The contact ring's calm (§ 3.7) --------------------------------------

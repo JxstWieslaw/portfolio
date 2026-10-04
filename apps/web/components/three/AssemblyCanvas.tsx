@@ -29,7 +29,7 @@ import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
-import { BREATH_FPS, NO_DROP, ScrollVelocity, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
+import { BREATH_FPS, NO_DROP, ScrollVelocity, bindReducedMotion, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
 import { EMPTY_SLOTS, planSlots, type SlotState } from '@/lib/assembly/slots'
@@ -474,6 +474,15 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     settledAt: -1,
     velocity: new ScrollVelocity(),
   })
+
+  // A live prefers-reduced-motion change stops the stretch at once and keeps it at 0 while it matches.
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined
+    return bindReducedMotion(motion.current.velocity, window.matchMedia('(prefers-reduced-motion: reduce)'), () => {
+      rig.uniforms.uVelocity.value = 0
+      invalidate()
+    })
+  }, [rig, invalidate])
 
   // The velocity read exists only where the model test seam does (a dev build, or the e2e job's); the guard script greps for the name.
   useEffect(() => {

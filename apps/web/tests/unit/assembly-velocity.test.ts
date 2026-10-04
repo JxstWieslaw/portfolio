@@ -8,6 +8,8 @@ import { assemblyBuilder } from '@/lib/assembly/bundle-cache'
 import {
   BREATH_FPS,
   ScrollVelocity,
+  VELOCITY_WINDOW,
+  bindReducedMotion,
   VELOCITY_DEADZONE,
   VELOCITY_EPSILON,
   VELOCITY_FALL,
@@ -105,13 +107,17 @@ describe('ScrollVelocity (the damped scalar behind uVelocity)', () => {
       const peak = Math.max(...scrollFor(tracker, clock, 6 * VIEWPORT * dt, 40, dt))
       expect(peak).toBeGreaterThan(0.9)
 
+      // The measuring window still holds the last speed for up to VELOCITY_WINDOW after the stop, so the
+      // weight may keep rising toward it (never past 1) until the window closes; after that it only falls.
+      const stoppedAt = clock.t
       let previous = tracker.weight
       let frames = 0
       // 4 s of wall time is far more than the decay needs; the bound is the assertion.
       while (tracker.active && frames * dt < 4) {
         const w = tracker.step(clock.y, (clock.t += dt), VIEWPORT)
         expect(w).toBeGreaterThanOrEqual(0)
-        expect(w).toBeLessThanOrEqual(previous)
+        expect(w).toBeLessThanOrEqual(1)
+        if (clock.t - stoppedAt > VELOCITY_WINDOW + dt) expect(w).toBeLessThanOrEqual(previous)
         previous = w
         frames += 1
       }
@@ -137,7 +143,7 @@ describe('ScrollVelocity (the damped scalar behind uVelocity)', () => {
     }
     expect(requested).toBeLessThan(1000)
     // From a peak of 1, the exponential reaches VELOCITY_EPSILON in ln(1/eps)/rate seconds.
-    expect(requested).toBeLessThanOrEqual(Math.ceil((Math.log(1 / VELOCITY_EPSILON) / VELOCITY_FALL) * 60) + 2)
+    expect(requested).toBeLessThanOrEqual(Math.ceil((Math.log(1 / VELOCITY_EPSILON) / VELOCITY_FALL) * 60) + 4)
     for (let i = 0; i < 100; i += 1) {
       tracker.step(clock.y, (clock.t += 1 / 60), VIEWPORT)
       expect(tracker.active).toBe(false)
@@ -154,10 +160,10 @@ describe('ScrollVelocity (the damped scalar behind uVelocity)', () => {
   it('two draws in the same instant measure nothing and change nothing', () => {
     const tracker = new ScrollVelocity()
     tracker.step(0, 1, VIEWPORT)
-    tracker.step(300, 1.016, VIEWPORT)
+    tracker.step(300, 1.04, VIEWPORT)
     const before = tracker.weight
     expect(before).toBeGreaterThan(0)
-    expect(tracker.step(900, 1.016, VIEWPORT)).toBe(before)
+    expect(tracker.step(900, 1.04, VIEWPORT)).toBe(before)
   })
 
   it('survives a zero-height viewport and resets cleanly', () => {
@@ -215,8 +221,8 @@ describe('with velocity 0 the cubes are byte-identical to develop (1b1694e golde
 
   it("the vertex program is develop's with only the velocity lines added, and the fragment program is untouched", () => {
     const added = VERTEX.split('\n').filter((line) => line.includes('uVelocity'))
-    // The uniform, the explaining comment and the one guarded line: nothing else.
-    expect(added).toHaveLength(3)
+    // The uniform; the comment and guarded line for the stretch; the comment and guarded line for its normal (5 lines): nothing else.
+    expect(added).toHaveLength(5)
     expect(sha(VERTEX.split('\n').filter((line) => !line.includes('uVelocity')).join('\n'))).toBe(golden.vertex)
     expect(sha(FRAGMENT)).toBe(golden.fragment)
   })
@@ -231,5 +237,110 @@ describe('with velocity 0 the cubes are byte-identical to develop (1b1694e golde
       const xz = 1 / Math.sqrt(y)
       expect(xz * y * xz).toBeCloseTo(1, 12)
     }
+  })
+})
+
+describe('the reading does not depend on the display\'s refresh rate', () => {
+  /** Scrolls at `vhPerSecond` for `seconds` at `hz` frames per second, with the scalar's weight at the end. */
+  function settled(hz: number, vhPerSecond: number, seconds = 2): number {
+    const tracker = new ScrollVelocity()
+    const dt = 1 / hz
+    const clock = { y: 10_000, t: 0 }
+    tracker.step(clock.y, clock.t, VIEWPORT)
+    let last = 0
+    for (let i = 0; i < seconds * hz; i += 1) last = scrollFor(tracker, clock, vhPerSecond * VIEWPORT * dt, 1, dt)[0] ?? 0
+    return last
+  }
+
+  it.each([0.5, 1.5, 2.5, 3.5])('%f vh/s settles at the same weight at 60, 90, 120, 144 and 240 Hz', (speed) => {
+    const expected = velocityWeight(speed)
+    for (const hz of [60, 90, 120, 144, 240]) expect(settled(hz, speed)).toBeCloseTo(expected, 1)
+  })
+
+  it('full stretch needs the same 4 vh/s at 144 Hz as at 60 Hz', () => {
+    expect(settled(144, 4)).toBeGreaterThan(0.97)
+    expect(settled(240, 4)).toBeGreaterThan(0.97)
+    expect(settled(60, 4)).toBeGreaterThan(0.97)
+  })
+
+  it('whole-pixel steps stay under the dead zone even on a 600 px viewport, at any refresh rate', () => {
+    for (const hz of [60, 120, 144, 240]) {
+      const tracker = new ScrollVelocity()
+      const clock = { y: 0, t: 0 }
+      tracker.step(clock.y, clock.t, 600)
+      // 1 px every 1/60 s: 60 px/s, 0.1 vh/s of a 600 px viewport.
+      let peak = 0
+      const dt = 1 / hz
+      let nextStep = 1 / 60
+      for (let i = 1; i <= hz * 3; i += 1) {
+        clock.t = i * dt
+        if (clock.t >= nextStep) {
+          clock.y += 1
+          nextStep += 1 / 60
+        }
+        peak = Math.max(peak, tracker.step(clock.y, clock.t, 600))
+      }
+      expect(peak).toBe(0)
+    }
+    expect(VELOCITY_WINDOW).toBeLessThan(1 / 30)
+  })
+
+  it('a jump of a whole viewport inside one window (an anchor link) is not a speed', () => {
+    const tracker = new ScrollVelocity()
+    tracker.step(0, 0, VIEWPORT)
+    expect(tracker.step(VIEWPORT * 3, 0.017, VIEWPORT)).toBe(0)
+    expect(tracker.active).toBe(false)
+  })
+})
+
+describe('a live prefers-reduced-motion change', () => {
+  function fakeQuery(matches: boolean) {
+    const listeners = new Set<(event: { matches: boolean }) => void>()
+    return {
+      matches,
+      addEventListener: (_: 'change', l: (event: { matches: boolean }) => void) => void listeners.add(l),
+      removeEventListener: (_: 'change', l: (event: { matches: boolean }) => void) => void listeners.delete(l),
+      listeners,
+      fire(next: boolean) {
+        this.matches = next
+        for (const l of [...listeners]) l({ matches: next })
+      },
+    }
+  }
+
+  it('drops the weight to 0 at once and keeps it there while reduce matches, then measures again when it clears', () => {
+    const query = fakeQuery(false)
+    const tracker = new ScrollVelocity()
+    let redraws = 0
+    const unbind = bindReducedMotion(tracker, query as never, () => (redraws += 1))
+    const clock = { y: 0, t: 0 }
+    tracker.step(clock.y, clock.t, VIEWPORT)
+    scrollFor(tracker, clock, 100, 10, 1 / 60)
+    expect(tracker.weight).toBeGreaterThan(0.5)
+
+    query.fire(true)
+    expect(tracker.weight).toBe(0)
+    expect(tracker.active).toBe(false)
+    expect(redraws).toBe(1)
+    for (const w of scrollFor(tracker, clock, 100, 20, 1 / 60)) expect(w).toBe(0)
+
+    query.fire(false)
+    tracker.step(clock.y, (clock.t += 1 / 60), VIEWPORT)
+    expect(Math.max(...scrollFor(tracker, clock, 100, 10, 1 / 60))).toBeGreaterThan(0.5)
+
+    unbind()
+    expect(query.listeners.size).toBe(0)
+  })
+
+  it('starts at 0 when reduce already matches, and cleans up its listener', () => {
+    const query = fakeQuery(true)
+    const tracker = new ScrollVelocity()
+    const unbind = bindReducedMotion(tracker, query as never)
+    const clock = { y: 0, t: 0 }
+    tracker.step(clock.y, clock.t, VIEWPORT)
+    for (const w of scrollFor(tracker, clock, 200, 10, 1 / 60)) expect(w).toBe(0)
+    expect(query.listeners.size).toBe(1)
+    unbind()
+    expect(query.listeners.size).toBe(0)
   })
 })
