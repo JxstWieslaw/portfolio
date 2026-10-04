@@ -30,6 +30,8 @@ vi.mock('@/components/three/models/ModelLoader', async () => {
 })
 
 const { createModelSlot } = await import('@/components/three/models/ModelSlot')
+// Warm the mocked loader module so the slot's dynamic import resolves in a tick, not after a cold transform.
+await import('@/components/three/models/ModelLoader')
 
 const placement = (over: Partial<ModelPlacement> = {}): ModelPlacement => ({
   asset: 'thing',
@@ -76,7 +78,7 @@ function fakeModel(withClip = false) {
 }
 
 const flush = async (): Promise<void> => {
-  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+  for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 const html = document.documentElement
