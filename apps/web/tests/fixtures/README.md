@@ -4,6 +4,8 @@
 
 Proves that with `uVelocity` at 0 the cubes are byte-identical to develop at 1b1694e (before the scroll-velocity PR). It holds, for all eight bundle kinds at keep 1 and 0.5, the sha256 of every attribute the vertex program reads, plus the full uniform set (as JSON) and the sha256 of both shader programs.
 
+Deliberate change (first models PR): the `position` digests of orbit, scatter and grid, at both keep values, were updated, because those three chapter rows now open an exclusion hole around a model. Every other digest, the uniforms and both shader programs are still develop's, and `assembly-bundles.golden.json` records the same change.
+
 It is a record of develop, not of the current tree. Do not regenerate it to make a failing test pass. A failure means the resting cubes changed.
 
 The vertex digest is of the program with every line containing `uVelocity` removed (`assembly-velocity.test.ts` does the same before hashing), so the velocity lines can change without touching the file. Regenerate it only when the resting look is changed on purpose, and say so in the PR.

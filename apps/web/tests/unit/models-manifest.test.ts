@@ -53,11 +53,27 @@ describe('the committed manifest', () => {
     expect(() => modelManifestSchema.parse(committed)).not.toThrow()
   })
 
-  it('loads, and keeps the generated gyroscope disabled so it resolves to "unavailable"', () => {
+  it('loads, and lists the three first models as enabled and resolvable at both tiers', () => {
     const manifest = loadManifest()
     expect(manifest.version).toBe(1)
-    expect(manifest.models.find((m) => m.id === 'gyroscope')?.enabled).toBe(false)
-    expect(resolveModel('gyroscope', 2)).toEqual({ kind: 'unavailable', reason: 'disabled' })
+    expect(manifest.models.map((m) => [m.id, m.enabled])).toEqual([
+      ['crystal-cluster', true],
+      ['gate-complex', true],
+      ['gyroscope', true],
+    ])
+    for (const id of ['crystal-cluster', 'gate-complex', 'gyroscope'])
+      for (const tier of [1, 2] as const) expect(resolveModel(id, tier).kind, `${id} tier ${tier}`).toBe('resolved')
+  })
+
+
+  it('a tier-2 request resolves to the tier-1 file for the Kenney pieces, which ship one variant', () => {
+    for (const id of ['crystal-cluster', 'gate-complex']) {
+      const resolved = resolveModel(id, 2)
+      expect(resolved.kind).toBe('resolved')
+      if (resolved.kind === 'resolved') expect(resolved.model.variant.url).toMatch(/.t1.[0-9a-f]{8}.glb$/)
+    }
+    const gyro = resolveModel('gyroscope', 2)
+    if (gyro.kind === 'resolved') expect(gyro.model.variant.url).toMatch(/.t2./)
   })
 
   it('treats an id the manifest does not contain as a bug (it throws), not as a quiet rollback', () => {

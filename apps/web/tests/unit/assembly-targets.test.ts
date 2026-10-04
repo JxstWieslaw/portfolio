@@ -138,6 +138,24 @@ describe('clearSphere', () => {
     expect(bundle.position).toEqual(buildModelBundle('monolith', INSTANCE_CAPACITY).position)
   })
 
+  it('moves a cube exactly at the centre onto the shell, deterministically, whatever its seed', () => {
+    const base = buildModelBundle('monolith', INSTANCE_CAPACITY)
+    for (const seed of [0, 0.25, 0.5, 0.999, 1]) {
+      const bundle = { ...base, position: new Float32Array(base.position), seed: new Float32Array(base.seed) }
+      bundle.position.set(centre, 0)
+      bundle.seed[0] = seed
+      const { bundle: cleared, moved } = clearSphere(bundle, centre, 0.3, 0.36)
+      expect(moved).toBeGreaterThan(0)
+      const d = Math.hypot(
+        (cleared.position[0] ?? 0) - centre[0],
+        (cleared.position[1] ?? 0) - centre[1],
+        (cleared.position[2] ?? 0) - centre[2],
+      )
+      expect(d).toBeCloseTo(0.36, 5)
+      expect(clearSphere(bundle, centre, 0.3, 0.36).bundle.position.slice(0, 3)).toEqual(cleared.position.slice(0, 3))
+    }
+  })
+
   it('moves nothing when the radius is 0 and returns the same positions', () => {
     const bundle = buildModelBundle('orbit', INSTANCE_CAPACITY)
     const { bundle: cleared, moved } = clearSphere(bundle, centre, 0)
@@ -154,13 +172,18 @@ describe('clearSphere', () => {
   })
 })
 
-describe('bundles are byte-identical to the pre-PR code while every model row is null', () => {
+describe('bundles are byte-identical to the pre-model code except where a model row opens a hole', () => {
   /**
    * `tests/fixtures/assembly-bundles.golden.json` holds sha256 digests of the
    * Float32Array bytes of position, colour and scale for every bundle kind at
    * two instance fractions. They were captured by running the SAME
    * `assemblyBuilder` from the commit before this work (2e0ecce, develop after
    * #46) in a scratch checkout, not from this PR's own output.
+   *
+   * The first models (orbit, scatter and grid rows with an exclusion) deliberately changed the `position`
+   * digest of exactly those three formations, at both fractions: cubes inside the exclusion sphere move to
+   * its surface. Their `count`, `colour` and `live` digests did not change, and cloud, monolith, stream,
+   * lattice and ring are still the pre-model bytes: that is what this test pins.
    */
   const digest = (a: Float32Array) => createHash('sha256').update(Buffer.from(a.buffer, a.byteOffset, a.byteLength)).digest('hex')
   const kinds = ['cloud', 'monolith', 'stream', 'lattice', 'orbit', 'scatter', 'grid', 'ring'] as const

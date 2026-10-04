@@ -17,6 +17,7 @@ import {
   type ModelVariant,
 } from '@repo/contracts'
 
+import { buildInputsHash, staleBuildMessage } from './build-inputs'
 import { IngestRejected, SourceHashMismatch, buildVariant, loadSource, loadToolchain, type BuiltVariant } from './pipeline'
 import { defaultRoot, deriveCredit, layoutFor, loadSources, tiersOf, type Layout, type SourceEntry } from './sources'
 import {
@@ -141,7 +142,7 @@ export async function runIngest(opts: IngestOptions): Promise<IngestResult> {
     let clips: ModelEntry['clips'] | null = null
     for (const tier of tiersOf(source)) {
       const subject = `${source.id} tier ${tier}`
-      const result = await buildVariant(tc, await loaded.makeDocument(), { subject, tier, clips: source.clips, log })
+      const result = await buildVariant(tc, await loaded.makeDocument(), { subject, tier, clips: source.clips, look: source.look, log })
       const variant = toVariant(source, result)
       variants.push(variant)
       files.set(variant.url.slice('/models/'.length), result.bytes)
@@ -159,6 +160,7 @@ export async function runIngest(opts: IngestOptions): Promise<IngestResult> {
         kind: source.kind,
         enabled: source.enabled,
         boundsRadius: 1,
+        buildInputsHash: buildInputsHash(source),
         clips: clips ?? [],
         variants,
       }),
@@ -199,6 +201,11 @@ export async function runIngest(opts: IngestOptions): Promise<IngestResult> {
     }
     const read = (file: string) =>
       existsSync(file) ? canonicalJson(JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''))) : ''
+    // Every enabled source, selected or not: a stale raw-source GLB must be caught by a partial verify too.
+    for (const source of sources) {
+      if (!source.enabled) continue
+      if (existing?.models.find((m) => m.id === source.id)?.buildInputsHash !== buildInputsHash(source)) mismatches.push(staleBuildMessage(source.id))
+    }
     if (read(layout.manifestFile) !== manifestText) mismatches.push('manifest.json differs from a fresh ingest')
     if (read(layout.creditsFile) !== creditsText) mismatches.push('credits.json differs from a fresh ingest')
   } else if (!opts.dryRun) {

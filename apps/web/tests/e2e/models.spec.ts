@@ -7,8 +7,7 @@ import { expect, test, type Page } from '@playwright/test'
 /**
  * The model slot in a real browser — model platform spec § 7.3.
  *
- * Every ledger row is `null` today, so the browser gets its placement and its
- * manifest from the test seam (`?modeltest=1` plus
+ * The seam tests below give the browser their own placement and manifest through the test seam (`?modeltest=1` plus
  * `window.__ASSEMBLY_MODELS_TEST__`), and the GLB is `tests/fixtures/cube.glb`,
  * served by `page.route`. The seam exists only in a build made with
  * `NEXT_PUBLIC_MODEL_TEST=1` (the CI e2e job sets it, and Playwright's web
@@ -31,6 +30,7 @@ test.describe.configure({ timeout: 150_000 })
 const CUBE = readFileSync(join(process.cwd(), 'tests/fixtures/cube.glb'))
 const INTEGRITY = `sha256-${createHash('sha256').update(CUBE).digest('base64')}`
 const GLB_URL = /\/models\/fixture-cube\.t[12]\.[0-9a-f]{8}\.glb$/
+const COMMITTED_GLB = /\/models\/(?:gyroscope|crystal-cluster|gate-complex)\.t[12]\.[0-9a-f]{8}\.glb$/
 
 const variant = (tier: 1 | 2) => ({
   tier,
@@ -132,6 +132,8 @@ function watch(page: Page) {
     errors,
     models: () => requests.filter((url) => /\/models\//.test(url) || /\/_next\/static\/chunks\/models\./.test(url)),
     glbs: () => requests.filter((url) => GLB_URL.test(url)),
+    /** Every .glb asked for from /models/ that is not the fixture: the committed models. */
+    committed: () => requests.filter((url) => /\/models\/[a-z0-9-]+\.t[123]\.[0-9a-f]{8}\.glb$/.test(url) && !GLB_URL.test(url)),
   }
 }
 
@@ -179,16 +181,22 @@ test.describe('no models, no requests', () => {
     await context.close()
   })
 
-  test('the seam armed but without ?modeltest=1 does nothing: no request, no debug hook, no slot activity', async ({ page }) => {
+  test('the seam armed but without ?modeltest=1 does nothing: the real ledger rules, no fixture request, no debug hook', async ({ page }) => {
     const seen = watch(page)
     await arm(page)
     await page.goto('/')
     await goLive(page)
     await showFormation(page, 'lattice')
     await scrollWholePage(page)
-    expect(seen.models()).toEqual([])
-    await expect(html(page)).toHaveAttribute('data-models', '0')
-    await expect(html(page)).not.toHaveAttribute('data-models-gate', /.*/)
+    // Under a loaded runner the scroll can outrun the load: settle on a section that hosts a committed model.
+    await showFormation(page, 'scatter')
+    await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 60_000 })
+    // A full scroll visits the three sections that host a committed model; nothing else may be requested.
+    expect(seen.glbs()).toEqual([])
+    expect(seen.committed().length).toBeGreaterThanOrEqual(1)
+    for (const url of seen.committed()) expect(url).toMatch(COMMITTED_GLB)
+    await expect(html(page)).not.toHaveAttribute('data-models-gate', 'off:nomodels')
+    await expect(html(page)).toHaveAttribute('data-models-failed', '0')
     expect(await page.evaluate(() => window.__ASSEMBLY_DEBUG__)).toBeUndefined()
     expect(seen.errors).toEqual([])
   })
@@ -315,6 +323,63 @@ test.describe('a model in the lattice section', () => {
     await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 45_000 })
     await expect(html(page)).toHaveAttribute('data-models-last-error', 'parse')
     await expect(html(page)).toHaveAttribute('data-gl', 'live')
+  })
+})
+
+test.describe('the first models, from the committed ledger (no seam)', () => {
+  const rows = [
+    ['orbit', 'gyroscope'],
+    ['scatter', 'crystal-cluster'],
+    ['grid', 'gate-complex'],
+  ] as const
+
+  for (const [formation, asset] of rows) {
+    test(`${formation} loads ${asset} within its tier budget, and it leaves with the section`, async ({ page }) => {
+      const seen = watch(page)
+      await page.goto('/')
+      await goLive(page)
+      await showFormation(page, formation)
+      await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 60_000 })
+      const tier = (await html(page).getAttribute('data-models-gate'))?.slice(-1)
+      expect(tier === '1' || tier === '2').toBe(true)
+      // A variant is picked by tier and capability: the gyroscope ships tiers 1 and 2, the Kenney pieces tier 1 only,
+      // so a tier-2 visitor correctly receives their tier-1 file.
+      const variantTier = asset === 'gyroscope' ? tier : '1'
+      expect(seen.committed().filter((url) => url.includes(`/models/${asset}.t${variantTier}.`))).toHaveLength(1)
+      // Prefetch may also have fetched the NEXT section's model: judge this asset's requests only.
+      expect(seen.committed().filter((url) => url.includes(`/models/${asset}.`)).every((url) => url.includes(`.t${variantTier}.`))).toBe(true)
+      await scrollToTop(page)
+      await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 15_000 })
+      await expect(html(page)).toHaveAttribute('data-models-failed', '0')
+      await expect(html(page)).toHaveAttribute('data-gl', 'live')
+      expect(seen.errors).toEqual([])
+    })
+  }
+
+  test('a 404 on the gyroscope in How I Lead is a counted failure: the page stays live and the Assembly keeps its procedural artefact', async ({ page }) => {
+    const seen = watch(page)
+    await page.route(/\/models\/gyroscope\.t[12]\.[0-9a-f]{8}\.glb$/, (route) => route.fulfill({ status: 404, body: 'not found' }))
+    await page.goto('/')
+    await goLive(page)
+    await showFormation(page, 'orbit')
+    await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 60_000 })
+    await expect(html(page)).toHaveAttribute('data-models', '0')
+    await expect(html(page)).toHaveAttribute('data-gl', 'live')
+    // The role: 'artefact' model never became resident, so nothing asked the canvas to hide the procedural one
+    // (that decision is unit-tested in models-slot.test.ts and keyed on a resident model).
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(html(page)).toHaveAttribute('data-models', '0')
+    expect(seen.errors).toEqual([])
+  })
+
+  test('?tier=1 asks for tier-1 variants only', async ({ page }) => {
+    const seen = watch(page)
+    await page.goto('/?tier=1')
+    await goLive(page)
+    await showFormation(page, 'scatter')
+    await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 60_000 })
+    expect(seen.committed().length).toBeGreaterThanOrEqual(1)
+    expect(seen.committed().every((url) => /\.t1\./.test(url))).toBe(true)
   })
 })
 

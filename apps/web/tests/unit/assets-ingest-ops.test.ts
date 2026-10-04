@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { main as ingestMain, runIngest } from '../../scripts/assets/ingest'
 import { IngestRejected } from '../../scripts/assets/pipeline'
 import { defaultRoot, layoutFor } from '../../scripts/assets/sources'
+import { gyroscopeSource } from './assets-fixtures'
 
 let tmp: string
 beforeAll(() => {
@@ -15,11 +16,7 @@ beforeAll(() => {
 })
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
 
-const gyro = (): Record<string, unknown> => {
-  const [first] = JSON.parse(readFileSync(layoutFor(defaultRoot()).sourcesFile, 'utf8')) as Record<string, unknown>[]
-  if (!first) throw new Error('committed sources.json is empty')
-  return first
-}
+const gyro = gyroscopeSource
 
 const rootWith = (name: string, sources: unknown[]) => {
   const root = path.join(tmp, name)
@@ -104,7 +101,7 @@ describe('ingest: partial runs, verify, writes', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       expect(await ingestMain(['--only', 'generated', '--verify'], defaultRoot())).toBe(0)
-      expect(log.mock.calls.flat().join('\n')).toMatch(/verify: 1 source\(s\) checked \(gyroscope\); skipped: none/)
+      expect(log.mock.calls.flat().join('\n')).toMatch(/verify: 1 source\(s\) checked \(gyroscope\); skipped: crystal-cluster, gate-complex;/)
       const root = rootWith('main-empty', [gyro()])
       expect(await ingestMain(['--only', 'generated', '--verify'], root)).toBe(1)
       expect(await ingestMain(['--only', 'everything'], root)).toBe(2)

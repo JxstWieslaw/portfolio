@@ -320,6 +320,8 @@ export async function fetchSource(source: SourceEntry, layout: Layout, deps: Fet
   let files: ZipFile[]
   if (isZip(bytes)) {
     if (!origin.archiveSha256) throw new Error(`"${source.id}" downloads a zip; pin archiveSha256 in sources.json`)
+    if (origin.archiveBytes !== undefined && bytes.byteLength !== origin.archiveBytes)
+      throw new FetchHashMismatch(`archive for "${source.id}" is ${bytes.byteLength} B, sources.json pins ${origin.archiveBytes} B`)
     const got = sha256Hex(bytes)
     if (got !== origin.archiveSha256) throw new FetchHashMismatch(`archive for "${source.id}" hashes to ${got}, sources.json pins ${origin.archiveSha256}`)
     files = readZipEntries(bytes)

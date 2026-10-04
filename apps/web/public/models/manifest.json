@@ -1,10 +1,63 @@
 {
-  "contentHash": "11f8cb6e2dfc45f4",
+  "contentHash": "f6d57e0b0b2b0e09",
   "models": [
     {
       "boundsRadius": 1,
+      "buildInputsHash": "e54c04c64d690042",
       "clips": [],
-      "enabled": false,
+      "enabled": true,
+      "id": "crystal-cluster",
+      "kind": "prop",
+      "title": "Crystal cluster",
+      "variants": [
+        {
+          "bytes": 6544,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-wcClLAKCUM5vu1ZnWy4yxneYXenIwyrOxctJ+nQCgok=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 1,
+          "triangles": 380,
+          "url": "/models/crystal-cluster.t1.c1c0a52c.glb"
+        }
+      ]
+    },
+    {
+      "boundsRadius": 1,
+      "buildInputsHash": "fefd93ba47e92185",
+      "clips": [],
+      "enabled": true,
+      "id": "gate-complex",
+      "kind": "prop",
+      "title": "Gate",
+      "variants": [
+        {
+          "bytes": 7032,
+          "extensions": [
+            "EXT_meshopt_compression",
+            "KHR_mesh_quantization"
+          ],
+          "integrity": "sha256-MvkCFQuIQUhpG2YTM4+oo1irQKkl8sfKv7PM8JBpeVE=",
+          "maxTexturePx": 0,
+          "requires": [
+            "meshopt"
+          ],
+          "tier": 1,
+          "triangles": 460,
+          "url": "/models/gate-complex.t1.32f90215.glb"
+        }
+      ]
+    },
+    {
+      "boundsRadius": 1,
+      "buildInputsHash": "34cc2114491f63f7",
+      "clips": [],
+      "enabled": true,
       "id": "gyroscope",
       "kind": "prop",
       "title": "Gyroscope",

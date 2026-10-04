@@ -12,6 +12,7 @@ import path from 'node:path'
 import { modelManifestSchema, type ModelManifest } from '@repo/contracts'
 
 import { verifyImages } from './images'
+import { buildInputsHash, staleBuildMessage } from './build-inputs'
 import { loadToolchain, measureBoundsRadius, type Toolchain } from './pipeline'
 import { defaultRoot, deriveCredit, layoutFor, loadSources, tiersOf, type SourceEntry } from './sources'
 import {
@@ -108,6 +109,7 @@ export async function runCheck(opts: { readonly root: string }): Promise<CheckRe
         violations.push(schema(entry.id, 'manifest entry has no matching source in sources.json'))
         continue
       }
+      if (source.enabled && entry.buildInputsHash !== buildInputsHash(source)) violations.push(schema(entry.id, staleBuildMessage(entry.id)))
       if (entry.enabled !== source.enabled) violations.push(schema(entry.id, 'enabled differs from sources.json; run assets:ingest'))
       violations.push(
         ...validateComplete(

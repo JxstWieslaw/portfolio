@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { Footer } from '@/components/layout/Footer'
 import { Nav } from '@/components/layout/Nav'
 import { SkipLink } from '@/components/layout/SkipLink'
-import { getProfile } from '@/lib/content'
+import { getCredits, getProfile } from '@/lib/content'
 import { SITE_DESCRIPTION, SITE_TITLE, canonical, siteUrl } from '@/lib/seo'
 
 import { fontVariables } from './fonts'
@@ -65,7 +65,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
         <main id="main">{children}</main>
 
-        <Footer name={profile.name} />
+        <Footer name={profile.name} credits={getCredits()} />
       </body>
     </html>
   )

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -13,6 +13,7 @@ import { runIngest } from '../../scripts/assets/ingest'
 import { IngestRejected, buildVariant, loadToolchain, measureBounds, type Toolchain } from '../../scripts/assets/pipeline'
 import { defaultRoot, layoutFor } from '../../scripts/assets/sources'
 import { buildReport, parseGlb, scanGlb, sha256Hex } from '../../scripts/assets/validators'
+import { gyroscopeSource } from './assets-fixtures'
 
 /** A UV sphere with `lat * lon * 2` triangles (poles included), offset and scaled away from the origin. */
 function uvSphere(lat: number, lon: number, withUv = false, extraMaterials = 0): Document {
@@ -165,7 +166,7 @@ describe('ingest: the gyroscope generator', () => {
     mkdirSync(path.join(root, 'content', 'models'), { recursive: true })
     writeFileSync(
       layoutFor(root).sourcesFile,
-      readFileSync(layoutFor(defaultRoot()).sourcesFile),
+      JSON.stringify([gyroscopeSource()]),
     )
     return root
   }

@@ -347,11 +347,19 @@ export function clearSphere(
     const dz = (position[i3 + 2] ?? 0) - centre[2]
     const distance = Math.hypot(dx, dy, dz)
     if (distance >= inside) continue
-    // A cube exactly at the centre has no direction; give it a seeded one.
-    const scale = distance > 1e-6 ? clearance / distance : 0
-    position[i3] = centre[0] + (distance > 1e-6 ? dx * scale : clearance * ((bundle.seed[i] ?? 0.5) - 0.5) * 2)
-    position[i3 + 1] = centre[1] + dy * scale
-    position[i3 + 2] = centre[2] + dz * scale
+    if (distance > 1e-6) {
+      const scale = clearance / distance
+      position[i3] = centre[0] + dx * scale
+      position[i3 + 1] = centre[1] + dy * scale
+      position[i3 + 2] = centre[2] + dz * scale
+    } else {
+      // A cube exactly at the centre has no direction: give it a seeded one in the horizontal plane, so it still
+      // lands on the shell (at `clearance`) and never inside it.
+      const angle = (bundle.seed[i] ?? 0) * Math.PI * 2
+      position[i3] = centre[0] + clearance * Math.cos(angle)
+      position[i3 + 1] = centre[1]
+      position[i3 + 2] = centre[2] + clearance * Math.sin(angle)
+    }
     moved += 1
   }
   // Surplus instances mirror a live one; keep them following it.

@@ -11,6 +11,7 @@ import { main as ingestMain, runIngest } from '../../scripts/assets/ingest'
 import { SourceHashMismatch } from '../../scripts/assets/pipeline'
 import { defaultRoot, layoutFor, sourceEntrySchema } from '../../scripts/assets/sources'
 import { sha256Hex } from '../../scripts/assets/validators'
+import { gyroscopeSource } from './assets-fixtures'
 
 let tmp: string
 beforeAll(() => {
@@ -32,7 +33,7 @@ function rawRoot(name: string, pinned: string): { root: string; actual: string }
   mkdirSync(path.join(root, 'assets-src', 'raw-one'), { recursive: true })
   writeFileSync(path.join(root, 'assets-src', 'raw-one', 'm.glb'), bytes)
   mkdirSync(path.dirname(l.sourcesFile), { recursive: true })
-  const [gyro] = JSON.parse(readFileSync(committed.sourcesFile, 'utf8')) as Record<string, unknown>[]
+  const gyro = gyroscopeSource()
   writeFileSync(
     l.sourcesFile,
     JSON.stringify([
@@ -142,7 +143,7 @@ describe('fetch main(): the exit code the CLI file returns', () => {
   })
 
   it('fetchSource itself writes nothing for a generated source', async () => {
-    const source = sourceEntrySchema.parse(JSON.parse(readFileSync(committed.sourcesFile, 'utf8'))[0])
+    const source = sourceEntrySchema.parse(gyroscopeSource())
     await expect(fetchSource(source, layoutFor(tmp), { fetch: body(new Uint8Array(1)) })).rejects.toThrow(/generated/)
   })
 })
@@ -235,6 +236,33 @@ describe('the project files the toolchain relies on', () => {
       expect(tracked([file])).toEqual([file])
     })
     it.each(['docs/assets-src-notes.md', 'my-assets-src/a.glb', 'assets-src.md', 'assets-sources/a.glb', 'apps/web/assets/a.glb'])('lets %s through', (file) => {
+      expect(tracked([file])).toEqual([])
+    })
+  })
+
+  describe('CI refuses a tracked .glb outside the two places that may hold one', () => {
+    const ci = read('.github', 'workflows', 'ci.yml')
+    const line = ci.split(/\r?\n/).find((l) => l.includes(":(glob,icase)**/*.glb'")) ?? ''
+    const specs = [...line.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '')
+    const tracked = (files: string[]): string[] => {
+      const repo = mkdtempSync(path.join(tmp, 'glb-'))
+      const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+      git('init', '-q')
+      for (const f of files) {
+        mkdirSync(path.dirname(path.join(repo, f)), { recursive: true })
+        writeFileSync(path.join(repo, f), 'x')
+      }
+      git('add', '-A')
+      return git('ls-files', '--', ...specs).split(String.fromCharCode(10)).filter(Boolean)
+    }
+
+    it('reads three pathspecs out of ci.yml', () => {
+      expect(specs).toHaveLength(3)
+    })
+    it.each(['a.glb', 'assets-src/a.glb', 'docs/model.glb', 'apps/web/public/model.GLB', 'apps/web/public/models/deep/x.glb', 'apps/web/tests/unit/x.glb', 'packages/x/y.glb'])('refuses %s', (file) => {
+      expect(tracked([file])).toEqual([file])
+    })
+    it.each(['apps/web/public/models/gate-complex.t1.32f90215.glb', 'apps/web/tests/fixtures/cube.glb', 'apps/web/public/models/manifest.json', 'docs/glb-notes.md'])('lets %s through', (file) => {
       expect(tracked([file])).toEqual([])
     })
   })

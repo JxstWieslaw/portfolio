@@ -45,6 +45,10 @@ jobs:
       # runs these very pathspecs against a throwaway repository.
       - name: No raw 3D sources are tracked (assets-src/ is gitignored; the repo is public)
         run: test -z "$(git ls-files -- ':(glob,icase)**/assets-src/**' ':(glob,icase)**/assets-src')"
+      # Optimised output lives in apps/web/public/models and the unit-test fixture in apps/web/tests/fixtures;
+      # a .glb anywhere else is a raw source or a stray export. apps/web/tests/unit/assets-cli.test.ts runs this pathspec.
+      - name: Tracked .glb files live only where they belong
+        run: test -z "$(git ls-files -- ':(glob,icase)**/*.glb' ':(exclude,glob,icase)apps/web/public/models/*.glb' ':(exclude,glob,icase)apps/web/tests/fixtures/*.glb')"
       - name: Validate 3D assets
         run: |
           npm run assets:check

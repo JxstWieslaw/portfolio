@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "assetId": "crystal-cluster",
+    "author": "Kenney",
+    "licence": "CC0-1.0",
+    "retrievedAt": "2026-10-04",
+    "sourceUrl": "https://kenney.nl/assets/space-kit",
+    "title": "Crystal cluster"
+  },
+  {
+    "assetId": "gate-complex",
+    "author": "Kenney",
+    "licence": "CC0-1.0",
+    "retrievedAt": "2026-10-04",
+    "sourceUrl": "https://kenney.nl/assets/space-kit",
+    "title": "Gate"
+  },
+  {
+    "assetId": "gyroscope",
+    "author": "Wieslaw Samushonga",
+    "licence": "own",
+    "retrievedAt": "2026-10-02",
+    "sourceUrl": "https://github.com/JxstWieslaw/portfolio/blob/cac18fb/apps/web/scripts/assets/generators/gyroscope.ts",
+    "title": "Gyroscope"
+  }
+]

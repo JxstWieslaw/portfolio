@@ -152,6 +152,12 @@ export const modelEntrySchema = z
     enabled: z.boolean(),
     /** Always 1 for ingest output (normalised); stored so a future transcoder can differ. */
     boundsRadius: z.number().positive(),
+    /**
+     * Hash of the sources.json inputs the bytes were built from (`assets/build-inputs.ts`). Written by ingest and
+     * checked by `assets:check` for every enabled entry; the runtime never reads it. Optional in the schema so a
+     * manifest served by the API need not carry it; the committed one must.
+     */
+    buildInputsHash: z.string().regex(/^[0-9a-f]{16}$/).optional(),
     clips: z.array(z.object({ name: slugSchema, seconds: z.number().positive().max(20) }).strict()).max(2).default([]),
     variants: z.array(modelVariantSchema).min(1),
   })

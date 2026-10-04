@@ -2,7 +2,8 @@ import type { ComponentProps } from 'react'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { COLOPHON, Footer } from '@/components/layout/Footer'
+import { COLOPHON, Footer, LICENCE_LABEL } from '@/components/layout/Footer'
+import { getCredits } from '@/lib/content'
 
 /**
  * The load-bearing case is § 9: `/lab`, `/about` and `/resume` do not exist in
@@ -39,11 +40,11 @@ describe('Footer — content', () => {
     renderFooter()
     expect(
       screen.getByText(
-        'Built with Next.js. The backdrop is a 2D canvas, not a renderer — React Three Fiber and Rapier ship with the WebGL milestone.'
+        'Built with Next.js. The backdrop is a three.js scene (React Three Fiber) over a 2D canvas fallback.'
       )
     ).toBeInTheDocument()
     expect(COLOPHON).toBe(
-      'Built with Next.js. The backdrop is a 2D canvas, not a renderer — React Three Fiber and Rapier ship with the WebGL milestone.'
+      'Built with Next.js. The backdrop is a three.js scene (React Three Fiber) over a 2D canvas fallback.'
     )
   })
 
@@ -162,5 +163,50 @@ describe('Footer — responsive (§ 3.3)', () => {
     expect(nav.className).toContain('grid-cols-2')
     expect(nav.className).toContain('md:grid-flow-col')
     expect(nav.className).toContain('md:gap-x-16')
+  })
+})
+
+describe('Footer — model credits', () => {
+  it('renders one plain-text line per enabled entry of content/credits.json, with a safe link to its source', () => {
+    const credits = getCredits()
+    // The three first models: two CC0 pieces by Kenney and the generated gyroscope.
+    expect(credits.map((c) => c.assetId)).toEqual(['crystal-cluster', 'gate-complex', 'gyroscope'])
+    const { container } = renderFooter({ credits })
+    const list = screen.getByRole('list', { name: 'Credits' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(credits.length)
+    for (const credit of credits) {
+      const item = container.querySelector(`[data-credit="${credit.assetId}"]`) as HTMLElement
+      expect(item.textContent?.replace(/\s+/g, ' ').trim()).toBe(`Model “${credit.title}” by ${credit.author}, ${LICENCE_LABEL[credit.licence]}`)
+      const link = within(item).getByRole('link', { name: credit.title })
+      expect(link).toHaveAttribute('href', credit.sourceUrl)
+      expect(link.getAttribute('href')).toMatch(/^https:\/\//)
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+      expect(link).toHaveAttribute('target', '_blank')
+    }
+  })
+
+  it('renders no list at all when there are no credits', () => {
+    renderFooter()
+    expect(screen.queryByRole('list', { name: 'Credits' })).toBeNull()
+  })
+
+  it('also links the licence when the entry carries a licence url, which CC BY requires', () => {
+    renderFooter({
+      credits: [
+        { assetId: 'x', title: 'Thing', author: 'Someone', licence: 'CC-BY-4.0', licenceUrl: 'https://creativecommons.org/licenses/by/4.0/', sourceUrl: 'https://example.com/thing', retrievedAt: '2026-10-04' },
+      ],
+    })
+    expect(screen.getByRole('link', { name: 'CC BY 4.0' })).toHaveAttribute('href', 'https://creativecommons.org/licenses/by/4.0/')
+  })
+
+  it('renders every value as text: markup in a title or author never becomes an element', () => {
+    const { container } = renderFooter({
+      credits: [
+        { assetId: 'evil', title: '<img src=x onerror=alert(1)>', author: '<b>bold</b>', licence: 'CC0-1.0', sourceUrl: 'https://example.com/e', retrievedAt: '2026-10-04' },
+      ],
+    })
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('b')).toBeNull()
+    expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
   })
 })

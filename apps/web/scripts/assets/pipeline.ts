@@ -35,6 +35,7 @@ import {
 } from '@repo/contracts'
 
 import { buildGyroscope } from './generators/gyroscope'
+import { MergeRefused, mergeMaterials } from './look'
 import { type Layout, type SourceEntry } from './sources'
 import {
   GlbFormatError,
@@ -386,6 +387,8 @@ export interface BuildOptions {
   readonly subject: string
   readonly tier: ModelTier
   readonly clips?: SourceEntry['clips']
+  /** Merge a flat-colour multi-material source into one material (look.ts). Absent: materials are left as they are. */
+  readonly look?: SourceEntry['look']
   readonly log?: (line: string) => void
 }
 
@@ -396,6 +399,17 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   doc.setLogger(new Logger(Logger.Verbosity.WARN))
 
   strip(doc, tier, opts.clips, subject, opts.log)
+  if (opts.look) {
+    try {
+      const merged = mergeMaterials(doc, opts.look)
+      opts.log?.(`  merged ${merged.from} material(s) into one; recoloured: ${merged.recoloured.map(quote).join(', ') || 'none'}`)
+      if (merged.unmatched.length > 0)
+        throw new IngestRejected(subject, [{ code: 'MATERIALS', subject, message: `look.palette names no such material: ${merged.unmatched.map(quote).join(', ')}` }])
+    } catch (error) {
+      if (error instanceof MergeRefused) throw new IngestRejected(subject, [{ code: 'MATERIALS', subject, message: error.message }])
+      throw error
+    }
+  }
   normalise(doc, subject)
 
   const animated = doc.getRoot().listAnimations().length > 0 || doc.getRoot().listSkins().length > 0

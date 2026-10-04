@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { main, runCheck } from '../../scripts/assets/check'
 import * as images from '../../scripts/assets/images'
 import * as pipeline from '../../scripts/assets/pipeline'
-import { defaultRoot, layoutFor, type Layout } from '../../scripts/assets/sources'
+import { buildInputsHash } from '../../scripts/assets/build-inputs'
+import { defaultRoot, layoutFor, sourceEntrySchema, type Layout } from '../../scripts/assets/sources'
+import { copyGyroscopeTree } from './assets-fixtures'
 import {
   buildReport,
   canonicalJson,
@@ -30,7 +32,6 @@ vi.mock('../../scripts/assets/pipeline', async (original) => {
   return { ...actual, measureBoundsRadius: vi.fn(actual.measureBoundsRadius) }
 })
 
-const committed = layoutFor(defaultRoot())
 const codes = (vs: readonly Violation[]) => [...new Set(vs.map((x) => x.code))].sort()
 const messages = (vs: readonly Violation[], code: string) => vs.filter((x) => x.code === code).map((x) => x.message)
 
@@ -41,10 +42,7 @@ beforeEach(() => {
   tmp = mkdtempSync(path.join(tmpdir(), 'check-'))
   root = path.join(tmp, 'repo')
   l = layoutFor(root)
-  mkdirSync(path.dirname(l.sourcesFile), { recursive: true })
-  cpSync(committed.sourcesFile, l.sourcesFile)
-  cpSync(committed.creditsFile, l.creditsFile)
-  cpSync(committed.modelsDir, l.modelsDir, { recursive: true })
+  copyGyroscopeTree(root)
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -344,8 +342,13 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
     source['enabled'] = true
     source['tiers'] = [1, 2, 3]
     writeFileSync(l.sourcesFile, canonicalJson(sources))
+    // The edit to tiers is a real input change: keep the recorded build hash honest so only COMPLETE is reported.
+    const hash = buildInputsHash(sourceEntrySchema.parse(source))
     editManifest((m) => {
-      for (const e of m) e['enabled'] = true
+      for (const e of m) {
+        e['enabled'] = true
+        e['buildInputsHash'] = hash
+      }
     })
     const credit = source['credit'] as Record<string, string>
     writeFileSync(
@@ -375,7 +378,8 @@ describe('decoders only ever see a file the scanner passed', () => {
   it('a clean file is decoded and measured (the spies see the real calls)', async () => {
     const { violations } = await runCheck({ root: defaultRoot() })
     expect(violations).toEqual([])
-    expect(calls()).toEqual([2, 2])
+    // four committed variants: the gyroscope at two tiers, the two Kenney pieces at tier 1
+    expect(calls()).toEqual([4, 4])
   })
 
   it('a meshopt view that claims 4294967295 elements of 252 bytes is refused, and its decoder never runs', async () => {
