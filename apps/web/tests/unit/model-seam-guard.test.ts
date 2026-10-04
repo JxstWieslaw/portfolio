@@ -27,7 +27,7 @@ describe.skipIf(!bashAvailable)('check-no-model-seam.sh', () => {
     expect(run(dir).status).toBe(0)
   })
 
-  it.each(['__ASSEMBLY_MODELS_TEST__', '__ASSEMBLY_DEBUG__'])('fails when %s is in a chunk', (marker) => {
+  it.each(['__ASSEMBLY_MODELS_TEST__', '__ASSEMBLY_DEBUG__', '__ASSEMBLY_VELOCITY__'])('fails when %s is in a chunk', (marker) => {
     const dir = temp()
     writeFileSync(join(dir, 'chunks', 'a.js'), `window.${marker}={}`)
     const result = run(dir)
