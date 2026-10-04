@@ -54,6 +54,9 @@ import {
   type Violation,
 } from './validators'
 
+/** Marker for `npm run check:bundle`: a minifier keeps string values, so finding this in a client chunk proves the tooling shipped. */
+export const ASSET_TOOLCHAIN_CANARY = '__asset-toolchain-7f3a__'
+
 export class SourceHashMismatch extends Error {
   constructor(
     readonly sourceId: string,

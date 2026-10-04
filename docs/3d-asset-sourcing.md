@@ -64,6 +64,8 @@ What `assets:ingest` does to a source rather than refusing it:
 
 **Residual risk: meshopt payloads.** The scanner checks that each meshopt view's `count x byteStride` equals its declared length and that the compressed range is in range, referenced and not overlapping, but it cannot tell whether the compressed bytes themselves carry extra bits: that would need a re-encode comparison. For a third-party source the maintainer re-verifies with `npm run assets:ingest -- --id <id> --verify` from the pinned raw file before committing. Bits hidden inside real geometry cannot be detected by any scan.
 
+**Residual risk: attribute cross-checks.** The scanner checks that every accessor is read, in range, typed and tiled, but it does not yet cross-check each attribute's type, normalisation and count against its semantic (for example that `POSITION` is a VEC3 and `TEXCOORD_0` a VEC2 with the same count). A source that passes can still carry a wrongly typed attribute; the renderer would draw it wrongly rather than leak anything. Both this and the meshopt payload are deferred and listed here so they are decided, not forgotten.
+
 For the **USDZ** (iOS AR): same model, exported via Blender's USD exporter or converted with Apple's Reality Converter; ≤ 10 MB; textures baked.
 
 ---

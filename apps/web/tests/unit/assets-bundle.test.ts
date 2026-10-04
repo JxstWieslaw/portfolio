@@ -1,12 +1,12 @@
 // @vitest-environment node
 /** `npm run check:bundle`: the post-build guard that sits behind the ESLint rule. */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { main, scanBundle } from '../../scripts/assets/bundle'
+import { ASSET_TOOLCHAIN_CANARY, main, scanBundle } from '../../scripts/assets/bundle'
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'bundle-'))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
@@ -43,7 +43,8 @@ describe('scanBundle', () => {
     ['the native binding package', 'path:"node_modules/@img/sharp-linux-x64/lib"', 'sharp'],
     ['libvips', 'x("sharp-libvips-linux-x64")', 'sharp'],
     ['a sharp subpath', 'require("sharp/lib/index")', 'sharp'],
-    ['meshoptimizer', 'require("meshoptimizer/meshopt_encoder.js")', 'meshoptimizer'],
+    ['the meshopt encoder', 'require("meshoptimizer/meshopt_encoder.js")', 'meshopt encoder or simplifier'],
+    ['the meshopt simplifier', 'var s = MeshoptSimplifier', 'meshopt encoder or simplifier'],
   ])('flags %s, in a nested chunk, by name', (_label, text, label) => {
     const root = webRoot({ 'chunks/ok.js': 'var fine = 1', 'chunks/deep/er/bad.js': text })
     expect(scanBundle(staticDir(root)).findings).toEqual([{ file: 'chunks/deep/er/bad.js', label }])
@@ -53,6 +54,25 @@ describe('scanBundle', () => {
     const root = webRoot({ 'chunks/a.mjs': 'require("sharp")', 'media/readme.txt': 'require("sharp")', 'css/a.css': '@gltf-transform/' })
     expect(scanBundle(staticDir(root)).findings.map((f) => f.file)).toEqual(['chunks/a.mjs'])
     expect(scanBundle(staticDir(root)).files).toBe(1)
+  })
+})
+
+describe('the canary: a minified chunk has no package names, only string values', () => {
+  const minified = 'var a=1;function f(){return"__asset-toolchain-7f3a__"}export{f};'
+
+  it('flags a chunk whose only trace is the canary', () => {
+    const root = webRoot({ 'chunks/min.js': minified })
+    expect(scanBundle(staticDir(root)).findings).toEqual([{ file: 'chunks/min.js', label: 'asset toolchain marker' }])
+  })
+
+  it('does not flag a client chunk that carries a runtime meshopt DECODER', () => {
+    const root = webRoot({ 'chunks/decoder.js': 'import{MeshoptDecoder}from"meshoptimizer/meshopt_decoder.module.js";var d=MeshoptDecoder' })
+    expect(scanBundle(staticDir(root)).findings).toEqual([])
+  })
+
+  it('validators.ts, pipeline.ts and images.ts all carry exactly the marker the checker greps for', () => {
+    for (const file of ['validators.ts', 'pipeline.ts', 'images.ts'])
+      expect(readFileSync(path.join(__dirname, '..', '..', 'scripts', 'assets', file), 'utf8'), file).toContain(`export const ASSET_TOOLCHAIN_CANARY = '${ASSET_TOOLCHAIN_CANARY}'`)
   })
 })
 

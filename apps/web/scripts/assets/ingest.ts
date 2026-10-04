@@ -23,6 +23,7 @@ import {
   canonicalJson,
   contentHashOf,
   describeError,
+  printable,
   integrityOf,
   roundSeconds,
   sha256Hex,
@@ -253,19 +254,19 @@ ${USAGE}`)
       verify: values.verify,
       dryRun: values['dry-run'],
       acceptSourceChange: accept,
-      log: (line) => console.log(line),
+      log: (line) => console.log(printable(line)),
     })
     if (result.acceptedChanges.length > 0) {
-      for (const c of result.acceptedChanges) console.error(`${c.id} changed upstream and was accepted for this run: now pin sha256 in sources.json: ${c.sha256}`)
+      for (const c of result.acceptedChanges) console.error(printable(`${c.id} changed upstream and was accepted for this run: now pin sha256 in sources.json: ${c.sha256}`))
       // Nothing was written under --verify or --dry-run, so do not say it was; verify still owes its findings.
-      if (values.verify) for (const m of result.mismatches) console.error(`verify: ${m}`)
+      if (values.verify) for (const m of result.mismatches) console.error(printable(`verify: ${m}`))
       else if (values['dry-run']) console.log(`dry run: ${result.files.size} file(s) would be written, nothing was`)
       else console.log(`wrote ${result.files.size} file(s), manifest ${result.manifest.contentHash}`)
       return 3
     }
     if (values.verify) {
       if (result.mismatches.length > 0) {
-        for (const m of result.mismatches) console.error(`verify: ${m}`)
+        for (const m of result.mismatches) console.error(printable(`verify: ${m}`))
         return 1
       }
       console.log(
@@ -277,7 +278,7 @@ ${USAGE}`)
     else console.log(`wrote ${result.files.size} file(s), manifest ${result.manifest.contentHash}`)
     return 0
   } catch (error) {
-    console.error(describeError(error))
+    console.error(printable(describeError(error)))
     return 1
   }
 }

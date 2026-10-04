@@ -33,6 +33,9 @@ export function describeError(error: unknown): string {
   return parts.join(' <- ')
 }
 
+/** Marker for `npm run check:bundle`: a minifier keeps string values, so finding this in a client chunk proves the tooling shipped. */
+export const ASSET_TOOLCHAIN_CANARY = '__asset-toolchain-7f3a__'
+
 export type ViolationCode =
   | 'LICENCE'
   | 'BYTES'
@@ -71,7 +74,7 @@ const seg = (key: string): string => (/^[A-Za-z0-9_]{1,40}$/.test(key) ? `.${key
  */
 export function printable(text: string): string {
   // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, ' ')
 }
 
 /** No string, key or JSON level in a committed GLB needs more than this. */
@@ -153,6 +156,9 @@ const CHUNK_BIN = 0x004e4942
 
 export class GlbFormatError extends Error {}
 
+/** Our own output's JSON is a few kilobytes; nothing real needs more, and a hostile chunk must not be parsed at any size. */
+export const MAX_JSON_BYTES = 64 * 1024
+
 export interface GlbParts {
   readonly json: Record<string, unknown>
   readonly bin: Uint8Array | null
@@ -174,6 +180,7 @@ export function parseGlb(bytes: Uint8Array): GlbParts {
     const length = view.getUint32(offset, true)
     const type = view.getUint32(offset + 4, true)
     const start = offset + 8
+    if (index === 0 && length > MAX_JSON_BYTES) throw new GlbFormatError(`JSON chunk is ${length} bytes, over the ${MAX_JSON_BYTES} byte cap`)
     if (start + length > bytes.byteLength) throw new GlbFormatError('chunk runs past the end of the file')
     if (index === 0) {
       if (type !== CHUNK_JSON) throw new GlbFormatError('first chunk is not JSON')
@@ -712,7 +719,7 @@ const EXTENSION_BODY_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
 const EXTENSION_TEXTURES = ['transmissionTexture', 'thicknessTexture'] as const
 
 /** Custom `_UPPERCASE` attributes are legal glTF but unused by our renderer: `strip()` removes them, so one here is a finding. */
-const ATTRIBUTE_KEY = /^(?:POSITION|NORMAL|TANGENT|TEXCOORD_\d|COLOR_\d|JOINTS_\d|WEIGHTS_\d)$/
+const ATTRIBUTE_KEY = /^(?:POSITION|NORMAL|TANGENT|(?:TEXCOORD|COLOR|JOINTS|WEIGHTS)_\d+)$/
 
 /** Extensions a collection element may carry, by collection. Any other contract extension there is misplaced. */
 const EXTENSIONS_ON: Readonly<Record<string, readonly string[]>> = {
@@ -882,6 +889,8 @@ const lookup = (table: Readonly<Record<string | number, number>>, key: unknown):
   (typeof key === 'string' || typeof key === 'number') && Object.hasOwn(table, key) ? table[key] : undefined
 
 /** Largest accessor, and the most decoded bytes all views together may declare: far above any real model, far below a bomb. */
+/** Most joints one skin may have; the renderer's own limit is lower, so nothing real comes near it. */
+export const MAX_JOINTS = 256
 export const MAX_ACCESSOR_COUNT = 1_048_576
 export const MAX_DECODED_BYTES = 33_554_432
 
@@ -1029,8 +1038,11 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
   const scene = json['scene']
   if (scene !== undefined && !isIndex(scene, cols.scenes.length)) out.push(v('SECURITY', '$.scene', 'scene is not the index of an existing scene'))
   const roots = new Set<number>()
-  for (const [i, s] of cols.scenes.entries())
-    for (const root of needIndexList(s, 'nodes', nodeCount, 'node', `$.scenes[${i}]`, out)) roots.add(root)
+  for (const [i, s] of cols.scenes.entries()) {
+    const listed = needIndexList(s, 'nodes', nodeCount, 'node', `$.scenes[${i}]`, out)
+    if (new Set(listed).size !== listed.length) out.push(v('SECURITY', `$.scenes[${i}].nodes`, 'a scene lists the same node twice'))
+    for (const root of listed) roots.add(root)
+  }
 
   const parent = new Map<number, number>()
   const children: number[][] = cols.nodes.map(() => [])
@@ -1047,6 +1059,8 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
     needNumbers(node, 'matrix', 16, where, out)
     if (node['weights'] !== undefined && !(Array.isArray(node['weights']) && node['weights'].every(isFiniteNumber)))
       out.push(v('SECURITY', `${where}.weights`, 'weights must be finite numbers'))
+    else if (Array.isArray(node['weights']) && isIndex(node['mesh'], cols.meshes.length) && node['weights'].length !== morphTargets(cols.meshes[node['mesh']] ?? {}))
+      out.push(v('SECURITY', `${where}.weights`, `weights has ${node['weights'].length} entries but the mesh has ${morphTargets(cols.meshes[node['mesh']] ?? {})} morph targets`))
   }
   // A node whose parent chain never ends is in a cycle. 0 = unseen, 1 = on the current chain, 2 = settled.
   const state = new Array<number>(nodeCount).fill(0)
@@ -1083,12 +1097,19 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
       if (skin !== null) usedSkins.add(skin)
     }
   }
+  const jointNodes = new Set<number>()
+  const animatedNodes = new Set<number>()
   for (const [i, skin] of cols.skins.entries()) {
     const where = `$.skins[${i}]`
     const matrices = needIndex(skin, 'inverseBindMatrices', cols.accessors.length, 'accessor', where, out)
     if (matrices !== null) usedAccessors.add(matrices)
     needIndex(skin, 'skeleton', nodeCount, 'node', where, out)
-    needIndexList(skin, 'joints', nodeCount, 'node', where, out)
+    const joints = needIndexList(skin, 'joints', nodeCount, 'node', where, out)
+    for (const joint of joints) jointNodes.add(joint)
+    if (new Set(joints).size !== joints.length) out.push(v('SECURITY', `${where}.joints`, 'a skin lists the same joint twice'))
+    if (joints.length > MAX_JOINTS) out.push(v('SECURITY', `${where}.joints`, `a skin has ${joints.length} joints, over the ${MAX_JOINTS} cap`))
+    const bind = matrices === null ? undefined : cols.accessors[matrices]
+    if (bind && (bind['type'] !== 'MAT4' || bind['componentType'] !== FLOAT)) out.push(v('SECURITY', `${where}.inverseBindMatrices`, 'inverseBindMatrices must be a MAT4 accessor of floats'))
     if (!usedSkins.has(i)) unreachable(where, 'skin')
   }
 
@@ -1097,6 +1118,8 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
     const where = `$.meshes[${i}]`
     if (mesh['weights'] !== undefined && !(Array.isArray(mesh['weights']) && mesh['weights'].every(isFiniteNumber)))
       out.push(v('SECURITY', `${where}.weights`, 'weights must be finite numbers'))
+    else if (Array.isArray(mesh['weights']) && mesh['weights'].length !== morphTargets(mesh))
+      out.push(v('SECURITY', `${where}.weights`, `weights has ${mesh['weights'].length} entries but the mesh has ${morphTargets(mesh)} morph targets`))
     if (!usedMeshes.has(i)) unreachable(where, 'mesh')
     for (const [j, primitive] of arr(mesh['primitives']).entries()) {
       const at = `${where}.primitives[${j}]`
@@ -1166,6 +1189,7 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
   for (const [i, animation] of cols.animations.entries()) {
     const where = `$.animations[${i}]`
     const samplers = arr(animation['samplers'])
+    const usedSamplerSlots = new Set<number>()
     for (const [j, sampler] of samplers.entries()) {
       const at = `${where}.samplers[${j}]`
       needOneOf(sampler, 'interpolation', INTERPOLATIONS, at, out)
@@ -1183,7 +1207,9 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
       const sampler = needIndex(channel, 'sampler', samplers.length, 'animation sampler', at, out)
       const target = channel['target']
       if (!isObj(target)) continue
-      needIndex(target, 'node', nodeCount, 'node', `${at}.target`, out)
+      const animated = needIndex(target, 'node', nodeCount, 'node', `${at}.target`, out)
+      if (animated !== null) animatedNodes.add(animated)
+      if (sampler !== null) usedSamplerSlots.add(sampler)
       needOneOf(target, 'path', Object.keys(PATH_COMPONENTS), `${at}.target`, out)
       const output = sampler === null ? undefined : samplers[sampler]?.['output']
       const outputAccessor = isIndex(output, cols.accessors.length) ? cols.accessors[output] : undefined
@@ -1191,9 +1217,24 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
       if (outputAccessor && wanted !== undefined && lookup(TYPE_COMPONENTS, outputAccessor['type']) !== wanted)
         out.push(v('SECURITY', `${at}.target.path`, `path ${named(target['path'])} needs an output accessor of ${wanted} components per key`))
     }
+    for (let j = 0; j < samplers.length; j++)
+      if (!usedSamplerSlots.has(j)) out.push(v('SECURITY', `${where}.samplers[${j}]`, 'animation sampler is not used by any channel'))
+  }
+
+  // A leaf that draws nothing, deforms nothing and moves nothing is a node that exists to carry a name or a payload.
+  for (const [i, node] of cols.nodes.entries()) {
+    const leaf = (children[i] ?? []).length === 0
+    if (leaf && !isIndex(node['mesh'], cols.meshes.length) && !jointNodes.has(i) && !animatedNodes.has(i))
+      out.push(v('SECURITY', `$.nodes[${i}]`, 'leaf node has no mesh, is not a joint and is not animated'))
   }
 
   return { usedAccessors, imageViews }
+}
+
+/** Morph targets of a mesh: its first primitive's count (the spec wants every primitive to agree). */
+function morphTargets(mesh: Json): number {
+  const first = arr(mesh['primitives'])[0]
+  return Array.isArray(first?.['targets']) ? first['targets'].length : 0
 }
 
 // ---------------------------------------------------------------------------------------------

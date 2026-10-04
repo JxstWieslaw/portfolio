@@ -3,6 +3,9 @@
  * Round 2 of the scanner review: values and reachability, not only structure. Every test names the
  * rule it pins and asserts the exact message, so removing the rule fails it by name.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it, beforeAll } from 'vitest'
 
 import { buildVariant, loadToolchain, stripGlbMetadata } from '../../scripts/assets/pipeline'
@@ -49,16 +52,16 @@ describe('A1: ReDoS and the length cap', () => {
       1,
     )
 
-  it('scans a 100 000 character string with no "@" in well under a second (the old address pattern took 5.7 s at 80 000)', () => {
-    const bytes = mutate(gyroscope, (json) => void ((at(json, 'nodes')[0] as Json)['name'] = 'a'.repeat(100_000)))
+  it('scans a 60 000 character string with no "@" in well under a second (the old address pattern took 5.7 s at 80 000)', () => {
+    const bytes = mutate(gyroscope, (json) => void ((at(json, 'nodes')[0] as Json)['name'] = 'a'.repeat(60_000)))
     const started = performance.now()
     const found = scanGlb(bytes, 'g', 1)
     expect(performance.now() - started).toBeLessThan(1_000)
     expect(messages(found)).toEqual(['names must be stripped', 'string is longer than 64 characters'])
   })
 
-  it('scans a 100 000 character key, and a long run of "@", just as fast', () => {
-    for (const hostile of ['x'.repeat(100_000), '@'.repeat(100_000), `${'a.'.repeat(50_000)}@`]) {
+  it('scans a 60 000 character key, and a long run of "@", just as fast', () => {
+    for (const hostile of ['x'.repeat(60_000), '@'.repeat(60_000), `${'a.'.repeat(30_000)}@`]) {
       const started = performance.now()
       const found = withName(hostile, 'key')
       expect(performance.now() - started).toBeLessThan(1_000)
@@ -117,6 +120,7 @@ describe('A2: everything is read by something', () => {
         `$.materials[2]: material is not reachable from any scene`,
         `$.meshes[2]: mesh is not reachable from any scene`,
         `$.nodes[4]: node is not reachable from any scene`,
+        `$.nodes[4]: leaf node has no mesh, is not a joint and is not animated`,
         `$.samplers[1]: sampler is not reachable from any scene`,
         `$.textures[2]: texture is not reachable from any scene`,
       ].sort(),
@@ -145,12 +149,12 @@ describe('A2: everything is read by something', () => {
       packGlb({ asset: { version: '2.0' }, scenes: [{ nodes: [0, 1] }], nodes: [{ children: [2] }, { children: [2] }, {}] }, null),
       'g',
     )
-    expect(messages(twice)).toEqual(['node has more than one parent'])
+    expect(messages(twice)).toEqual(['leaf node has no mesh, is not a joint and is not animated', 'node has more than one parent'])
     const root = scanGlb(
       packGlb({ asset: { version: '2.0' }, scenes: [{ nodes: [0, 1] }], nodes: [{ children: [1] }, {}] }, null),
       'g',
     )
-    expect(messages(root)).toEqual(['node has more than one parent'])
+    expect(messages(root)).toEqual(['leaf node has no mesh, is not a joint and is not animated', 'node has more than one parent'])
   })
 
   it('SECURITY: a scene index that is out of range, fractional or negative', () => {
@@ -588,6 +592,119 @@ describe('A5: meshopt views', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// The cheap structural cross-checks
+// ---------------------------------------------------------------------------------------------
+
+describe('cheap cross-checks: json size, weights, joints, samplers, leaves', () => {
+  /** A scene, one node drawing one mesh with `targets` morph targets: clean until a case breaks it. */
+  const graph = (change: (json: Json) => void = () => undefined, targets = 0): Violation[] => {
+    const accessor = { componentType: 5126, count: 3, type: 'VEC3' }
+    const json: Json = {
+      asset: { version: '2.0' },
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, ...(targets > 0 ? { targets: Array.from({ length: targets }, () => ({ POSITION: 0 })) } : {}) }] }],
+      accessors: [accessor],
+    }
+    change(json)
+    return scanGlb(packGlb(json, null), 'g')
+  }
+  const text = (found: readonly Violation[]) => messages(found)
+
+  it('passes the clean baseline', () => {
+    expect(graph()).toEqual([])
+    expect(graph(() => undefined, 2)).toEqual([])
+  })
+
+  it('SECURITY: a JSON chunk over 64 KiB is refused before it is parsed, and exactly 64 KiB is not', () => {
+    const pad = (bytes: number): string => `{"asset":{"version":"2.0"},"scenes":[]${' '.repeat(bytes)}}`
+    const base = pad(0).length
+    expect(() => parseGlb(rawGlb(pad(65_536 - base), null))).not.toThrow()
+    expect(() => parseGlb(rawGlb(pad(65_537 - base), null))).toThrow(GlbFormatError)
+    expect(() => parseGlb(rawGlb(pad(65_537 - base), null))).toThrow(/^JSON chunk is 65540 bytes, over the 65536 byte cap$/)
+  })
+
+  it('SECURITY: node.weights and mesh.weights must have one entry per morph target', () => {
+    expect(graph((j) => void (((j['nodes'] as Json[])[0] as Json)['weights'] = [0.5, 0.5]), 2)).toEqual([])
+    expect(text(graph((j) => void (((j['nodes'] as Json[])[0] as Json)['weights'] = [0.5]), 2))).toEqual(['weights has 1 entries but the mesh has 2 morph targets'])
+    expect(text(graph((j) => void (((j['meshes'] as Json[])[0] as Json)['weights'] = [0.5, 0.5, 0.5]), 2))).toEqual(['weights has 3 entries but the mesh has 2 morph targets'])
+    expect(text(graph((j) => void (((j['meshes'] as Json[])[0] as Json)['weights'] = [0.5]), 0))).toEqual(['weights has 1 entries but the mesh has 0 morph targets'])
+  })
+
+  const skinned = (joints: number[], nodes = 4, more: (j: Json) => void = () => undefined): Violation[] =>
+    graph((j) => {
+      ;(j['nodes'] as Json[]).length = 0
+      ;(j['nodes'] as Json[]).push({ mesh: 0, skin: 0, children: Array.from({ length: nodes - 1 }, (_, i) => i + 1) }, ...Array.from({ length: nodes - 1 }, () => ({})))
+      j['skins'] = [{ joints, inverseBindMatrices: 1 }]
+      ;(j['accessors'] as Json[]).push({ componentType: 5126, count: joints.length, type: 'MAT4' })
+      more(j)
+    })
+
+  it('passes a skin whose joints are leaf nodes and whose bind matrices are MAT4 floats', () => {
+    expect(skinned([1, 2, 3])).toEqual([])
+  })
+
+  it('SECURITY: a skin that lists a joint twice', () => {
+    expect(text(skinned([1, 2, 3, 3]))).toEqual(['a skin lists the same joint twice'])
+  })
+
+  it('SECURITY: a skin with more than 256 joints', () => {
+    const many = 258
+    const found = skinned(Array.from({ length: many - 1 }, (_, i) => i + 1), many)
+    expect(text(found)).toEqual([`a skin has ${many - 1} joints, over the 256 cap`])
+    expect(skinned(Array.from({ length: 256 }, (_, i) => i + 1), 257)).toEqual([])
+  })
+
+  it('SECURITY: inverseBindMatrices that are not a MAT4 of floats', () => {
+    const bad = 'inverseBindMatrices must be a MAT4 accessor of floats'
+    expect(text(skinned([1, 2, 3], 4, (j) => void (((j['accessors'] as Json[])[1] as Json)['type'] = 'VEC4')))).toEqual([bad])
+    expect(text(skinned([1, 2, 3], 4, (j) => void (((j['accessors'] as Json[])[1] as Json)['componentType'] = 5123)))).toEqual([bad])
+  })
+
+  it('SECURITY: a scene that lists the same node twice', () => {
+    expect(text(graph((j) => void (((j['scenes'] as Json[])[0] as Json)['nodes'] = [0, 0])))).toEqual(['a scene lists the same node twice'])
+  })
+
+  const animated = (change: (animation: Json) => void = () => undefined): Violation[] =>
+    graph((j) => {
+      ;(j['accessors'] as Json[]).push({ componentType: 5126, count: 2, type: 'SCALAR', max: [1], min: [0] }, { componentType: 5126, count: 2, type: 'VEC3' })
+      const animation: Json = {
+        name: 'idle',
+        samplers: [{ input: 1, output: 2, interpolation: 'LINEAR' }],
+        channels: [{ sampler: 0, target: { node: 0, path: 'translation' } }],
+      }
+      change(animation)
+      j['animations'] = [animation]
+    })
+
+  it('passes an animation whose every sampler a channel uses', () => {
+    expect(animated()).toEqual([])
+  })
+
+  it('SECURITY: a sampler that no channel uses (its keyframes would be carried for nothing)', () => {
+    const found = animated((a) => void (a['samplers'] as Json[]).push({ input: 1, output: 2, interpolation: 'LINEAR' }))
+    expect(text(found)).toEqual(['animation sampler is not used by any channel'])
+    expect(subjects(found)).toEqual(['$.animations[0].samplers[1]'])
+  })
+  it('SECURITY: a leaf node that has no mesh, is not a joint and is not animated; an animated one is fine', () => {
+    const leaf = 'leaf node has no mesh, is not a joint and is not animated'
+    const withChild = (j: Json) => {
+      ;((j['nodes'] as Json[])[0] as Json)['children'] = [1]
+      ;(j['nodes'] as Json[]).push({})
+    }
+    expect(text(graph(withChild))).toEqual([leaf])
+    const animatedChild = (j: Json) => {
+      withChild(j)
+      ;(j['accessors'] as Json[]).push({ componentType: 5126, count: 2, type: 'SCALAR', max: [1], min: [0] }, { componentType: 5126, count: 2, type: 'VEC3' })
+      j['animations'] = [
+        { name: 'idle', samplers: [{ input: 1, output: 2, interpolation: 'LINEAR' }], channels: [{ sampler: 0, target: { node: 1, path: 'translation' } }] },
+      ]
+    }
+    expect(text(graph(animatedChild))).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // A6: smaller findings
 // ---------------------------------------------------------------------------------------------
 
@@ -637,6 +754,20 @@ describe('A6: smaller findings', () => {
     expect(printable('plain text 123')).toBe('plain text 123')
   })
 
+  it('printable() also removes the bidirectional controls that reorder a log line (U+202A-202E, U+2066-2069)', () => {
+    for (const code of [0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069])
+      expect(printable(`a${String.fromCharCode(code)}b`), code.toString(16)).toBe('a b')
+  })
+
+  it('every console line that prints an error, a mismatch or a file name in ingest.ts and fetch.ts passes through printable()', () => {
+    for (const file of ['ingest.ts', 'fetch.ts']) {
+      const text = readFileSync(path.join(__dirname, '..', '..', 'scripts', 'assets', file), 'utf8')
+      const sinks = text.split(String.fromCharCode(10)).filter((l) => /console\.(error|log)\(/.test(l) && /describeError|\$\{c\.id\}|\$\{m\}|\(line\)|\$\{name\}/.test(l))
+      expect(sinks.length, file).toBeGreaterThan(0)
+      expect(sinks.filter((l) => !l.includes('printable(')), file).toEqual([])
+    }
+  })
+
   it('quote() escapes and cuts at 80 characters', () => {
     expect(quote('a\nb')).toBe('"a\\nb"')
     expect(quote('x'.repeat(500))).toHaveLength(80)
@@ -646,7 +777,7 @@ describe('A6: smaller findings', () => {
     const deep = (levels: number): string => `{"asset":{"version":"2.0"},"scenes":${'['.repeat(levels)}${']'.repeat(levels)}}`
 
     it('scanGlb refuses a file nested past 64 levels, however deep', () => {
-      for (const levels of [70, 5_000, 100_000]) {
+      for (const levels of [70, 5_000, 30_000]) {
         const found = scanGlb(rawGlb(deep(levels), null), 'g')
         expect(messages(found), String(levels)).toEqual(['JSON nests deeper than 64 levels'])
         expect(found[0]?.code).toBe('SECURITY')
@@ -660,7 +791,7 @@ describe('A6: smaller findings', () => {
     })
 
     it('stripGlbMetadata (dropExtras) throws a GlbFormatError, never a RangeError', () => {
-      const bytes = rawGlb(deep(100_000), null)
+      const bytes = rawGlb(deep(30_000), null)
       expect(() => stripGlbMetadata(bytes)).toThrow(GlbFormatError)
       expect(() => stripGlbMetadata(bytes)).toThrow('JSON nests deeper than 64 levels')
     })

@@ -10,11 +10,17 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+/** The marker the three toolchain modules carry; a test pins that they all spell it this way. */
+export const ASSET_TOOLCHAIN_CANARY = '__asset-toolchain-7f3a__'
+
 /** What the toolchain leaves behind in a bundle. `sharp` is matched as a module name, not as the English word. */
 export const FORBIDDEN: readonly (readonly [label: string, pattern: RegExp])[] = [
   ['@gltf-transform', /@gltf-transform\//],
   ['sharp', /(?:require|import)\s*\(\s*["'`]sharp["'`]|from\s*["']sharp["']|@img\/sharp|sharp-(?:libvips|win32|linux|darwin)|["'`]sharp\/lib/],
-  ['meshoptimizer', /meshoptimizer/],
+  // Encoder and simplifier only: a runtime meshopt DECODER is legitimate in the client, so the bare package name is not.
+  ['meshopt encoder or simplifier', /MeshoptEncoder|MeshoptSimplifier|meshopt_encoder|meshopt_simplifier/],
+  // Names do not survive a minifier, a string value does: this constant is exported from validators.ts, pipeline.ts and images.ts.
+  ['asset toolchain marker', new RegExp(ASSET_TOOLCHAIN_CANARY)],
 ]
 
 export interface BundleFinding {
