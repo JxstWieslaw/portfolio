@@ -138,6 +138,24 @@ describe('clearSphere', () => {
     expect(bundle.position).toEqual(buildModelBundle('monolith', INSTANCE_CAPACITY).position)
   })
 
+  it('moves a cube exactly at the centre onto the shell, deterministically, whatever its seed', () => {
+    const base = buildModelBundle('monolith', INSTANCE_CAPACITY)
+    for (const seed of [0, 0.25, 0.5, 0.999, 1]) {
+      const bundle = { ...base, position: new Float32Array(base.position), seed: new Float32Array(base.seed) }
+      bundle.position.set(centre, 0)
+      bundle.seed[0] = seed
+      const { bundle: cleared, moved } = clearSphere(bundle, centre, 0.3, 0.36)
+      expect(moved).toBeGreaterThan(0)
+      const d = Math.hypot(
+        (cleared.position[0] ?? 0) - centre[0],
+        (cleared.position[1] ?? 0) - centre[1],
+        (cleared.position[2] ?? 0) - centre[2],
+      )
+      expect(d).toBeCloseTo(0.36, 5)
+      expect(clearSphere(bundle, centre, 0.3, 0.36).bundle.position.slice(0, 3)).toEqual(cleared.position.slice(0, 3))
+    }
+  })
+
   it('moves nothing when the radius is 0 and returns the same positions', () => {
     const bundle = buildModelBundle('orbit', INSTANCE_CAPACITY)
     const { bundle: cleared, moved } = clearSphere(bundle, centre, 0)
