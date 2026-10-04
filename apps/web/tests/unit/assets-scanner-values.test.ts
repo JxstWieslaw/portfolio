@@ -8,9 +8,11 @@ import path from 'node:path'
 
 import { describe, expect, it, beforeAll } from 'vitest'
 
-import { buildVariant, loadToolchain, stripGlbMetadata } from '../../scripts/assets/pipeline'
+import { IngestRejected, buildVariant, loadToolchain, stripGlbMetadata } from '../../scripts/assets/pipeline'
 import {
   GlbFormatError,
+  JSON_CAP_BYTES,
+  buildReport,
   elementBytes,
   MAX_ACCESSOR_COUNT,
   packGlb,
@@ -49,13 +51,13 @@ describe('A1: ReDoS and the length cap', () => {
         else node[value] = 1
       }),
       'g',
-      1,
+      3,
     )
 
   it('scans a 60 000 character string with no "@" in well under a second (the old address pattern took 5.7 s at 80 000)', () => {
     const bytes = mutate(gyroscope, (json) => void ((at(json, 'nodes')[0] as Json)['name'] = 'a'.repeat(60_000)))
     const started = performance.now()
-    const found = scanGlb(bytes, 'g', 1)
+    const found = scanGlb(bytes, 'g', 3)
     expect(performance.now() - started).toBeLessThan(1_000)
     expect(messages(found)).toEqual(['names must be stripped', 'string is longer than 64 characters'])
   })
@@ -270,8 +272,50 @@ describe('A2: everything is read by something', () => {
 
     it('a MAT3 of unsigned bytes needs 12 bytes an element, so a tight 9 byte view is short', () => {
       const mat = { bufferView: 0, componentType: 5121, count: 1, type: 'MAT3' }
-      expect(messages(scan({ bufferViews: [view(0, 12)], accessors: [mat], binLength: 12 }))).toEqual([])
-      expect(messages(scan({ bufferViews: [view(0, 9)], accessors: [mat], binLength: 12 }))).toEqual(['accessor reads 12 bytes but its bufferView holds 9'])
+      const only = 'matrix accessors are only allowed as skin inverseBindMatrices'
+      const floats = 'matrix accessors must be floats (column padding would hide bytes)'
+      expect(messages(scan({ bufferViews: [view(0, 12)], accessors: [mat], binLength: 12 }))).toEqual([floats, only].sort())
+      expect(messages(scan({ bufferViews: [view(0, 9)], accessors: [mat], binLength: 12 }))).toEqual(['accessor reads 12 bytes but its bufferView holds 9', floats, only].sort())
+    })
+  })
+
+  describe('matrix accessors hide column padding, so only skin inverseBindMatrices may be matrices, and only floats', () => {
+    const ONLY = 'matrix accessors are only allowed as skin inverseBindMatrices'
+    const FLOATS = 'matrix accessors must be floats (column padding would hide bytes)'
+
+    it('SECURITY: a MAT2 of unsigned bytes in a plain view, with non-zero bytes in the column padding', () => {
+      const mat = { bufferView: 0, componentType: 5121, count: 1, type: 'MAT2' }
+      expect(messages(scan({ bufferViews: [view(0, 8)], accessors: [mat], binLength: 8, patch: { 2: 0x41, 3: 0x42 } }))).toEqual([FLOATS, ONLY].sort())
+    })
+
+    it('SECURITY: a MAT3 of unsigned shorts, which pads each column from 6 to 8 bytes', () => {
+      const mat = { bufferView: 0, componentType: 5123, count: 1, type: 'MAT3' }
+      expect(messages(scan({ bufferViews: [view(0, 24)], accessors: [mat], binLength: 24 }))).toEqual([FLOATS, ONLY].sort())
+    })
+
+    it('SECURITY: a float MAT4 that no skin reads as inverseBindMatrices', () => {
+      const mat = { bufferView: 0, componentType: 5126, count: 1, type: 'MAT4' }
+      expect(messages(scan({ bufferViews: [view(0, 64)], accessors: [mat], binLength: 64 }))).toEqual([ONLY])
+    })
+
+    it('passes a real inverseBindMatrices accessor: a float MAT4 in a tight plain view', () => {
+      const bytes = packGlb(
+        {
+          asset: { version: '2.0' },
+          scenes: [{ nodes: [0] }],
+          nodes: [{ mesh: 0, skin: 0, children: [1] }, {}],
+          meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+          skins: [{ joints: [1], inverseBindMatrices: 1 }],
+          accessors: [
+            { componentType: 5126, count: 3, type: 'VEC3' },
+            { bufferView: 0, componentType: 5126, count: 1, type: 'MAT4' },
+          ],
+          bufferViews: [view(0, 64)],
+          buffers: [{ byteLength: 64 }],
+        },
+        new Uint8Array(64),
+      )
+      expect(scanGlb(bytes, 'g')).toEqual([])
     })
   })
 
@@ -616,13 +660,33 @@ describe('cheap cross-checks: json size, weights, joints, samplers, leaves', () 
     expect(graph(() => undefined, 2)).toEqual([])
   })
 
-  it('SECURITY: a JSON chunk over 64 KiB is refused before it is parsed, and exactly 64 KiB is not', () => {
+  it('SECURITY: the JSON chunk is capped per tier (24 / 64 / 160 KiB) from its header, before it is parsed', () => {
     const pad = (bytes: number): string => `{"asset":{"version":"2.0"},"scenes":[]${' '.repeat(bytes)}}`
     const base = pad(0).length
-    expect(() => parseGlb(rawGlb(pad(65_536 - base), null))).not.toThrow()
-    expect(() => parseGlb(rawGlb(pad(65_537 - base), null))).toThrow(GlbFormatError)
-    expect(() => parseGlb(rawGlb(pad(65_537 - base), null))).toThrow(/^JSON chunk is 65540 bytes, over the 65536 byte cap$/)
+    for (const [tier, cap] of [[1, 24_576], [2, 65_536], [3, 163_840]] as const) {
+      expect(JSON_CAP_BYTES[tier]).toBe(cap)
+      expect(() => scanGlb(rawGlb(pad(cap - base), null), 'g', tier), `tier ${tier} at the cap`).not.toThrow()
+      expect(() => scanGlb(rawGlb(pad(cap + 1 - base), null), 'g', tier)).toThrow(GlbFormatError)
+      expect(() => scanGlb(rawGlb(pad(cap + 1 - base), null), 'g', tier)).toThrow(new RegExp(`^JSON chunk is ${cap + 4} bytes, over the ${cap} byte cap$`))
+      expect(() => buildReport(rawGlb(pad(cap + 1 - base), null), tier)).toThrow(GlbFormatError)
+    }
+    // With no tier the largest cap applies; a tier 3 sized file passes a tier 3 scan but not a tier 1 scan.
+    expect(() => parseGlb(rawGlb(pad(100_000), null))).not.toThrow()
+    expect(() => scanGlb(rawGlb(pad(100_000), null), 'g', 1)).toThrow(GlbFormatError)
   })
+
+  it('an ingest whose written JSON is over the tier cap is an IngestRejected with a reason, not a GlbFormatError', async () => {
+    const tc = await loadToolchain()
+    const doc = await richDoc(2)
+    // 1200 instances of the small mesh: about 85 KB of node JSON, far over tier 1's 24 KiB, but few triangles.
+    const cap = doc.getRoot().listMeshes().find((m) => m.listPrimitives().length === 1 && (m.listPrimitives()[0]?.getAttribute('POSITION')?.getCount() ?? 0) === 4)
+    const parent = doc.getRoot().listNodes()[0]
+    for (let i = 0; i < 1200; i++) parent?.addChild(doc.createNode().setMesh(cap ?? null).setTranslation([i, 0.5, 0.25]))
+    const error = await buildVariant(tc, doc, { subject: 'big', tier: 1, clips: [{ from: 'idle', as: 'idle' }] }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(IngestRejected)
+    expect(error).not.toBeInstanceOf(GlbFormatError)
+    expect((error as IngestRejected).violations.map((x) => [x.code, x.message.replace(/\d+ bytes,/, 'N bytes,')])).toEqual([['BYTES', 'tier 1: JSON chunk is N bytes, over the 24576 byte cap']])
+  }, 120_000)
 
   it('SECURITY: node.weights and mesh.weights must have one entry per morph target', () => {
     expect(graph((j) => void (((j['nodes'] as Json[])[0] as Json)['weights'] = [0.5, 0.5]), 2)).toEqual([])
@@ -658,7 +722,32 @@ describe('cheap cross-checks: json size, weights, joints, samplers, leaves', () 
   it('SECURITY: inverseBindMatrices that are not a MAT4 of floats', () => {
     const bad = 'inverseBindMatrices must be a MAT4 accessor of floats'
     expect(text(skinned([1, 2, 3], 4, (j) => void (((j['accessors'] as Json[])[1] as Json)['type'] = 'VEC4')))).toEqual([bad])
-    expect(text(skinned([1, 2, 3], 4, (j) => void (((j['accessors'] as Json[])[1] as Json)['componentType'] = 5123)))).toEqual([bad])
+    expect(text(skinned([1, 2, 3], 4, (j) => void (((j['accessors'] as Json[])[1] as Json)['componentType'] = 5123)))).toEqual([bad, 'matrix accessors must be floats (column padding would hide bytes)'].sort())
+  })
+
+  it('SECURITY: weights on a node that has no mesh (a joint or a bare node could carry kilobytes of floats)', () => {
+    const plain = (j: Json) => void (((j['nodes'] as Json[])[0] as Json)['children'] = [1])
+    const found = graph((j) => {
+      plain(j)
+      ;(j['nodes'] as Json[]).push({ weights: new Array<number>(3000).fill(0.5) })
+    })
+    expect(text(found)).toEqual(['leaf node has no mesh, is not a joint and is not animated', 'weights need a mesh'].sort())
+    const asJoint = skinned([1, 2, 3], 4, (j) => void (((j['nodes'] as Json[])[1] as Json)['weights'] = [0.5]))
+    expect(text(asJoint)).toEqual(['weights need a mesh'])
+  })
+
+  it('SECURITY: the primitives of one mesh must agree on the number of morph targets, and weights must match all of them', () => {
+    const two = (j: Json) => {
+      const primitives = ((j['meshes'] as Json[])[0] as Json)['primitives'] as Json[]
+      primitives.push({ attributes: { POSITION: 0 }, targets: [{ POSITION: 0 }, { POSITION: 0 }] })
+    }
+    expect(text(graph(two))).toEqual(['primitives of a mesh disagree on the number of morph targets'])
+    const matching = (j: Json) => {
+      two(j)
+      ;(((j['meshes'] as Json[])[0] as Json)['primitives'] as Json[])[0] = { attributes: { POSITION: 0 }, targets: [{ POSITION: 0 }, { POSITION: 0 }] }
+    }
+    expect(graph(matching)).toEqual([])
+    expect(text(graph((j) => (matching(j), void (((j['meshes'] as Json[])[0] as Json)['weights'] = [0.5]))))).toEqual(['weights has 1 entries but the mesh has 2 morph targets'])
   })
 
   it('SECURITY: a scene that lists the same node twice', () => {
@@ -754,8 +843,8 @@ describe('A6: smaller findings', () => {
     expect(printable('plain text 123')).toBe('plain text 123')
   })
 
-  it('printable() also removes the bidirectional controls that reorder a log line (U+202A-202E, U+2066-2069)', () => {
-    for (const code of [0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069])
+  it('printable() also removes the bidirectional and zero-width controls that disguise a log line (U+202A-202E, U+2066-2069, U+200B-200F, U+061C, U+FEFF)', () => {
+    for (const code of [0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0x200e, 0x200f, 0x061c, 0x200b, 0x200c, 0x200d, 0xfeff])
       expect(printable(`a${String.fromCharCode(code)}b`), code.toString(16)).toBe('a b')
   })
 

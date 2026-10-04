@@ -38,8 +38,10 @@ import { buildGyroscope } from './generators/gyroscope'
 import { type Layout, type SourceEntry } from './sources'
 import {
   GlbFormatError,
+  JSON_CAP_BYTES,
   MAX_JSON_DEPTH,
   buildReport,
+  describeError,
   deriveVariantMeta,
   elementExtensionNames,
   materialsMessage,
@@ -86,7 +88,10 @@ export interface Toolchain {
 
 /** Loads the WASM codecs once and builds the NodeIO every read and write goes through. */
 export async function loadToolchain(): Promise<Toolchain> {
-  await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready, MeshoptSimplifier.ready])
+  // The marker prefixes the failure, and is a runtime use that keeps the string in any bundle that keeps this function.
+  await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready, MeshoptSimplifier.ready]).catch((error: unknown) => {
+    throw new Error(`${ASSET_TOOLCHAIN_CANARY} loadToolchain: ${describeError(error)}`, { cause: error })
+  })
   const io = new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({
@@ -233,11 +238,17 @@ function strip(
   // A channel that targets a node outside the kept scene would keep that node alive in the file, unreachable.
   const reachable = new Set<unknown>()
   keep.traverse((node) => void reachable.add(node))
+  const channelsInSource = new Map(root.listAnimations().map((a) => [a, a.listChannels().length]))
   for (const animation of root.listAnimations()) {
+    let dropped = 0
     for (const channel of animation.listChannels()) {
       const target = channel.getTargetNode()
-      if (target && !reachable.has(target)) channel.dispose()
+      if (target && !reachable.has(target)) {
+        channel.dispose()
+        dropped += 1
+      }
     }
+    if (dropped > 0) log?.(`  dropping ${dropped} channel(s) of ${printable(quote(animation.getName()))}: they target nodes outside the kept scene`)
     for (const sampler of animation.listSamplers()) {
       if (!animation.listChannels().some((c) => c.getSampler() === sampler)) sampler.dispose()
     }
@@ -268,8 +279,13 @@ function strip(
       throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message: `clip ${quote(from)} not found in the source` }])
   }
   for (const animation of root.listAnimations()) {
-    if (animation.listChannels().length === 0)
-      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message: `clip ${quote(animation.getName())} only animates nodes outside the kept scene` }])
+    if (animation.listChannels().length === 0) {
+      const empty = channelsInSource.get(animation) === 0
+      const message = empty
+        ? `clip ${quote(animation.getName())} has no channels in the source`
+        : `clip ${quote(animation.getName())} only animates nodes outside the kept scene`
+      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message }])
+    }
   }
 
   const violations: Violation[] = []
@@ -308,8 +324,8 @@ function normalise(doc: Document, subject: string): void {
 const NAMED_COLLECTIONS = ['scenes', 'nodes', 'meshes', 'materials', 'accessors', 'bufferViews', 'buffers', 'images', 'textures', 'samplers', 'skins'] as const
 
 /** Removes every `extras` key and all metadata the writer adds, from the written bytes. Deterministic. */
-export function stripGlbMetadata(bytes: Uint8Array): Uint8Array {
-  const { json, bin } = parseGlb(bytes)
+export function stripGlbMetadata(bytes: Uint8Array, tier?: ModelTier): Uint8Array {
+  const { json, bin } = parseGlb(bytes, tier ? JSON_CAP_BYTES[tier] : undefined)
   const clean = dropExtras(json, 0) as Record<string, unknown>
   clean['asset'] = { version: '2.0' }
   // extensionsUsed is exactly the set of extensions some element carries a body for, sorted. gltf-transform
@@ -375,6 +391,7 @@ export interface BuildOptions {
 
 export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOptions): Promise<BuiltVariant> {
   const { subject, tier } = opts
+  if (!(tier in MODEL_BUDGETS)) throw new Error(`${ASSET_TOOLCHAIN_CANARY} buildVariant: unknown tier ${String(tier)}`)
   const budget = MODEL_BUDGETS[tier]
   doc.setLogger(new Logger(Logger.Verbosity.WARN))
 
@@ -414,8 +431,15 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   await doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'high' }))
 
   densify(doc)
-  const bytes = stripGlbMetadata(await tc.io.writeBinary(doc))
-  const report = buildReport(bytes)
+  let bytes: Uint8Array
+  try {
+    bytes = stripGlbMetadata(await tc.io.writeBinary(doc), tier)
+  } catch (error) {
+    // The written JSON is bigger than this tier allows (or nests past the limit): a refusal with a reason, not a crash.
+    if (error instanceof GlbFormatError) throw new IngestRejected(subject, [{ code: 'BYTES', subject, message: `tier ${tier}: ${error.message}` }])
+    throw error
+  }
+  const report = buildReport(bytes, tier)
 
   const violations = [...validateReport(report, { subject, tier }), ...scanGlb(bytes, subject, tier)]
   if (violations.length > 0) throw new IngestRejected(subject, violations)

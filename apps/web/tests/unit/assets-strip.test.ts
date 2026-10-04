@@ -316,10 +316,12 @@ describe('L4: a multi-scene export with an animation', () => {
   }
 
   it('drops the channel that targets a node outside the kept scene, keeps the rest, and the file is clean', async () => {
-    const out = await buildVariant(tc, await roundTrip(twoScenes()), { subject, tier: 2, clips: [{ from: 'idle', as: 'idle' }] })
+    const lines: string[] = []
+    const out = await buildVariant(tc, await roundTrip(twoScenes()), { subject, tier: 2, clips: [{ from: 'idle', as: 'idle' }], log: (l) => lines.push(l) })
     expect(scanGlb(out.bytes, subject, 2)).toEqual([])
     const clip = list(jsonOf(out.bytes), 'animations')[0] ?? {}
     expect((clip['channels'] as unknown[]).length).toBe(1)
+    expect(lines).toEqual(['  dropping 1 channel(s) of "idle": they target nodes outside the kept scene'])
     expect(list(jsonOf(out.bytes), 'nodes').every((n) => !('name' in n))).toBe(true)
   }, 60_000)
 
@@ -331,5 +333,13 @@ describe('L4: a multi-scene export with an animation', () => {
     const error = await buildVariant(tc, await roundTrip(doc), { subject, tier: 2, clips: [{ from: 'idle', as: 'idle' }] }).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(IngestRejected)
     expect((error as IngestRejected).violations.map((x) => x.message)).toEqual(['clip "idle" only animates nodes outside the kept scene'])
+  }, 60_000)
+
+  it('a clip that has no channels at all in the source gets its own message', async () => {
+    const doc = uvSphere(8, 10)
+    doc.createAnimation('idle')
+    const error = await buildVariant(tc, await roundTrip(doc), { subject, tier: 2, clips: [{ from: 'idle', as: 'idle' }] }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(IngestRejected)
+    expect((error as IngestRejected).violations.map((x) => x.message)).toEqual(['clip "idle" has no channels in the source'])
   }, 60_000)
 })

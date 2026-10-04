@@ -74,7 +74,7 @@ const seg = (key: string): string => (/^[A-Za-z0-9_]{1,40}$/.test(key) ? `.${key
  */
 export function printable(text: string): string {
   // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, ' ')
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c\u200b-\u200d\ufeff]/g, ' ')
 }
 
 /** No string, key or JSON level in a committed GLB needs more than this. */
@@ -156,15 +156,20 @@ const CHUNK_BIN = 0x004e4942
 
 export class GlbFormatError extends Error {}
 
-/** Our own output's JSON is a few kilobytes; nothing real needs more, and a hostile chunk must not be parsed at any size. */
-export const MAX_JSON_BYTES = 64 * 1024
+/**
+ * Largest JSON chunk a file of each tier may have, checked from the chunk header BEFORE the text is parsed.
+ * The gyroscope is about 2 KB; a rigged, animated tier 3 character runs to 70 to 90 KB, so tier 3 has room.
+ */
+export const JSON_CAP_BYTES: Readonly<Record<ModelTier, number>> = { 1: 24 * 1024, 2: 64 * 1024, 3: 160 * 1024 }
+/** The cap when no tier is known: the largest, so only the tier-specific check can be stricter. */
+export const MAX_JSON_BYTES = JSON_CAP_BYTES[3]
 
 export interface GlbParts {
   readonly json: Record<string, unknown>
   readonly bin: Uint8Array | null
 }
 
-export function parseGlb(bytes: Uint8Array): GlbParts {
+export function parseGlb(bytes: Uint8Array, maxJsonBytes: number = MAX_JSON_BYTES): GlbParts {
   if (bytes.byteLength < 20) throw new GlbFormatError('file is too short to be a GLB')
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   if (view.getUint32(0, true) !== GLB_MAGIC) throw new GlbFormatError('missing glTF magic')
@@ -180,7 +185,7 @@ export function parseGlb(bytes: Uint8Array): GlbParts {
     const length = view.getUint32(offset, true)
     const type = view.getUint32(offset + 4, true)
     const start = offset + 8
-    if (index === 0 && length > MAX_JSON_BYTES) throw new GlbFormatError(`JSON chunk is ${length} bytes, over the ${MAX_JSON_BYTES} byte cap`)
+    if (index === 0 && length > maxJsonBytes) throw new GlbFormatError(`JSON chunk is ${length} bytes, over the ${maxJsonBytes} byte cap`)
     if (start + length > bytes.byteLength) throw new GlbFormatError('chunk runs past the end of the file')
     if (index === 0) {
       if (type !== CHUNK_JSON) throw new GlbFormatError('first chunk is not JSON')
@@ -405,13 +410,13 @@ function embeddedImages(json: Json, bin: Uint8Array | null): EmbeddedImage[] {
 }
 
 /** Every image of a GLB, read from its binary chunk. Throws GlbFormatError when one is not where its view says. */
-export function listImages(bytes: Uint8Array): EmbeddedImage[] {
-  const { json, bin } = parseGlb(bytes)
+export function listImages(bytes: Uint8Array, tier?: ModelTier): EmbeddedImage[] {
+  const { json, bin } = parseGlb(bytes, tier ? JSON_CAP_BYTES[tier] : undefined)
   return embeddedImages(json, bin)
 }
 
-export function buildReport(bytes: Uint8Array): GlbReport {
-  const { json, bin } = parseGlb(bytes)
+export function buildReport(bytes: Uint8Array, tier?: ModelTier): GlbReport {
+  const { json, bin } = parseGlb(bytes, tier ? JSON_CAP_BYTES[tier] : undefined)
   const accessors = arr(json['accessors'])
   const meshes = arr(json['meshes'])
   const meshTriangles = meshes.map((m) =>
@@ -719,7 +724,7 @@ const EXTENSION_BODY_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
 const EXTENSION_TEXTURES = ['transmissionTexture', 'thicknessTexture'] as const
 
 /** Custom `_UPPERCASE` attributes are legal glTF but unused by our renderer: `strip()` removes them, so one here is a finding. */
-const ATTRIBUTE_KEY = /^(?:POSITION|NORMAL|TANGENT|(?:TEXCOORD|COLOR|JOINTS|WEIGHTS)_\d+)$/
+const ATTRIBUTE_KEY = /^(?:POSITION|NORMAL|TANGENT|(?:TEXCOORD|COLOR|JOINTS|WEIGHTS)_(?:[0-9]|[1-9][0-9]))$/
 
 /** Extensions a collection element may carry, by collection. Any other contract extension there is misplaced. */
 const EXTENSIONS_ON: Readonly<Record<string, readonly string[]>> = {
@@ -1020,6 +1025,8 @@ function checkMaterialValues(material: Json, where: string, textureCount: number
  * bufferViews an image reads.
  */
 interface GraphFacts {
+  /** Accessors a skin reads as inverseBindMatrices: the only place a matrix accessor may appear. */
+  readonly ibmAccessors: ReadonlySet<number>
   readonly usedAccessors: ReadonlySet<number>
   readonly imageViews: ReadonlySet<number>
 }
@@ -1059,6 +1066,8 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
     needNumbers(node, 'matrix', 16, where, out)
     if (node['weights'] !== undefined && !(Array.isArray(node['weights']) && node['weights'].every(isFiniteNumber)))
       out.push(v('SECURITY', `${where}.weights`, 'weights must be finite numbers'))
+    else if (Array.isArray(node['weights']) && !isIndex(node['mesh'], cols.meshes.length))
+      out.push(v('SECURITY', `${where}.weights`, 'weights need a mesh'))
     else if (Array.isArray(node['weights']) && isIndex(node['mesh'], cols.meshes.length) && node['weights'].length !== morphTargets(cols.meshes[node['mesh']] ?? {}))
       out.push(v('SECURITY', `${where}.weights`, `weights has ${node['weights'].length} entries but the mesh has ${morphTargets(cols.meshes[node['mesh']] ?? {})} morph targets`))
   }
@@ -1098,11 +1107,15 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
     }
   }
   const jointNodes = new Set<number>()
+  const ibmAccessors = new Set<number>()
   const animatedNodes = new Set<number>()
   for (const [i, skin] of cols.skins.entries()) {
     const where = `$.skins[${i}]`
     const matrices = needIndex(skin, 'inverseBindMatrices', cols.accessors.length, 'accessor', where, out)
-    if (matrices !== null) usedAccessors.add(matrices)
+    if (matrices !== null) {
+      usedAccessors.add(matrices)
+      ibmAccessors.add(matrices)
+    }
     needIndex(skin, 'skeleton', nodeCount, 'node', where, out)
     const joints = needIndexList(skin, 'joints', nodeCount, 'node', where, out)
     for (const joint of joints) jointNodes.add(joint)
@@ -1121,6 +1134,8 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
     else if (Array.isArray(mesh['weights']) && mesh['weights'].length !== morphTargets(mesh))
       out.push(v('SECURITY', `${where}.weights`, `weights has ${mesh['weights'].length} entries but the mesh has ${morphTargets(mesh)} morph targets`))
     if (!usedMeshes.has(i)) unreachable(where, 'mesh')
+    if (new Set(arr(mesh['primitives']).map(targetCount)).size > 1)
+      out.push(v('SECURITY', `${where}.primitives`, 'primitives of a mesh disagree on the number of morph targets'))
     for (const [j, primitive] of arr(mesh['primitives']).entries()) {
       const at = `${where}.primitives[${j}]`
       needOneOf(primitive, 'mode', PRIMITIVE_MODES, at, out)
@@ -1228,13 +1243,15 @@ function scanGraph(json: Json, cols: Collections, out: Violation[]): GraphFacts 
       out.push(v('SECURITY', `$.nodes[${i}]`, 'leaf node has no mesh, is not a joint and is not animated'))
   }
 
-  return { usedAccessors, imageViews }
+  return { ibmAccessors, usedAccessors, imageViews }
 }
 
-/** Morph targets of a mesh: its first primitive's count (the spec wants every primitive to agree). */
+const targetCount = (primitive: Json): number => (Array.isArray(primitive['targets']) ? primitive['targets'].length : 0)
+
+/** Morph targets of a mesh: its first primitive's count; a mesh whose primitives disagree is its own finding. */
 function morphTargets(mesh: Json): number {
   const first = arr(mesh['primitives'])[0]
-  return Array.isArray(first?.['targets']) ? first['targets'].length : 0
+  return first ? targetCount(first) : 0
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1401,6 +1418,11 @@ function scanAccessors(cols: Collections, bin: Uint8Array | null, facts: GraphFa
     if (!known) {
       out.push(v('SECURITY', where, 'accessor needs a known type and componentType, a positive integer count and a non-negative integer byteOffset'))
     } else {
+      if (components !== undefined && String(accessor['type']).startsWith('MAT')) {
+        // Matrix columns of 1 and 2 byte components are padded to 4 bytes, and nothing reads that padding.
+        if (!facts.ibmAccessors.has(i)) out.push(v('SECURITY', where, 'matrix accessors are only allowed as skin inverseBindMatrices'))
+        if (componentBytes !== 4) out.push(v('SECURITY', where, 'matrix accessors must be floats (column padding would hide bytes)'))
+      }
       // Counted for accessors with no bufferView too: a loader allocates `count` zeroed elements for them.
       if (count > MAX_ACCESSOR_COUNT) out.push(v('SECURITY', `${where}.count`, `count is over the ${MAX_ACCESSOR_COUNT} element cap`))
       if (offset % componentBytes !== 0) out.push(v('SECURITY', `${where}.byteOffset`, 'byteOffset must be a multiple of the component size'))
@@ -1524,7 +1546,9 @@ function webpChunkProblems(chunks: readonly string[]): string[] {
  * also held to that tier's list. Findings name the JSON path, never the offending value.
  */
 export function scanGlb(bytes: Uint8Array, subject: string, tier?: ModelTier): Violation[] {
-  const { json, bin } = parseGlb(bytes)
+  // A runtime use of the marker, so a bundler that keeps scanGlb keeps the string: unused exports are tree-shaken.
+  if (tier !== undefined && !(tier in JSON_CAP_BYTES)) throw new Error(`${ASSET_TOOLCHAIN_CANARY} scanGlb: unknown tier ${String(tier)}`)
+  const { json, bin } = parseGlb(bytes, tier ? JSON_CAP_BYTES[tier] : undefined)
   const out: Violation[] = []
 
   // Everything below recurses (and `packGlb` stringifies), so refuse a file that nests deeper than any real one first.

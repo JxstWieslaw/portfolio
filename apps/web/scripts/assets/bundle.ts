@@ -28,6 +28,11 @@ export interface BundleFinding {
   readonly label: string
 }
 
+/** Labels of every forbidden pattern one chunk's text matches. */
+export function scanText(text: string): string[] {
+  return FORBIDDEN.filter(([, pattern]) => pattern.test(text)).map(([label]) => label)
+}
+
 function jsFiles(dir: string): string[] {
   const out: string[] = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

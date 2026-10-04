@@ -130,7 +130,7 @@ export async function runCheck(opts: { readonly root: string }): Promise<CheckRe
         const bytes = new Uint8Array(readFileSync(file))
         violations.push(...validateHash(fileName, bytes, variant.integrity))
         try {
-          const report = buildReport(bytes)
+          const report = buildReport(bytes, variant.tier)
           violations.push(...validateReport(report, { subject: fileName, tier: variant.tier, manifestClips: entry.clips }))
           const scanned = scanGlb(bytes, fileName, variant.tier)
           violations.push(...scanned)

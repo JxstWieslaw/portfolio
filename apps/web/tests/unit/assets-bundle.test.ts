@@ -6,7 +6,9 @@ import path from 'node:path'
 
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ASSET_TOOLCHAIN_CANARY, main, scanBundle } from '../../scripts/assets/bundle'
+import { build } from 'esbuild'
+
+import { ASSET_TOOLCHAIN_CANARY, main, scanBundle, scanText } from '../../scripts/assets/bundle'
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'bundle-'))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
@@ -73,6 +75,43 @@ describe('the canary: a minified chunk has no package names, only string values'
   it('validators.ts, pipeline.ts and images.ts all carry exactly the marker the checker greps for', () => {
     for (const file of ['validators.ts', 'pipeline.ts', 'images.ts'])
       expect(readFileSync(path.join(__dirname, '..', '..', 'scripts', 'assets', file), 'utf8'), file).toContain(`export const ASSET_TOOLCHAIN_CANARY = '${ASSET_TOOLCHAIN_CANARY}'`)
+  })
+})
+
+describe('a real minified, tree-shaken browser bundle still carries the marker', () => {
+  const scripts = path.join(__dirname, '..', '..', 'scripts', 'assets')
+  const bundle = async (entry: string): Promise<string> => {
+    const result = await build({
+      stdin: { contents: entry.replace('SCRIPTS', scripts.split(path.sep).join('/')), resolveDir: scripts, loader: 'ts' },
+      bundle: true,
+      minify: true,
+      treeShaking: true,
+      platform: 'browser',
+      format: 'esm',
+      write: false,
+      logLevel: 'silent',
+      // The toolchain packages stay external: this is about OUR modules' own strings, with package names set aside.
+      external: ['node:*', '@gltf-transform/*', 'sharp', 'meshoptimizer'],
+    })
+    return result.outputFiles[0]?.text ?? ''
+  }
+
+  it.each([
+    ['validators.ts', "import { scanGlb } from 'SCRIPTS/validators';console.log(scanGlb)"],
+    ['pipeline.ts', "import { buildVariant } from 'SCRIPTS/pipeline';console.log(buildVariant)"],
+    ['images.ts', "import { verifyImages } from 'SCRIPTS/images';console.log(verifyImages)"],
+  ])('importing one function from %s keeps the marker, and the scan flags the output', async (_file, entry) => {
+    const out = await bundle(entry)
+    expect(out.length).toBeGreaterThan(100)
+    expect(out).toContain(ASSET_TOOLCHAIN_CANARY)
+    expect(scanText(out)).toContain('asset toolchain marker')
+    const root = webRoot({ 'chunks/min.js': out })
+    expect(scanBundle(staticDir(root)).findings.map((f) => f.label)).toContain('asset toolchain marker')
+  }, 60_000)
+
+  it('a bundle that imports none of the toolchain does not carry it', async () => {
+    const out = await bundle('console.log("an ordinary client module")')
+    expect(scanText(out)).toEqual([])
   })
 })
 

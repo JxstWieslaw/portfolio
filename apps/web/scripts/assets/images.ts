@@ -35,8 +35,10 @@ const decodeWithSharp: Decode = async (data, maxPixels) => {
 
 /** One violation per image that does not decode, or decodes to a different size than its header claims. */
 export async function verifyImages(bytes: Uint8Array, subject: string, tier: ModelTier, decode: Decode = decodeWithSharp): Promise<Violation[]> {
+  // A runtime use of the marker, so a bundler that keeps verifyImages keeps the string.
+  if (!(tier in MODEL_BUDGETS)) throw new Error(`${ASSET_TOOLCHAIN_CANARY} verifyImages: unknown tier ${String(tier)}`)
   const budget = MODEL_BUDGETS[tier]
-  const images = listImages(bytes)
+  const images = listImages(bytes, tier)
   // Refused before a single byte is decoded: the count alone is the finding.
   if (images.length > budget.textures)
     return [{ code: 'TEXTURE', subject: `${subject} $.images`, message: `${images.length} images exceed the tier ${tier} cap of ${budget.textures}; none were decoded` }]
