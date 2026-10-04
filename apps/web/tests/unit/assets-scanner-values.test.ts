@@ -8,6 +8,7 @@ import { describe, expect, it, beforeAll } from 'vitest'
 import { buildVariant, loadToolchain, stripGlbMetadata } from '../../scripts/assets/pipeline'
 import {
   GlbFormatError,
+  elementBytes,
   MAX_ACCESSOR_COUNT,
   packGlb,
   parseGlb,
@@ -18,6 +19,8 @@ import {
 } from '../../scripts/assets/validators'
 import { type Json, binGlb, committedGlb, floats, rawGlb, richDoc, shorts, view } from './assets-fixtures'
 
+/** Bytes per component, by componentType. */
+const COMPONENT: Record<number, number> = { 5121: 1, 5123: 2, 5126: 4 }
 const messages = (found: readonly Violation[]) => found.map((x) => x.message).sort()
 const subjects = (found: readonly Violation[]) => found.map((x) => x.subject.replace(/^g /, '')).sort()
 const onlySecurity = (found: readonly Violation[]) => expect(found.every((x) => x.code === 'SECURITY')).toBe(true)
@@ -195,37 +198,76 @@ describe('A2: everything is read by something', () => {
     )
   })
 
-  describe('slack in a plain bufferView', () => {
-    const slack = (viewLength: number, accessors = [floats(0, 2)], more: Json[] = []) =>
-      scan({ bufferViews: [view(0, viewLength), ...more], accessors, binLength: viewLength + more.length * 0 })
+  describe('plain bufferViews are tiled exactly by their accessors', () => {
+    const tile = (viewLength: number, accessors: Json[], patch?: Record<number, number>, byteStride?: number) =>
+      messages(scan({ bufferViews: [view(0, viewLength, byteStride === undefined ? {} : { byteStride })], accessors, binLength: viewLength, patch }))
+    const f = (count: number, more: Json = {}) => ({ bufferView: 0, componentType: 5126, count, type: 'SCALAR', ...more })
+    const vec3 = (count: number, more: Json = {}) => ({ bufferView: 0, componentType: 5126, count, type: 'VEC3', ...more })
 
-    it('allows up to 3 bytes of alignment after the last element, and not 4', () => {
-      expect(slack(8)).toEqual([])
-      expect(slack(11)).toEqual([])
-      expect(messages(slack(12))).toEqual(['bufferView holds 12 bytes but its accessors read only 8'])
-      expect(messages(slack(16))).toEqual(['bufferView holds 16 bytes but its accessors read only 8'])
+    it('passes a view that is its accessors end to end, with or without the alignment padding', () => {
+      expect(tile(8, [f(2)])).toEqual([])
+      expect(tile(12, [f(1), f(2, { byteOffset: 4 })])).toEqual([])
+      expect(tile(8, [shorts(0, 3)])).toEqual([])
+      expect(tile(6, [shorts(0, 3)])).toEqual([])
+      // Two accessors sharing the same bytes read one tight run.
+      expect(tile(8, [f(2), f(2)])).toEqual([])
+      // A 6 byte run, 2 bytes of zero alignment, then a 4 byte float.
+      expect(tile(12, [shorts(0, 3), f(1, { byteOffset: 8 })])).toEqual([])
     })
 
-    it('counts each accessor with its own element size and offset (mixed and interleaved layouts)', () => {
-      // Positions then normals, interleaved with a 24 byte stride: 12 B each, two vertices.
-      const pos = { bufferView: 0, componentType: 5126, count: 2, type: 'VEC3' }
-      const nor = { ...pos, byteOffset: 12 }
-      expect(scan({ bufferViews: [view(0, 36, { byteStride: 24 })], accessors: [pos], binLength: 36 })).toEqual([])
-      expect(scan({ bufferViews: [view(0, 48, { byteStride: 24 })], accessors: [pos, nor], binLength: 48 })).toEqual([])
-      expect(messages(scan({ bufferViews: [view(0, 52, { byteStride: 24 })], accessors: [pos, nor], binLength: 52 }))).toEqual([
-        'bufferView holds 52 bytes but its accessors read only 48',
-      ])
-      // Mixed element sizes: a 6 byte uint16 run after a 12 byte float run, in one view.
-      const run = { bufferView: 0, componentType: 5126, count: 1, type: 'VEC3' }
-      const tail = { bufferView: 0, componentType: 5123, count: 3, type: 'SCALAR', byteOffset: 12 }
-      expect(scan({ bufferViews: [view(0, 20)], accessors: [run, tail], binLength: 20 })).toEqual([])
-      expect(messages(scan({ bufferViews: [view(0, 24)], accessors: [run, tail], binLength: 24 }))).toEqual([
-        'bufferView holds 24 bytes but its accessors read only 18',
-      ])
+    it('SECURITY: bytes in front of the first accessor (a head gap)', () => {
+      expect(tile(100_008, [f(2, { byteOffset: 100_000 })])).toEqual(['bufferView has 100000 unread bytes at offset 0 where 0 bytes of alignment are expected'])
+    })
+
+    it('SECURITY: a stride that leaves gaps between elements (VEC3 float with byteStride 252)', () => {
+      expect(tile(264, [vec3(2)], undefined, 252)).toEqual(['a plain bufferView must be tightly packed: byteStride 252 is not the 12 byte element'])
+    })
+
+    it('SECURITY: bytes after the last accessor', () => {
+      expect(tile(16, [f(2)])).toEqual(['bufferView has 8 unread bytes after its last accessor where 0 or 0 bytes of alignment are expected'])
+      expect(tile(11, [f(2)])).toEqual(['bufferView has 3 unread bytes after its last accessor where 0 or 0 bytes of alignment are expected'])
+      expect(tile(10, [shorts(0, 3)])).toEqual(['bufferView has 4 unread bytes after its last accessor where 0 or 2 bytes of alignment are expected'])
+    })
+
+    it('SECURITY: a non-zero byte in the alignment slack, and in the padding between accessors', () => {
+      expect(tile(8, [shorts(0, 3)], { 6: 1 })).toEqual(['bufferView padding at offset 6 is not zero'])
+      expect(tile(12, [shorts(0, 3), f(1, { byteOffset: 8 })], { 7: 9 })).toEqual(['bufferView padding at offset 6 is not zero'])
+    })
+
+    it('SECURITY: two accessors sharing a view with a gap between them', () => {
+      expect(tile(24, [f(2), f(2, { byteOffset: 16 })])).toEqual(['bufferView has 8 unread bytes at offset 8 where 0 bytes of alignment are expected'])
+    })
+
+    it('SECURITY: accessors that partly overlap', () => {
+      expect(tile(12, [f(2), f(2, { byteOffset: 4 })])).toEqual(['accessors overlap at offset 4 inside the bufferView'])
     })
 
     it('does not apply to a meshopt view, whose length is the decoded size', () => {
       expect(scanGlb(committedGlb(1), 'g', 1)).toEqual([])
+    })
+  })
+
+  describe('element sizes, with matrix column padding', () => {
+    it.each([
+      [5126, 'SCALAR', 4],
+      [5126, 'VEC3', 12],
+      [5123, 'VEC3', 6],
+      [5126, 'MAT4', 64],
+      [5126, 'MAT3', 36],
+      [5121, 'MAT2', 8],
+      [5121, 'MAT3', 12],
+      [5121, 'MAT4', 16],
+      [5123, 'MAT2', 8],
+      [5123, 'MAT3', 24],
+      [5123, 'MAT4', 32],
+    ])('componentType %i %s is %i bytes', (componentType, type, bytes) => {
+      expect(elementBytes(COMPONENT[componentType] ?? 0, type)).toBe(bytes)
+    })
+
+    it('a MAT3 of unsigned bytes needs 12 bytes an element, so a tight 9 byte view is short', () => {
+      const mat = { bufferView: 0, componentType: 5121, count: 1, type: 'MAT3' }
+      expect(messages(scan({ bufferViews: [view(0, 12)], accessors: [mat], binLength: 12 }))).toEqual([])
+      expect(messages(scan({ bufferViews: [view(0, 9)], accessors: [mat], binLength: 12 }))).toEqual(['accessor reads 12 bytes but its bufferView holds 9'])
     })
   })
 
@@ -239,10 +281,9 @@ describe('A2: everything is read by something', () => {
       for (const bad of [1, 2, 3, 6, 250, 256, 255, -4, 4.5, '12', null]) expect(withStride(bad), String(bad)).toContain(BAD)
     })
 
-    it('accepts 0 (tightly packed, which must not read as a zero stride), 12 and 252', () => {
+    it('accepts 0 (tightly packed, which must not read as a zero stride) and the element size', () => {
       expect(withStride(0, 24)).toEqual([])
       expect(withStride(12, 24)).toEqual([])
-      expect(withStride(252, 264)).toEqual([])
     })
 
     it('SECURITY: a stride smaller than the element it strides over', () => {

@@ -1283,13 +1283,65 @@ function checkViewValues(view: Json, where: string, out: Violation[]): void {
   }
 }
 
+/** Bytes of one element. Matrix columns are padded to 4 bytes for 1 and 2 byte components (glTF 2.0 section 3.6.2.4). */
+export function elementBytes(componentBytes: number, type: string): number {
+  const columns = type === 'MAT2' ? 2 : type === 'MAT3' ? 3 : type === 'MAT4' ? 4 : 0
+  if (columns === 0 || componentBytes === 4) return componentBytes * (lookup(TYPE_COMPONENTS, type) ?? 0)
+  const rows = columns
+  const column = Math.ceil((rows * componentBytes) / 4) * 4
+  return column * columns
+}
+
+/**
+ * A plain view must be exactly its accessors laid end to end: the first starts at 0, each next one starts
+ * where the last ended (or after the zero padding that gets it to a 4 byte boundary), and only the zero
+ * padding to the next 4 byte boundary may follow the last. Two accessors may read the same bytes. Nothing
+ * else fits in a view, so nothing else can hide in one.
+ */
+function checkTiling(view: Json, index: number, reads: readonly [number, number][], bin: Uint8Array | null, out: Violation[]): void {
+  const where = `$.bufferViews[${index}]`
+  const length = intField(view, 'byteLength', null)
+  const base = intField(view, 'byteOffset', 0)
+  if (length === null || base === null) return
+  const zero = (from: number, to: number): boolean => {
+    if (!bin) return true
+    for (let at = base + from; at < Math.min(base + to, bin.byteLength); at++) if (bin[at] !== 0) return false
+    return true
+  }
+  const sorted = [...reads].sort((x, y) => x[0] - y[0] || x[1] - y[1])
+  let cursor = 0
+  let previous: [number, number] | null = null
+  for (const [start, end] of sorted) {
+    if (previous && start === previous[0] && end === previous[1]) continue
+    if (start < cursor) {
+      out.push(v('SECURITY', where, `accessors overlap at offset ${start} inside the bufferView`))
+      cursor = Math.max(cursor, end)
+      continue
+    }
+    const gap = start - cursor
+    const padding = (4 - (cursor % 4)) % 4
+    if (gap !== 0 && gap !== padding)
+      out.push(v('SECURITY', where, `bufferView has ${gap} unread bytes at offset ${cursor} where ${padding} bytes of alignment are expected`))
+    else if (gap > 0 && !zero(cursor, start)) out.push(v('SECURITY', where, `bufferView padding at offset ${cursor} is not zero`))
+    cursor = end
+    previous = [start, end]
+  }
+  const slack = length - cursor
+  if (slack < 0) return // the accessor that runs past the view is reported on its own
+  const padding = (4 - (cursor % 4)) % 4
+  // Writers differ on whether the view length includes the alignment padding, so both spellings are accepted; nothing else is.
+  if (slack !== 0 && slack !== padding)
+    out.push(v('SECURITY', where, `bufferView has ${slack} unread bytes after its last accessor where 0 or ${padding} bytes of alignment are expected`))
+  else if (slack > 0 && !zero(cursor, length)) out.push(v('SECURITY', where, `bufferView padding at offset ${cursor} is not zero`))
+}
+
 /** Accessors: no sparse, typed fields, a real view, every element inside it. Returns the views that something reads. */
-function scanAccessors(cols: Collections, facts: GraphFacts, out: Violation[]): Set<number> {
+function scanAccessors(cols: Collections, bin: Uint8Array | null, facts: GraphFacts, out: Violation[]): Set<number> {
   const { accessors, bufferViews } = cols
   const referenced = new Set<number>()
   const accessorViews = new Set<number>()
-  /** Furthest byte any accessor reads, per plain view. */
-  const furthest = new Map<number, number>()
+  /** Byte ranges [start, end) the accessors read, per plain view. */
+  const reads = new Map<number, [number, number][]>()
   for (const [i, accessor] of accessors.entries()) {
     const where = `$.accessors[${i}]`
     if ('sparse' in accessor) out.push(v('SECURITY', `${where}.sparse`, 'sparse accessors are not allowed'))
@@ -1325,22 +1377,21 @@ function scanAccessors(cols: Collections, facts: GraphFacts, out: Violation[]): 
     if (!known) continue
     const viewLength = intField(view, 'byteLength', null)
     if (viewLength === null) continue // reported by storedRanges
-    const element = componentBytes * components
+    const element = elementBytes(componentBytes, accessor['type'] as string)
     const declaredStride = intField(view, 'byteStride', 0) ?? 0
+    const plain = !meshoptOf(view)
     if (declaredStride > 0 && declaredStride < element)
       out.push(v('SECURITY', `${where}.bufferView`, `byteStride ${declaredStride} is smaller than the ${element} byte element`))
+    // A plain view is stored byte for byte, so interleaving would leave the bytes between elements unaccounted for.
+    else if (plain && declaredStride > 0 && declaredStride !== element)
+      out.push(v('SECURITY', `${where}.bufferView`, `a plain bufferView must be tightly packed: byteStride ${declaredStride} is not the ${element} byte element`))
     // byteStride 0 means tightly packed, exactly like no byteStride.
     const stride = declaredStride > 0 ? declaredStride : element
     const needed = offset + stride * (count - 1) + element
     if (needed > viewLength) out.push(v('SECURITY', where, `accessor reads ${needed} bytes but its bufferView holds ${viewLength}`))
-    if (!meshoptOf(view)) furthest.set(index, Math.max(furthest.get(index) ?? 0, needed))
+    if (plain) reads.set(index, [...(reads.get(index) ?? []), [offset, needed]])
   }
-  // A plain view is stored byte for byte, so bytes past what its accessors read (bar alignment) are hidden data.
-  for (const [index, end] of furthest) {
-    const viewLength = intField(bufferViews[index] ?? {}, 'byteLength', null)
-    if (viewLength !== null && viewLength - end > 3)
-      out.push(v('SECURITY', `$.bufferViews[${index}]`, `bufferView holds ${viewLength} bytes but its accessors read only ${end}`))
-  }
+  for (const [index, ranges] of reads) checkTiling(bufferViews[index] ?? {}, index, ranges, bin, out)
   for (const index of facts.imageViews) {
     referenced.add(index)
     if (accessorViews.has(index)) out.push(v('SECURITY', `$.bufferViews[${index}]`, 'bufferView is read by both an image and an accessor'))
@@ -1351,7 +1402,7 @@ function scanAccessors(cols: Collections, facts: GraphFacts, out: Violation[]): 
 /** The binary chunk must be exactly the declared buffer: no tail, no hidden gap, nothing in the padding. */
 function scanBinary(cols: Collections, bin: Uint8Array | null, facts: GraphFacts, out: Violation[]): void {
   const declared = num(cols.buffers[0]?.['byteLength'])
-  const referenced = scanAccessors(cols, facts, out)
+  const referenced = scanAccessors(cols, bin, facts, out)
   for (const [i, view] of cols.bufferViews.entries()) checkViewValues(view, `$.bufferViews[${i}]`, out)
   if (!bin) {
     if (declared > 0) out.push(v('SECURITY', '$.buffers[0]', 'declares bytes but the file has no binary chunk'))

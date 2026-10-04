@@ -142,7 +142,7 @@ describe('A2: BIN coverage', () => {
 
   it('SECURITY: an accessor that reads more than its view holds, and one that points nowhere', () => {
     expect(messages(scan({ accessors: [floats(0, 100), floats(1, 2)] }))).toEqual(['accessor reads 400 bytes but its bufferView holds 8'])
-    expect(messages(scan({ accessors: [floats(0, 2), floats(1, 2, { byteOffset: 4 })] }))).toEqual(['accessor reads 12 bytes but its bufferView holds 8'])
+    expect(messages(scan({ accessors: [floats(0, 2), floats(1, 2, { byteOffset: 4 })] }))).toEqual(['accessor reads 12 bytes but its bufferView holds 8', 'bufferView has 4 unread bytes at offset 0 where 0 bytes of alignment are expected'].sort())
     expect(messages(scan({ accessors: [floats(0, 2), floats(7, 2)] }))).toEqual([
       'accessor points at a bufferView that does not exist',
       'bufferView is not referenced by any accessor or image',
