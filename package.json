@@ -18,7 +18,8 @@
     "lint:content": "turbo run lint:content",
     "assets:ingest": "npm run assets:ingest -w @repo/web --",
     "assets:check": "npm run assets:check -w @repo/web",
-    "assets:fetch": "npm run assets:fetch -w @repo/web --"
+    "assets:fetch": "npm run assets:fetch -w @repo/web --",
+    "check:bundle": "npm run check:bundle -w @repo/web"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

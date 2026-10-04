@@ -40,8 +40,11 @@ jobs:
       - run: npm run test
       # Validates the committed 3D models, manifest and credits. No network: sources are
       # generated or already committed, and assets:fetch never runs in CI.
+      # A directory or file named exactly assets-src at any depth, in any case. Exact on purpose: a bare
+      # '*assets-src*' also refused unrelated names (docs/assets-src-notes.md). apps/web/tests/unit/assets-cli.test.ts
+      # runs these very pathspecs against a throwaway repository.
       - name: No raw 3D sources are tracked (assets-src/ is gitignored; the repo is public)
-        run: test -z "$(git ls-files -- '*assets-src*')"
+        run: test -z "$(git ls-files -- ':(glob,icase)**/assets-src/**' ':(glob,icase)**/assets-src')"
       - name: Validate 3D assets
         run: |
           npm run assets:check
@@ -68,6 +71,9 @@ jobs:
       - run: npm install -g npm@11.19.0
       - run: npm ci
       - run: npm run build
+      # No asset tooling (gltf-transform, sharp) in any client chunk: the ESLint rule cannot see a computed require.
+      - name: Asset toolchain is absent from the client bundle
+        run: npm run check:bundle
       # The model test seam exists only in the e2e job's build (NEXT_PUBLIC_MODEL_TEST=1). A production
       # build must not contain it: this fails if the seam, or its debug hook, shipped.
       - name: The model test seam is compiled out of the production build

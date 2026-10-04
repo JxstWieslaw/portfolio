@@ -27,6 +27,7 @@ import {
   type GlbReport,
   type Violation,
 } from '../../scripts/assets/validators'
+import { glbAroundImage } from './assets-fixtures'
 
 const codes = (vs: readonly Violation[]) => vs.map((x) => x.code)
 
@@ -201,11 +202,16 @@ describe('scanGlb: the committed-file security scan', () => {
     const { json, bin } = parseGlb(base)
     const declared = Number(((json['buffers'] as Json[])[0] ?? {})['byteLength'])
     let covered = 0
+    /** Where each stored (compressed) range ends, read from the file rather than written down. */
+    const ends: number[] = []
     for (const view of json['bufferViews'] as Json[]) {
       const m = (view['extensions'] as Record<string, Record<string, number>> | undefined)?.['EXT_meshopt_compression']
-      if (m && m['buffer'] === 0) covered = Math.max(covered, (m['byteOffset'] ?? 0) + (m['byteLength'] ?? 0))
+      if (m && m['buffer'] === 0) {
+        covered = Math.max(covered, (m['byteOffset'] ?? 0) + (m['byteLength'] ?? 0))
+        ends.push((m['byteOffset'] ?? 0) + (m['byteLength'] ?? 0))
+      }
     }
-    return { declared, covered, binLength: bin?.byteLength ?? 0 }
+    return { declared, covered, ends, binLength: bin?.byteLength ?? 0 }
   })()
   const mutate = (fn: (json: Json, bin: Uint8Array) => Uint8Array | void): Uint8Array => {
     const { json, bin } = parseGlb(base)
@@ -215,6 +221,9 @@ describe('scanGlb: the committed-file security scan', () => {
   const firstNode = (json: Json) => (json['nodes'] as Json[])[0] ?? {}
   const messages = (bytes: Uint8Array, tier?: 1 | 2 | 3) => scanGlb(bytes, 'g', tier).map((x) => x.message)
   const setName = (value: string) => (json: Json) => void (firstNode(json)['name'] = value)
+  /** Adds one name to extensionsUsed, keeping the list sorted and everything the file really uses declared. */
+  const alsoUsed = (name: string) => (json: Json) =>
+    void (json['extensionsUsed'] = [...(json['extensionsUsed'] as string[]), name].sort())
 
   it('passes the committed gyroscope, which the pipeline wrote, at its own tier', () => {
     expect(scanGlb(base, 'gyroscope', 1)).toEqual([])
@@ -238,7 +247,7 @@ describe('scanGlb: the committed-file security scan', () => {
     ['a file: URL', setName('file:///etc/passwd'), ['contains a URL that is not allow-listed', 'contains a URI scheme', 'names must be stripped']],
     ['a scheme-looking value', setName('ssh:deploy'), ['contains a URI scheme', 'names must be stripped']],
     ['a harmless name, which is still a name', setName('c_users_bob'), ['names must be stripped']],
-    ['an external image uri', (j) => void (j['images'] = [{ uri: 'textures/a.png' }]), ['external or data: uri is not allowed; a GLB must be self-contained', 'image data must be embedded in the binary chunk']],
+    ['an external image uri', (j) => void (j['images'] = [{ uri: 'textures/a.png' }]), ['external or data: uri is not allowed; a GLB must be self-contained', 'image data must be embedded in the binary chunk', 'image is not reachable from any scene', 'mimeType must be "image/webp"']],
     [
       'a data: buffer uri',
       (j) => void (j['buffers'] = [{ byteLength: 4, uri: 'data:application/octet-stream;base64,AAAA' }]),
@@ -248,23 +257,21 @@ describe('scanGlb: the committed-file security scan', () => {
         `binary chunk is ${shape.binLength - 4} bytes longer than the declared buffer`,
         'binary chunk padding is not zero',
         // The three meshopt views now end past the 4 byte buffer the edit declared.
-        'bufferView ends at 6814, past the declared buffer of 4 bytes',
-        'bufferView ends at 12423, past the declared buffer of 4 bytes',
-        'bufferView ends at 26496, past the declared buffer of 4 bytes',
+        ...shape.ends.map((end) => `bufferView ends at ${end}, past the declared buffer of 4 bytes`),
       ],
     ],
     ['a camera', (j) => void (j['cameras'] = [{ type: 'perspective' }]), ['top-level key "cameras" is not allowed']],
     ['an unknown top-level key', (j) => void (j['KHR_lights_punctual'] = {}), ['top-level key "KHR_lights_punctual" is not allowed']],
     ['a top-level extensions block', (j) => void (j['extensions'] = { KHR_lights_punctual: { lights: [] } }), ['extension KHR_lights_punctual is not on the allow-list', 'top-level key "extensions" is not allowed']],
-    ['Draco compression', (j) => void (j['extensionsUsed'] = ['KHR_draco_mesh_compression']), ['extension KHR_draco_mesh_compression is not on the allow-list (Draco and KTX2 are rejected for now)']],
+    ['Draco compression', alsoUsed('KHR_draco_mesh_compression'), ['extension KHR_draco_mesh_compression is not on the allow-list (Draco and KTX2 are rejected for now)']],
     ['KTX2 textures', (j) => void (j['extensionsRequired'] = ['KHR_texture_basisu']), ['extension KHR_texture_basisu is not on the allow-list (Draco and KTX2 are rejected for now)']],
-    ['a KHR_materials_ name that is not in the contract', (j) => void (j['extensionsUsed'] = ['KHR_materials_clearcoat']), ['extension KHR_materials_clearcoat is not on the allow-list (Draco and KTX2 are rejected for now)']],
+    ['a KHR_materials_ name that is not in the contract', alsoUsed('KHR_materials_clearcoat'), ['extension KHR_materials_clearcoat is not on the allow-list (Draco and KTX2 are rejected for now)']],
     [
       'an element extension that extensionsUsed never declares',
       (j) => void (((j['materials'] as Json[])[0] ?? {})['extensions'] = { KHR_materials_ior: { ior: 1.5 } }),
       ['extension KHR_materials_ior is not allowed at this tier', 'extension KHR_materials_ior is used in the file but not declared in extensionsUsed'],
     ],
-    ['an image name', (j) => void (j['images'] = [{ name: 'brick.png', bufferView: 0, mimeType: 'image/webp' }]), ['names must be stripped', 'image bufferView must be a plain stored view in buffer 0']],
+    ['an image name', (j) => void (j['images'] = [{ name: 'brick.png', bufferView: 0, mimeType: 'image/webp' }]), ['names must be stripped', 'image bufferView must be a plain stored view in buffer 0', 'image is not reachable from any scene', 'bufferView is read by both an image and an accessor']],
     ['a clip name outside the pattern', (j) => void (j['animations'] = [{ name: 'Idle Loop', samplers: [], channels: [] }]), ['clip names must match [a-z0-9-]{0,40}']],
     ['a third buffer of any kind', (j) => void (j['buffers'] as unknown[]).push({ byteLength: 4 }), ['a GLB carries one stored buffer and at most one meshopt fallback']],
     [
@@ -312,12 +319,11 @@ describe('scanGlb: the committed-file security scan', () => {
   })
 
   it('SECURITY: a transmissive extension is held to the tier it is scanned at', () => {
-    const bytes = mutate((j) => {
-      j['extensionsUsed'] = ['KHR_materials_transmission']
-    })
+    const bytes = mutate(alsoUsed('KHR_materials_transmission'))
+    const unused = 'extension KHR_materials_transmission is declared in extensionsUsed but nothing in the file uses it'
     expect(messages(bytes, 2)).toEqual(['extension KHR_materials_transmission is not allowed at this tier'])
-    expect(messages(bytes, 3)).toEqual([])
-    expect(messages(bytes)).toEqual([])
+    expect(messages(bytes, 3)).toEqual([unused])
+    expect(messages(bytes)).toEqual([unused])
   })
 
   it('does not echo the offending value, only where it is', () => {
@@ -334,19 +340,13 @@ describe('scanGlb: the committed-file security scan', () => {
       }
       return new Uint8Array([...Buffer.from('RIFF'), body.length & 255, body.length >> 8, 0, 0, ...body])
     }
-    const glbWith = (webp: Uint8Array) =>
-      packGlb(
-        {
-          asset: { version: '2.0' },
-          buffers: [{ byteLength: webp.length }],
-          bufferViews: [{ buffer: 0, byteLength: webp.length }],
-          images: [{ bufferView: 0, mimeType: 'image/webp' }],
-        },
-        webp,
-      )
+    const glbWith = glbAroundImage
     expect(scanGlb(glbWith(riff([['VP8 ', 10]])), 'x')).toEqual([])
     expect(messages(glbWith(riff([['VP8 ', 10], ['EXIF', 8]])))).toEqual(['WebP chunk "EXIF" can carry metadata and is not allowed'])
-    expect(messages(glbWith(riff([['XMP ', 8]])))).toEqual(['WebP chunk "XMP" can carry metadata and is not allowed'])
+    expect(messages(glbWith(riff([['XMP ', 8]])))).toEqual([
+      'WebP chunk "XMP" can carry metadata and is not allowed',
+      'WebP chunk layout is not one the encoder writes: the first chunk must be VP8, VP8L or VP8X',
+    ])
   })
 })
 

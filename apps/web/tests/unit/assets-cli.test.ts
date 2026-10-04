@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -210,8 +211,32 @@ describe('the project files the toolchain relies on', () => {
     expect(NETWORK_PATTERNS.some(([, pattern]) => pattern.test(code))).toBe(true)
   })
 
-  it('CI refuses any tracked path containing assets-src, at any depth', () => {
-    expect(read('.github', 'workflows', 'ci.yml')).toContain(`run: test -z "$(git ls-files -- '*assets-src*')"`)
+  describe('CI refuses a tracked assets-src path, and only that', () => {
+    // The pathspecs are read out of ci.yml and run by real git in a throwaway repository.
+    const ci = read('.github', 'workflows', 'ci.yml')
+    const line = /run: test -z "\$\(git ls-files -- (.+)\)"/.exec(ci)?.[1] ?? ''
+    const specs = [...line.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '')
+    const tracked = (files: string[]): string[] => {
+      const repo = mkdtempSync(path.join(tmp, 'pathspec-'))
+      const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+      git('init', '-q')
+      for (const f of files) {
+        mkdirSync(path.dirname(path.join(repo, f)), { recursive: true })
+        writeFileSync(path.join(repo, f), 'x')
+      }
+      git('add', '-A')
+      return git('ls-files', '--', ...specs).split(String.fromCharCode(10)).filter(Boolean)
+    }
+
+    it('uses two exact pathspecs', () => {
+      expect(specs).toEqual([':(glob,icase)**/assets-src/**', ':(glob,icase)**/assets-src'])
+    })
+    it.each(['assets-src/a.glb', 'assets-src/raw/deep/m.glb', 'apps/web/assets-src/a.glb', 'ASSETS-SRC/a.glb', 'a/Assets-Src/b/c.zip', 'assets-src'])('refuses %s', (file) => {
+      expect(tracked([file])).toEqual([file])
+    })
+    it.each(['docs/assets-src-notes.md', 'my-assets-src/a.glb', 'assets-src.md', 'assets-sources/a.glb', 'apps/web/assets/a.glb'])('lets %s through', (file) => {
+      expect(tracked([file])).toEqual([])
+    })
   })
 
   it('turbo caches the test task against the content folder that the tests read', () => {

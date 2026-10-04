@@ -21,7 +21,7 @@ import { parseArgs } from 'node:util'
 
 import { SOURCE_HOSTS } from './hosts'
 import { defaultRoot, layoutFor, loadSources, type Layout, type SourceEntry } from './sources'
-import { describeError, sha256Hex } from './validators'
+import { describeError, printable, sha256Hex } from './validators'
 
 // ---------------------------------------------------------------------------------------------
 // URL policy
@@ -353,11 +353,11 @@ export async function main(
     if (!source) throw new Error(`no source with id "${values.id}" in sources.json`)
     const written = await fetchSource(source, layout, { fetch: fetchImpl })
     console.log(`fetched ${written.length} file(s) into assets-src/${source.id}/`)
-    for (const name of written) console.log(`  ${name}`)
+    for (const name of written) console.log(printable(`  ${name}`))
     console.log(`Next: paste the licence page text into SOURCE.txt beside it, then npm run assets:ingest -- --id ${source.id}`)
     return 0
   } catch (error) {
-    console.error(describeError(error))
+    console.error(printable(describeError(error)))
     return 1
   }
 }

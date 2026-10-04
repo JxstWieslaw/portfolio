@@ -6,6 +6,8 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { main, runCheck } from '../../scripts/assets/check'
+import * as images from '../../scripts/assets/images'
+import * as pipeline from '../../scripts/assets/pipeline'
 import { defaultRoot, layoutFor, type Layout } from '../../scripts/assets/sources'
 import {
   buildReport,
@@ -17,6 +19,16 @@ import {
   sha256Hex,
   type Violation,
 } from '../../scripts/assets/validators'
+
+// Passthrough spies: the real decoder and bounds reader still run, and a test can see whether they were asked to.
+vi.mock('../../scripts/assets/images', async (original) => {
+  const actual = await original<typeof images>()
+  return { ...actual, verifyImages: vi.fn(actual.verifyImages) }
+})
+vi.mock('../../scripts/assets/pipeline', async (original) => {
+  const actual = await original<typeof pipeline>()
+  return { ...actual, measureBoundsRadius: vi.fn(actual.measureBoundsRadius) }
+})
 
 const committed = layoutFor(defaultRoot())
 const codes = (vs: readonly Violation[]) => [...new Set(vs.map((x) => x.code))].sort()
@@ -167,7 +179,7 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
     expect(messages(violations, 'SECURITY')).toEqual(['extras are not allowed'])
   })
 
-  it('SCHEMA: a file the reader cannot measure is one violation, not a crash of the whole run', async () => {
+  it('SECURITY: a file the scanner refuses is one violation, never measured, and never a crash of the whole run', async () => {
     rewriteVariant({
       json: (j) => {
         const view = (j['bufferViews'] as Record<string, unknown>[])[2]
@@ -177,13 +189,13 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
     })
     const { violations } = await runCheck({ root })
     expect(messages(violations, 'SECURITY').some((m) => /past the declared buffer/.test(m))).toBe(true)
-    expect(messages(violations, 'SCHEMA').some((m) => /bounds could not be measured/.test(m))).toBe(true)
+    expect(messages(violations, 'SCHEMA').some((m) => /bounds could not be measured/.test(m))).toBe(false)
   })
 
   it('MATERIALS (validateReport): a file over its tier cap', async () => {
     rewriteVariant({ json: (j) => void (j['materials'] = [{}, {}, {}]) })
     const { violations } = await runCheck({ root })
-    expect(messages(violations, 'MATERIALS')).toEqual(['3 materials exceed the tier 2 cap of 2'])
+    expect(messages(violations, 'MATERIALS')).toEqual(['materials: 3 > budget 2: needs a material merge, see docs/3d-asset-sourcing.md'])
   })
 
   it('SCHEMA (the contract): a file name that says another tier than the variant', async () => {
@@ -350,5 +362,50 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
       ]),
     )
     expect(codes((await runCheck({ root })).violations)).toEqual(['COMPLETE'])
+  })
+})
+
+describe('decoders only ever see a file the scanner passed', () => {
+  const calls = () => [vi.mocked(images.verifyImages).mock.calls.length, vi.mocked(pipeline.measureBoundsRadius).mock.calls.length]
+  beforeEach(() => {
+    vi.mocked(images.verifyImages).mockClear()
+    vi.mocked(pipeline.measureBoundsRadius).mockClear()
+  })
+
+  it('a clean file is decoded and measured (the spies see the real calls)', async () => {
+    const { violations } = await runCheck({ root: defaultRoot() })
+    expect(violations).toEqual([])
+    expect(calls()).toEqual([2, 2])
+  })
+
+  it('a meshopt view that claims 4294967295 elements of 252 bytes is refused, and its decoder never runs', async () => {
+    rewriteVariant({
+      json: (j) => {
+        const view = (j['bufferViews'] as Record<string, Record<string, Record<string, unknown>>>[])[0]
+        const ext = view?.['extensions']?.['EXT_meshopt_compression']
+        if (ext) {
+          ext['count'] = 4_294_967_295
+          ext['byteStride'] = 252
+        }
+      },
+    })
+    const { violations } = await runCheck({ root })
+    expect(messages(violations, 'SECURITY').some((m) => /^count 4294967295 x byteStride 252 is not the view byteLength \d+$/.test(m))).toBe(true)
+    // Only the untouched tier 1 file is decoded and measured; the bad tier 2 file is not.
+    expect(calls()).toEqual([1, 1])
+    expect(vi.mocked(images.verifyImages).mock.calls.map((c) => c[1]).every((name) => name.includes('.t1.'))).toBe(true)
+  })
+
+  it('a file with 1000 image entries is refused, and its decoder never runs', async () => {
+    rewriteVariant({
+      json: (j) => {
+        j['images'] = Array.from({ length: 1000 }, () => ({ bufferView: 0, mimeType: 'image/webp' }))
+      },
+    })
+    const { violations } = await runCheck({ root })
+    expect(violations.length).toBeGreaterThan(0)
+    // Only the untouched tier 1 file is decoded and measured; the bad tier 2 file is not.
+    expect(calls()).toEqual([1, 1])
+    expect(vi.mocked(images.verifyImages).mock.calls.map((c) => c[1]).every((name) => name.includes('.t1.'))).toBe(true)
   })
 })

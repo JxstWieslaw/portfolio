@@ -94,6 +94,35 @@ describe('B1: one source of truth for hosts', () => {
   })
 })
 
+describe('host edge cases: port, userinfo, case and IDN', () => {
+  const origin = (url: string) => issues(withOrigin(url)).map((i) => i.message)
+  it.each([
+    ['https://kenney.nl:8443/m.zip', 'must not name a port'],
+    ['https://user@kenney.nl/m.zip', 'must not carry credentials'],
+    ['https://user:pw@kenney.nl/m.zip', 'must not carry credentials'],
+    ['https://kenney.nl./m.zip', 'host kenney.nl. is not a known source host (see scripts/assets/hosts.ts)'],
+    ['https://kénney.nl/m.zip', 'host xn--knney-bsa.nl is not a known source host (see scripts/assets/hosts.ts)'],
+    ['https://xn--kenney-9ze.nl/m.zip', 'host xn--kenney-9ze.nl is not a known source host (see scripts/assets/hosts.ts)'],
+  ])('rejects %s with an exact message', (url, message) => {
+    expect(origin(url)).toEqual([message])
+    expect(checkUrl(url).ok).toBe(false)
+  })
+  it('userinfo that imitates the host is refused for the credentials, and the real host is judged too', () => {
+    expect(origin('https://kenney.nl@evil.example/m.zip')).toEqual(['must not carry credentials', 'host evil.example is not a known source host (see scripts/assets/hosts.ts)'])
+  })
+  it('accepts an upper-case host and the default port, because the URL parser lower-cases and drops them', () => {
+    for (const url of ['https://KENNEY.NL/m.zip', 'https://Kenney.nl:443/m.zip']) {
+      expect(origin(url)).toEqual([])
+      expect(checkUrl(url).ok).toBe(true)
+    }
+  })
+  it('a full-width look-alike folds to kenney.nl under IDNA, so the parser (not us) is what makes it the same host', () => {
+    const url = 'https://ｋｅｎｎｅｙ.nl/m.zip'
+    expect(new URL(url).hostname).toBe('kenney.nl')
+    expect(checkUrl(url).ok).toBe(true)
+  })
+})
+
 describe('B2: schema guards', () => {
   it.each(['not a url', 'https://', 'https://[::1', ''])('a bad origin url %j is a path-scoped message, never a TypeError', (url) => {
     expect(() => issues(withOrigin(url))).not.toThrow()

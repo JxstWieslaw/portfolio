@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { Logger, NodeIO, type Document, type Primitive } from '@gltf-transform/core'
-import { ALL_EXTENSIONS } from '@gltf-transform/extensions'
+import { ALL_EXTENSIONS, type EmissiveStrength } from '@gltf-transform/extensions'
 import {
   dedup,
   flatten,
@@ -37,16 +37,27 @@ import {
 import { buildGyroscope } from './generators/gyroscope'
 import { type Layout, type SourceEntry } from './sources'
 import {
+  GlbFormatError,
+  JSON_CAP_BYTES,
+  MAX_JSON_DEPTH,
   buildReport,
+  describeError,
   deriveVariantMeta,
+  elementExtensionNames,
+  materialsMessage,
   packGlb,
   parseGlb,
+  printable,
+  quote,
   scanGlb,
   sha256Hex,
   validateReport,
   type GlbReport,
   type Violation,
 } from './validators'
+
+/** Marker for `npm run check:bundle`: a minifier keeps string values, so finding this in a client chunk proves the tooling shipped. */
+export const ASSET_TOOLCHAIN_CANARY = '__asset-toolchain-7f3a__'
 
 export class SourceHashMismatch extends Error {
   constructor(
@@ -66,7 +77,8 @@ export class IngestRejected extends Error {
     readonly subject: string,
     readonly violations: readonly Violation[],
   ) {
-    super(`${subject} rejected:\n${violations.map((x) => `  [${x.code}] ${x.subject}: ${x.message}`).join('\n')}`)
+    // Subject and message can carry text from a hostile file: no control character may survive into the log.
+    super(`${subject} rejected:\n${violations.map((x) => printable(`  [${x.code}] ${x.subject}: ${x.message}`)).join('\n')}`)
   }
 }
 
@@ -76,7 +88,10 @@ export interface Toolchain {
 
 /** Loads the WASM codecs once and builds the NodeIO every read and write goes through. */
 export async function loadToolchain(): Promise<Toolchain> {
-  await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready, MeshoptSimplifier.ready])
+  // The marker prefixes the failure, and is a runtime use that keeps the string in any bundle that keeps this function.
+  await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready, MeshoptSimplifier.ready]).catch((error: unknown) => {
+    throw new Error(`${ASSET_TOOLCHAIN_CANARY} loadToolchain: ${describeError(error)}`, { cause: error })
+  })
   const io = new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({
@@ -144,7 +159,40 @@ function primitiveTriangles(prim: Primitive): number {
 /** Error limits tried in turn, as a fraction of mesh radius. Rising, bounded: never loops forever. */
 const SIMPLIFY_ERRORS = [0.001, 0.003, 0.01, 0.03] as const
 
-/** Strip: cameras, lights, extras, unused data; keep only the declared clips. Throws on anything unusable. */
+/** Extensions our renderer does not honour. Real sources carry them, so they are removed rather than rejected. */
+const REMOVED_EXTENSIONS: ReadonlySet<string> = new Set([
+  'KHR_lights_punctual',
+  'KHR_materials_unlit',
+  'KHR_materials_emissive_strength',
+])
+
+/** The most materials any tier allows. Checked after dedup and prune, so duplicates and unused ones do not count. */
+const MAX_MATERIALS = Math.max(...Object.values(MODEL_BUDGETS).map((b) => b.materials))
+
+/**
+ * Every accessor is written dense. A sparse accessor (morph targets from a DCC export are the usual
+ * source) is legal glTF but the scanner refuses it, and gltf-transform keeps a source's sparse flag
+ * through its transforms. Run before the transforms and again before writing.
+ */
+function densify(doc: Document): void {
+  for (const accessor of doc.getRoot().listAccessors()) accessor.setSparse(false)
+}
+
+/**
+ * Strip: cameras, lights, extras, unused data; keep only the declared clips. Throws on anything unusable.
+ *
+ * Extensions our renderer does not honour are removed (see REMOVED_EXTENSIONS):
+ * - `KHR_lights_punctual`: lights are ours.
+ * - `KHR_materials_unlit`: our lighting must apply to every model, so an unlit material becomes a lit one.
+ *   A flat colour must not turn into a dark mirror, so a material that still has the glTF default
+ *   metallic 1 and roughness 1 (gltf-transform cannot tell "absent" from "explicit 1") and no
+ *   metallic-roughness texture becomes metallic 0, roughness 1. Colour factor and textures are kept.
+ * - `KHR_materials_emissive_strength`: folded into `emissiveFactor` without changing its hue: the colour
+ *   is scaled by the strength, and when the brightest channel would pass 1 the whole colour is scaled
+ *   down together instead of clipping each channel. A strength above 1 therefore loses its overdrive
+ *   (logged), and no tier lists the extension.
+ * Custom `_UPPERCASE` attributes are removed too: nothing in the renderer reads them.
+ */
 function strip(
   doc: Document,
   tier: ModelTier,
@@ -155,13 +203,56 @@ function strip(
   const root = doc.getRoot()
 
   for (const camera of root.listCameras()) camera.dispose()
-  for (const ext of root.listExtensionsUsed()) if (ext.extensionName === 'KHR_lights_punctual') ext.dispose()
+  for (const material of root.listMaterials()) {
+    const strength = material.getExtension<EmissiveStrength>('KHR_materials_emissive_strength')?.getEmissiveStrength()
+    if (strength === undefined) continue
+    const [r, g, b] = material.getEmissiveFactor()
+    // k is the brightest channel after the strength; if it passes 1, scale all three by 1/max so the hue survives.
+    const k = Math.max(r, g, b) * strength
+    const scale = k > 1 ? strength / k : strength
+    material.setEmissiveFactor([r * scale, g * scale, b * scale])
+    log?.(`  folding emissive strength ${strength} into the emissive factor`)
+    if (strength > 1) log?.(`  warning: emissive strength ${strength} is above 1 and is dropped to a factor of at most 1`)
+  }
+  for (const material of root.listMaterials()) {
+    if (!material.getExtension('KHR_materials_unlit')) continue
+    log?.('  removing KHR_materials_unlit: the material is lit by our lighting')
+    if (material.getMetallicFactor() === 1 && material.getRoughnessFactor() === 1 && !material.getMetallicRoughnessTexture())
+      material.setMetallicFactor(0).setRoughnessFactor(1)
+  }
+  for (const ext of root.listExtensionsUsed()) if (REMOVED_EXTENSIONS.has(ext.extensionName)) ext.dispose()
+  for (const mesh of root.listMeshes()) {
+    for (const prim of mesh.listPrimitives()) {
+      for (const semantic of prim.listSemantics()) if (semantic.startsWith('_')) prim.setAttribute(semantic, null)
+      for (const target of prim.listTargets())
+        for (const semantic of target.listSemantics()) if (semantic.startsWith('_')) target.setAttribute(semantic, null)
+    }
+  }
+  densify(doc)
   root.setExtras({})
 
   const scenes = root.listScenes()
   const keep = root.getDefaultScene() ?? scenes[0]
   if (!keep) throw new IngestRejected(subject, [{ code: 'SCHEMA', subject, message: 'source has no scene' }])
   for (const scene of scenes) if (scene !== keep) scene.dispose()
+  // A channel that targets a node outside the kept scene would keep that node alive in the file, unreachable.
+  const reachable = new Set<unknown>()
+  keep.traverse((node) => void reachable.add(node))
+  const channelsInSource = new Map(root.listAnimations().map((a) => [a, a.listChannels().length]))
+  for (const animation of root.listAnimations()) {
+    let dropped = 0
+    for (const channel of animation.listChannels()) {
+      const target = channel.getTargetNode()
+      if (target && !reachable.has(target)) {
+        channel.dispose()
+        dropped += 1
+      }
+    }
+    if (dropped > 0) log?.(`  dropping ${dropped} channel(s) of ${printable(quote(animation.getName()))}: they target nodes outside the kept scene`)
+    for (const sampler of animation.listSamplers()) {
+      if (!animation.listChannels().some((c) => c.getSampler() === sampler)) sampler.dispose()
+    }
+  }
 
   for (const texture of root.listTextures()) texture.setURI('').setName('')
 
@@ -171,7 +262,11 @@ function strip(
     const from = animation.getName()
     const rename = wanted.get(from)
     if (rename === undefined) {
-      log?.(`  dropping animation "${from}": not listed in clips`)
+      log?.(`  dropping animation ${printable(quote(from))}: not listed in clips`)
+      // Disposing the animation alone leaves its samplers alive, and a live sampler keeps its keyframe
+      // accessors from being pruned: they would be written out and read by nothing.
+      for (const sampler of animation.listSamplers()) sampler.dispose()
+      for (const channel of animation.listChannels()) channel.dispose()
       animation.dispose()
     }
     else {
@@ -181,12 +276,19 @@ function strip(
   }
   for (const from of wanted.keys()) {
     if (!found.has(from))
-      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message: `clip "${from}" not found in the source` }])
+      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message: `clip ${quote(from)} not found in the source` }])
+  }
+  for (const animation of root.listAnimations()) {
+    if (animation.listChannels().length === 0) {
+      const empty = channelsInSource.get(animation) === 0
+      const message = empty
+        ? `clip ${quote(animation.getName())} has no channels in the source`
+        : `clip ${quote(animation.getName())} only animates nodes outside the kept scene`
+      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message }])
+    }
   }
 
   const violations: Violation[] = []
-  if (root.listMaterials().length > 2)
-    violations.push({ code: 'MATERIALS', subject, message: `source has ${root.listMaterials().length} materials; at most two are accepted` })
   if (root.listSkins().length > 0 && root.listAnimations().length === 0)
     violations.push({ code: 'CLIPS', subject, message: 'source has a skin but no declared clip' })
   const allowed = new Set<string>(TIER_EXTENSIONS[tier])
@@ -222,10 +324,23 @@ function normalise(doc: Document, subject: string): void {
 const NAMED_COLLECTIONS = ['scenes', 'nodes', 'meshes', 'materials', 'accessors', 'bufferViews', 'buffers', 'images', 'textures', 'samplers', 'skins'] as const
 
 /** Removes every `extras` key and all metadata the writer adds, from the written bytes. Deterministic. */
-export function stripGlbMetadata(bytes: Uint8Array): Uint8Array {
-  const { json, bin } = parseGlb(bytes)
-  const clean = dropExtras(json) as Record<string, unknown>
+export function stripGlbMetadata(bytes: Uint8Array, tier?: ModelTier): Uint8Array {
+  const { json, bin } = parseGlb(bytes, tier ? JSON_CAP_BYTES[tier] : undefined)
+  const clean = dropExtras(json, 0) as Record<string, unknown>
   clean['asset'] = { version: '2.0' }
+  // extensionsUsed is exactly the set of extensions some element carries a body for, sorted. gltf-transform
+  // keeps an extension listed after pruning every property that used it (KHR_texture_transform once
+  // quantize has baked it into the UVs), and the scanner refuses a declaration nothing backs.
+  // KHR_mesh_quantization has no element body of its own: it stays when it was declared.
+  const used = elementExtensionNames(clean)
+  used.add('KHR_mesh_quantization')
+  for (const key of ['extensionsUsed', 'extensionsRequired'] as const) {
+    const list = clean[key]
+    if (!Array.isArray(list) || !list.every((e) => typeof e === 'string')) continue
+    const kept = [...new Set(list as string[])].filter((e) => used.has(e)).sort()
+    if (kept.length > 0) clean[key] = kept
+    else delete clean[key]
+  }
   // Names are where paths and addresses hide, and nothing at runtime reads them. Clip names stay: the ledger addresses clips by name.
   for (const collection of NAMED_COLLECTIONS) {
     const items = clean[collection]
@@ -242,16 +357,16 @@ export function stripGlbMetadata(bytes: Uint8Array): Uint8Array {
   return packGlb(clean, bin)
 }
 
-function dropExtras(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(dropExtras)
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {}
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (key !== 'extras') out[key] = dropExtras(child)
-    }
-    return out
+function dropExtras(value: unknown, depth: number): unknown {
+  if (value === null || typeof value !== 'object') return value
+  // A hostile file can nest far deeper than the stack allows: refuse it with a message, not a RangeError.
+  if (depth >= MAX_JSON_DEPTH) throw new GlbFormatError(`JSON nests deeper than ${MAX_JSON_DEPTH} levels`)
+  if (Array.isArray(value)) return value.map((item) => dropExtras(item, depth + 1))
+  const out: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key !== 'extras') out[key] = dropExtras(child, depth + 1)
   }
-  return value
+  return out
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -276,6 +391,7 @@ export interface BuildOptions {
 
 export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOptions): Promise<BuiltVariant> {
   const { subject, tier } = opts
+  if (!(tier in MODEL_BUDGETS)) throw new Error(`${ASSET_TOOLCHAIN_CANARY} buildVariant: unknown tier ${String(tier)}`)
   const budget = MODEL_BUDGETS[tier]
   doc.setLogger(new Logger(Logger.Verbosity.WARN))
 
@@ -283,7 +399,12 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   normalise(doc, subject)
 
   const animated = doc.getRoot().listAnimations().length > 0 || doc.getRoot().listSkins().length > 0
-  await doc.transform(dedup(), flatten(), weld())
+  await doc.transform(dedup(), flatten(), weld(), prune())
+  // Counted here and not in strip(): duplicate and unused materials are gone by now, so only a real excess is refused.
+  // The final validateReport gate still enforces each tier's own budget.
+  const materialCount = doc.getRoot().listMaterials().length
+  if (materialCount > MAX_MATERIALS)
+    throw new IngestRejected(subject, [{ code: 'MATERIALS', subject, message: materialsMessage(materialCount, MAX_MATERIALS) }])
   if (!animated) await doc.transform(join())
 
   let triangles = countTriangles(doc)
@@ -309,8 +430,16 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
 
   await doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'high' }))
 
-  const bytes = stripGlbMetadata(await tc.io.writeBinary(doc))
-  const report = buildReport(bytes)
+  densify(doc)
+  let bytes: Uint8Array
+  try {
+    bytes = stripGlbMetadata(await tc.io.writeBinary(doc), tier)
+  } catch (error) {
+    // The written JSON is bigger than this tier allows (or nests past the limit): a refusal with a reason, not a crash.
+    if (error instanceof GlbFormatError) throw new IngestRejected(subject, [{ code: 'BYTES', subject, message: `tier ${tier}: ${error.message}` }])
+    throw error
+  }
+  const report = buildReport(bytes, tier)
 
   const violations = [...validateReport(report, { subject, tier }), ...scanGlb(bytes, subject, tier)]
   if (violations.length > 0) throw new IngestRejected(subject, violations)

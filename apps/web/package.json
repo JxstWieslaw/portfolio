@@ -16,6 +16,7 @@
     "assets:ingest": "tsx scripts/assets/ingest.cli.ts",
     "assets:check": "tsx scripts/assets/check.cli.ts",
     "assets:fetch": "tsx scripts/assets/fetch.cli.ts",
+    "check:bundle": "tsx scripts/assets/bundle.cli.ts",
     "size": "size-limit",
     "lighthouse": "lhci autorun"
   },
