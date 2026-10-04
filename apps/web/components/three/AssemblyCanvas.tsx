@@ -45,6 +45,7 @@ import {
 } from '@/lib/assembly/targets'
 import { FORMATIONS, washCss, type FormationId } from '@/lib/formations/config'
 import { createArtefact, type Artefact } from './Artefact'
+import { markSlotCrashed } from '@/lib/models/errors'
 import { createModelSlot, type ModelSlot } from './models/ModelSlot'
 import { attachSlots, createAssemblyMaterial, createAssemblyUniforms, type AssemblySlots, type AssemblyUniforms } from './AssemblyMaterial'
 
@@ -664,6 +665,8 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       } catch {
         // Already logged above; the cube rig does not depend on it.
       }
+      // `dispose` clears the slot's markers; leave the evidence that it crashed.
+      markSlotCrashed()
     }
     artefact.tick(t)
 

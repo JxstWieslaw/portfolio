@@ -5,7 +5,7 @@ import { disposeModel } from '@/lib/models/dispose'
 import { ModelLoadError } from '@/lib/models/errors'
 import type { ModelTierNumber } from '@/lib/models/gate'
 import { resolveModel } from '@/lib/models/manifest'
-import { assertFetchable, assertParsed, type PromisedFacts } from '@/lib/models/validate'
+import { MAX_MODEL_BYTES, assertFetchable, assertParsed, type PromisedFacts } from '@/lib/models/validate'
 
 /**
  * The only importer of `GLTFLoader` and `MeshoptDecoder` — model platform spec
@@ -39,7 +39,6 @@ export type LoadResult =
   | { readonly kind: 'unavailable'; readonly reason: string }
 
 export const FETCH_TIMEOUT_MS = 15_000
-export const MAX_MODEL_BYTES = 2_000_000
 
 interface FetchInit extends RequestInit {
   priority?: 'high' | 'low' | 'auto'
@@ -215,7 +214,7 @@ export async function loadModel(id: string, tier: ModelTierNumber, signal?: Abor
   const resolved = resolveModel(id, tier)
   if (resolved.kind === 'unavailable') return { kind: 'unavailable', reason: `"${id}" is ${resolved.reason === 'disabled' ? 'disabled in the manifest' : `not available at tier ${tier}`}` }
   const { variant } = resolved.model
-  assertFetchable(variant.url, variant.integrity)
+  assertFetchable(variant)
   const buffer = await abortable(fetchBytes(variant.url, variant.integrity, variant.bytes), signal)
   // The bytes are parsed once; keeping a copy would hold the file's size for the whole session.
   bytes.delete(variant.url)
@@ -282,7 +281,7 @@ export async function prefetchModel(id: string, tier: ModelTierNumber): Promise<
   const resolved = resolveModel(id, tier)
   if (resolved.kind === 'unavailable') return
   const { variant } = resolved.model
-  assertFetchable(variant.url, variant.integrity)
+  assertFetchable(variant)
   await fetchBytes(variant.url, variant.integrity, variant.bytes)
 }
 

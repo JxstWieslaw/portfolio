@@ -28,3 +28,10 @@ export class ModelLoadError extends Error {
 export function errorCode(error: unknown): ModelErrorCode {
   return error instanceof ModelLoadError ? error.code : 'unknown'
 }
+
+/** Leaves `data-models-failed >= 1` and `data-models-last-error="slot-crashed"` behind after a crashed slot is disposed (dispose clears its own markers). */
+export function markSlotCrashed(): void {
+  const data = document.documentElement.dataset
+  data.modelsFailed = String(Math.max(1, Number(data.modelsFailed) || 0))
+  data.modelsLastError = 'slot-crashed'
+}

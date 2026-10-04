@@ -259,7 +259,26 @@ describe('prepareModel', () => {
   })
 })
 
+const goodVariant = { url: '/models/a.t1.ba83862b.glb', integrity: 'sha256-uoOGK/a4W0oOBP14TMz1+HvcEOhkXnOsZlQFlKLw3po=', bytes: 100, triangles: 10, maxTexturePx: 0, tier: 1, requires: ['meshopt'] }
+
 describe('validation helpers', () => {
+  it.each([
+    ['bytes missing', { bytes: undefined }],
+    ['bytes zero', { bytes: 0 }],
+    ['bytes fractional', { bytes: 1.5 }],
+    ['bytes NaN', { bytes: Number.NaN }],
+    ['bytes over the cap', { bytes: 2_000_001 }],
+    ['triangles missing', { triangles: undefined }],
+    ['triangles negative', { triangles: -1 }],
+    ['maxTexturePx missing', { maxTexturePx: undefined }],
+    ['maxTexturePx negative', { maxTexturePx: -2 }],
+    ['tier 4', { tier: 4 }],
+    ['tier missing', { tier: undefined }],
+    ['requires not an array', { requires: 'meshopt' }],
+  ])('assertFetchable refuses %s', (_, over) => {
+    expect(() => assertFetchable({ ...goodVariant, ...over })).toThrow(/manifest|must be/)
+  })
+
   it('only hash-named /models/ files and real SRI strings pass', () => {
     expect(MODEL_URL.test('/models/gyroscope.t1.ba83862b.glb')).toBe(true)
     for (const bad of ['/models/manifest.json', '/models/../x.t1.ba83862b.glb', 'https://x/models/a.t1.ba83862b.glb', '/models/a.t4.ba83862b.glb', '/models/A.t1.ba83862b.glb']) {
@@ -267,7 +286,8 @@ describe('validation helpers', () => {
     }
     expect(INTEGRITY.test('sha256-uoOGK/a4W0oOBP14TMz1+HvcEOhkXnOsZlQFlKLw3po=')).toBe(true)
     expect(INTEGRITY.test('md5-abc')).toBe(false)
-    expect(() => assertFetchable('/models/a.t1.ba83862b.glb', 'sha256-short')).toThrow(ModelLoadError)
+    expect(() => assertFetchable({ ...goodVariant, integrity: 'sha256-short' })).toThrow(ModelLoadError)
+    expect(() => assertFetchable(goodVariant)).not.toThrow()
   })
 
   it('assertParsed rejects empty, non-finite and degenerate models', () => {

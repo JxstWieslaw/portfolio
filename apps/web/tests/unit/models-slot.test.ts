@@ -343,6 +343,21 @@ describe('the artefact role', () => {
   })
 })
 
+describe('a crashed slot', () => {
+  it('keeps its failure evidence after dispose clears the markers', async () => {
+    const { markSlotCrashed } = await import('@/lib/models/errors')
+    const { slot } = setup()
+    slot.dispose()
+    expect(html.dataset.modelsFailed).toBeUndefined()
+    markSlotCrashed()
+    expect(Number(html.dataset.modelsFailed)).toBeGreaterThanOrEqual(1)
+    expect(html.dataset.modelsLastError).toBe('slot-crashed')
+    html.dataset.modelsFailed = '3'
+    markSlotCrashed()
+    expect(html.dataset.modelsFailed).toBe('3')
+  })
+})
+
 describe('dispose', () => {
   it('keeps going when one model throws, always clears the markers and the debug hook', async () => {
     const m = fakeModel()

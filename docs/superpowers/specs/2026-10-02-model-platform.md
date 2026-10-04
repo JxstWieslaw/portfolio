@@ -202,6 +202,8 @@ A unit test reads the resolved `headers()` config and the e2e checks the built s
 
 **Decision: a failed asset stays failed for the session.** A fetch, integrity, parse or compile failure marks the asset failed until reload. There is deliberately no retry or backoff policy; the procedural artefact is always the fallback, and a retry loop is the failure mode this avoids.
 
+**Decision: the tier is stubbed from the rung.** `stubTier`/`readTier` map `reduced-instances` to tier 1 and `live` to tier 2; when detect-gpu lands (journey slice 3, Lane B) it replaces them. Interim acceptable because tier 1 is the safe direction. Note: `hasModestHardware` (4 cores or fewer, or 4 GB or less) means an ordinary 4-core laptop gets the tier-1 variant; `MODEST_CORES` is deliberately not changed here because it also sets the cube density.
+
 **Decision: the test seam is compiled out of production.** `?modeltest=1` plus `window.__ASSEMBLY_MODELS_TEST__` (and the `gl.info.memory` debug hook) exist only when `NODE_ENV !== 'production'` or the app was built with `NEXT_PUBLIC_MODEL_TEST=1`, which only the e2e job sets. The budgets job greps the production chunks for the seam and fails if it is there. `?tier=` is honoured only where the seam is.
 
 ---

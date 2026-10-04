@@ -71,11 +71,7 @@ jobs:
       # The model test seam exists only in the e2e job's build (NEXT_PUBLIC_MODEL_TEST=1). A production
       # build must not contain it: this fails if the seam, or its debug hook, shipped.
       - name: The model test seam is compiled out of the production build
-        run: |
-          if grep -rlE "__ASSEMBLY_MODELS_TEST__|__ASSEMBLY_DEBUG__" apps/web/.next/static; then
-            echo "model test seam found in a production build"
-            exit 1
-          fi
+        run: bash apps/web/scripts/check-no-model-seam.sh apps/web/.next/static
       - name: Enforce JS bundle budget
         run: npm run size -w @repo/web
       - name: Enforce Lighthouse budgets
