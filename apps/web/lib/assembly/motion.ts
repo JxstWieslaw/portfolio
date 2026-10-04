@@ -159,7 +159,7 @@ export function dropTrigger(state: DropState, from: BundleKind, to: BundleKind, 
 /** Scroll speed, in viewport heights per second, at which the cubes are fully stretched. */
 export const VELOCITY_FULL = 4
 /** Below this speed (reading, a trackpad's drift) the cubes do not react at all. */
-export const VELOCITY_DEADZONE = 0.1
+export const VELOCITY_DEADZONE = 0.15
 /** How much longer a cube gets along the scroll axis at full speed: `1 + VELOCITY_STRETCH`. */
 export const VELOCITY_STRETCH = 0.35
 /** The weight chases the speed at these rates, 1/s: it picks up quickly and lets go more slowly. */
@@ -170,7 +170,7 @@ export const VELOCITY_EPSILON = 0.002
 /** A gap between two frames longer than this (a hidden layer, a stalled tab) is not a scroll speed. */
 export const VELOCITY_MAX_GAP = 0.5
 /** Frames closer together than this are measured as if they were this far apart. */
-export const VELOCITY_MIN_DT = 1 / 120
+export const VELOCITY_MIN_DT = 1 / 90
 
 /**
  * 0 at rest, 1 at `VELOCITY_FULL`: the stretch weight of a scroll speed in
