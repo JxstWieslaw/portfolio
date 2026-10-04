@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -31,7 +31,6 @@ vi.mock('../../scripts/assets/pipeline', async (original) => {
   return { ...actual, measureBoundsRadius: vi.fn(actual.measureBoundsRadius) }
 })
 
-const committed = layoutFor(defaultRoot())
 const codes = (vs: readonly Violation[]) => [...new Set(vs.map((x) => x.code))].sort()
 const messages = (vs: readonly Violation[], code: string) => vs.filter((x) => x.code === code).map((x) => x.message)
 

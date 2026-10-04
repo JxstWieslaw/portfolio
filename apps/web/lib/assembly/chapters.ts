@@ -7,8 +7,8 @@
  * which cubes make room for it, the camera's look-at offset and the key/fill
  * bias. Data, not logic, so the integration slice (P4) only edits rows.
  *
- * Every `model` is `null` at merge of the runtime slice, and every `target`
- * and bias is neutral, so no pixel changes until a row is filled.
+ * The runtime slice merged with every `model` null; the first models fill three rows
+ * (orbit, scatter, grid). Every other row, and every `target` and bias, is neutral.
  */
 
 import { easeOutBack } from '@/lib/assembly/artefact'
@@ -50,9 +50,22 @@ export const CHAPTERS: Readonly<Record<FormationId, Chapter>> = {
   monolith: NEUTRAL,
   stream: NEUTRAL,
   lattice: NEUTRAL,
-  orbit: NEUTRAL,
-  scatter: NEUTRAL,
-  grid: NEUTRAL,
+  // How I Lead: the generated gyroscope is the orbit's heart (a team around a centre). It stands in for the
+  // procedural artefact here, so the core of cubes opens to its radius and the three rings turn around it.
+  orbit: {
+    ...NEUTRAL,
+    model: { asset: 'gyroscope', role: 'artefact', position: [0, 0, 0], scale: 0.8, rotation: [0.2, 0, 0], spin: 0.16, exclusion: 0.88, appear: [0.3, 0.8] },
+  },
+  // Craft: a faceted crystal cluster standing in the settled pile, a set piece the falling cubes land around.
+  scatter: {
+    ...NEUTRAL,
+    model: { asset: 'crystal-cluster', role: 'prop', position: [0, -0.15, 0], scale: 0.62, rotation: [0.08, 0.5, 0.04], spin: 0.1, exclusion: 0.66, appear: [0.3, 0.8] },
+  },
+  // Stack: a gate in the middle of the turning lattice, the threshold into the ordered system.
+  grid: {
+    ...NEUTRAL,
+    model: { asset: 'gate-complex', role: 'prop', position: [0, 0, 0], scale: 1.0, rotation: [0, 0.4, 0], spin: 0, exclusion: 1.1, appear: [0.3, 0.8] },
+  },
   ring: NEUTRAL,
 }
 

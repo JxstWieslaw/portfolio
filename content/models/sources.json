@@ -19,10 +19,9 @@
       "retrievedAt": "2026-10-04"
     },
     "look": {
-      "palette": { "rockTrack": "#3A3F5E", "rock": "#262A42", "crystal": "#22D3EE" },
-      "metallic": 0.6,
-      "roughness": 0.3,
-      "emissive": { "color": "#22D3EE", "amount": 0.08 }
+      "palette": { "rockTrack": "#4B5283", "rock": "#303560", "crystal": "#67E8F9" },
+      "metallic": 0.25,
+      "roughness": 0.4
     },
     "tiers": [1, 2]
   },
@@ -46,9 +45,10 @@
       "retrievedAt": "2026-10-04"
     },
     "look": {
-      "palette": { "metalDark": "#4A4F6E", "metal": "#9AA3C7", "dark": "#1A1D2E", "metalRed": "#7C3AED" },
-      "metallic": 0.6,
-      "roughness": 0.3
+      "palette": { "metalDark": "#6A72A3", "metal": "#D3D9F2", "dark": "#2E3350", "metalRed": "#A78BFA" },
+      "metallic": 0.4,
+      "roughness": 0.35,
+      "emissive": { "color": "#7C3AED", "amount": 0.12 }
     },
     "tiers": [1, 2]
   },

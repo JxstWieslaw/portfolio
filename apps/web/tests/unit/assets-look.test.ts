@@ -66,7 +66,7 @@ async function colours(bytes: Uint8Array): Promise<string[]> {
   for (const mesh of doc.getRoot().listMeshes())
     for (const prim of mesh.listPrimitives()) {
       const attr = prim.getAttribute('COLOR_0')
-      for (let i = 0; i < (attr?.getCount() ?? 0); i += 1) seen.add((attr?.getElement(i, []) ?? []).map((v) => v.toFixed(2)).join(','))
+      for (let i = 0; i < (attr?.getCount() ?? 0); i += 1) seen.add((attr?.getElement(i, [] as number[]) ?? []).map((v) => v.toFixed(2)).join(','))
     }
   return [...seen].sort()
 }

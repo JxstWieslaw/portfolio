@@ -53,12 +53,18 @@ describe('the committed manifest', () => {
     expect(() => modelManifestSchema.parse(committed)).not.toThrow()
   })
 
-  it('loads, and keeps the generated gyroscope disabled so it resolves to "unavailable"', () => {
+  it('loads, and lists the three first models as enabled and resolvable at both tiers', () => {
     const manifest = loadManifest()
     expect(manifest.version).toBe(1)
-    expect(manifest.models.find((m) => m.id === 'gyroscope')?.enabled).toBe(false)
-    expect(resolveModel('gyroscope', 2)).toEqual({ kind: 'unavailable', reason: 'disabled' })
+    expect(manifest.models.map((m) => [m.id, m.enabled])).toEqual([
+      ['crystal-cluster', true],
+      ['gate-complex', true],
+      ['gyroscope', true],
+    ])
+    for (const id of ['crystal-cluster', 'gate-complex', 'gyroscope'])
+      for (const tier of [1, 2] as const) expect(resolveModel(id, tier).kind, `${id} tier ${tier}`).toBe('resolved')
   })
+
 
   it('treats an id the manifest does not contain as a bug (it throws), not as a quiet rollback', () => {
     expect(() => resolveModel('does-not-exist', 2)).toThrow(/not in the manifest/)

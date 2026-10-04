@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { easeOutBack } from '@/lib/assembly/artefact'
 import {
@@ -27,12 +29,13 @@ const placement = (asset: string, over: Partial<ModelPlacement> = {}): ModelPlac
   ...over,
 })
 
-/** The committed ledger with some rows filled, for the paths no merged row exercises yet. */
+/** An all-neutral ledger with some rows filled, so these tests do not depend on which rows ship. */
 function ledgerWith(rows: Partial<Record<FormationId, ModelPlacement>>): Record<FormationId, Chapter> {
-  const out = { ...CHAPTERS }
+  const neutral: Chapter = { target: [0, 0, 0], keyBias: 1, fillBias: 1, model: null }
+  const out = Object.fromEntries(FORMATION_IDS.map((id) => [id, neutral])) as Record<FormationId, Chapter>
   for (const id of FORMATION_IDS) {
     const model = rows[id]
-    if (model) out[id] = { ...CHAPTERS[id], model }
+    if (model) out[id] = { ...neutral, model }
   }
   return out
 }
@@ -42,9 +45,31 @@ describe('the chapter ledger', () => {
     expect(Object.keys(CHAPTERS).sort()).toEqual([...FORMATION_IDS].sort())
   })
 
-  it('merges with no model and neutral values, so no pixel changes', () => {
+  it('leaves every formation without a model neutral, so nothing outside the three model sections changes', () => {
     for (const id of FORMATION_IDS) {
+      if (CHAPTERS[id].model) continue
       expect(CHAPTERS[id]).toEqual({ target: [0, 0, 0], keyBias: 1, fillBias: 1, model: null })
+    }
+  })
+
+  it('places the first three models: gyroscope in orbit, crystal cluster in scatter, gate in grid, hero untouched', () => {
+    expect(CHAPTERS.monolith.model).toBeNull()
+    expect(CHAPTERS.orbit.model).toMatchObject({ asset: 'gyroscope', role: 'artefact' })
+    expect(CHAPTERS.scatter.model).toMatchObject({ asset: 'crystal-cluster', role: 'prop' })
+    expect(CHAPTERS.grid.model).toMatchObject({ asset: 'gate-complex', role: 'prop' })
+    for (const id of ['orbit', 'scatter', 'grid'] as const) {
+      const model = CHAPTERS[id].model
+      // The hole always covers the model: a bounding radius of 1 scaled by `scale` must fit inside the exclusion.
+      expect(model?.exclusion ?? 0).toBeGreaterThanOrEqual(model?.scale ?? Infinity)
+      expect(model?.appear[0]).toBeLessThan(model?.appear[1] ?? 0)
+    }
+  })
+
+  it('every placed asset is an enabled entry of the committed manifest', () => {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), 'public/models/manifest.json'), 'utf8')) as { models: { id: string; enabled: boolean }[] }
+    for (const id of FORMATION_IDS) {
+      const asset = CHAPTERS[id].model?.asset
+      if (asset) expect(manifest.models.find((m) => m.id === asset)?.enabled, asset).toBe(true)
     }
   })
 
@@ -149,8 +174,11 @@ describe('wantedAssets', () => {
 })
 
 describe('nextAssetAfter', () => {
-  it('is null for the merged ledger', () => {
-    expect(nextAssetAfter('monolith')).toBeNull()
+  it('walks the committed ledger in document order: orbit, then scatter, then grid, then nothing', () => {
+    expect(nextAssetAfter('monolith')).toBe('gyroscope')
+    expect(nextAssetAfter('orbit')).toBe('crystal-cluster')
+    expect(nextAssetAfter('scatter')).toBe('gate-complex')
+    expect(nextAssetAfter('grid')).toBeNull()
   })
 
   it('finds the next formation in document order that has a placement', () => {

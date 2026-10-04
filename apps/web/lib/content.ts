@@ -11,6 +11,7 @@
 
 import {
   countDomainsShipped as countDomainsShippedIn,
+  creditsFileSchema,
   domainSchema,
   experienceSchema,
   profileSchema,
@@ -19,9 +20,10 @@ import {
   skillGroupSchema,
   writingSchema,
 } from '@repo/contracts'
-import type { Domain, Experience, KpiGroup, Profile, Project, SkillGroup, Writing } from '@repo/contracts'
+import type { Credit, Domain, Experience, KpiGroup, Profile, Project, SkillGroup, Writing } from '@repo/contracts'
 import { z } from 'zod'
 
+import creditsJson from '../../../content/credits.json'
 import domainsJson from '../../../content/domains.json'
 import experienceJson from '../../../content/experience.json'
 import profileJson from '../../../content/profile.json'
@@ -60,6 +62,7 @@ const projects = z.array(projectSchema).parse(projectsJson)
 const experience = z.array(experienceSchema).parse(experienceJson)
 const skills = z.array(skillGroupSchema).parse(skillsJson)
 const writing = z.array(writingSchema).parse(writingJson)
+const credits = creditsFileSchema.parse(creditsJson)
 
 export function getProfile(): Profile {
   return profile
@@ -79,6 +82,11 @@ export function getSkills(): SkillGroup[] {
 
 export function getWriting(): Writing[] {
   return writing
+}
+
+/** The enabled models' credits, as `assets:ingest` derives them from sources.json. */
+export function getCredits(): Credit[] {
+  return credits
 }
 
 /** All projects, in authored order. */

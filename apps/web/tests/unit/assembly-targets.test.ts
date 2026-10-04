@@ -154,13 +154,18 @@ describe('clearSphere', () => {
   })
 })
 
-describe('bundles are byte-identical to the pre-PR code while every model row is null', () => {
+describe('bundles are byte-identical to the pre-model code except where a model row opens a hole', () => {
   /**
    * `tests/fixtures/assembly-bundles.golden.json` holds sha256 digests of the
    * Float32Array bytes of position, colour and scale for every bundle kind at
    * two instance fractions. They were captured by running the SAME
    * `assemblyBuilder` from the commit before this work (2e0ecce, develop after
    * #46) in a scratch checkout, not from this PR's own output.
+   *
+   * The first models (orbit, scatter and grid rows with an exclusion) deliberately changed the `position`
+   * digest of exactly those three formations, at both fractions: cubes inside the exclusion sphere move to
+   * its surface. Their `count`, `colour` and `live` digests did not change, and cloud, monolith, stream,
+   * lattice and ring are still the pre-model bytes: that is what this test pins.
    */
   const digest = (a: Float32Array) => createHash('sha256').update(Buffer.from(a.buffer, a.byteOffset, a.byteLength)).digest('hex')
   const kinds = ['cloud', 'monolith', 'stream', 'lattice', 'orbit', 'scatter', 'grid', 'ring'] as const

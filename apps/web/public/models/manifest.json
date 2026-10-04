@@ -1,5 +1,5 @@
 {
-  "contentHash": "d22f93568abde230",
+  "contentHash": "99a0fb56c0e1df5f",
   "models": [
     {
       "boundsRadius": 1,
@@ -10,34 +10,34 @@
       "title": "Crystal cluster",
       "variants": [
         {
-          "bytes": 6624,
+          "bytes": 6544,
           "extensions": [
             "EXT_meshopt_compression",
             "KHR_mesh_quantization"
           ],
-          "integrity": "sha256-prsvE2JR1/zA2o2RYnHpPFb4q27MLJsuHR6jfEZ+vlA=",
+          "integrity": "sha256-wcClLAKCUM5vu1ZnWy4yxneYXenIwyrOxctJ+nQCgok=",
           "maxTexturePx": 0,
           "requires": [
             "meshopt"
           ],
           "tier": 1,
           "triangles": 380,
-          "url": "/models/crystal-cluster.t1.a6bb2f13.glb"
+          "url": "/models/crystal-cluster.t1.c1c0a52c.glb"
         },
         {
-          "bytes": 6624,
+          "bytes": 6544,
           "extensions": [
             "EXT_meshopt_compression",
             "KHR_mesh_quantization"
           ],
-          "integrity": "sha256-prsvE2JR1/zA2o2RYnHpPFb4q27MLJsuHR6jfEZ+vlA=",
+          "integrity": "sha256-wcClLAKCUM5vu1ZnWy4yxneYXenIwyrOxctJ+nQCgok=",
           "maxTexturePx": 0,
           "requires": [
             "meshopt"
           ],
           "tier": 2,
           "triangles": 380,
-          "url": "/models/crystal-cluster.t2.a6bb2f13.glb"
+          "url": "/models/crystal-cluster.t2.c1c0a52c.glb"
         }
       ]
     },
@@ -50,34 +50,34 @@
       "title": "Gate",
       "variants": [
         {
-          "bytes": 6952,
+          "bytes": 7032,
           "extensions": [
             "EXT_meshopt_compression",
             "KHR_mesh_quantization"
           ],
-          "integrity": "sha256-vRTsWgknkrFNYpadSqG1qPbiWV4PkVzJO981muj27g0=",
+          "integrity": "sha256-MvkCFQuIQUhpG2YTM4+oo1irQKkl8sfKv7PM8JBpeVE=",
           "maxTexturePx": 0,
           "requires": [
             "meshopt"
           ],
           "tier": 1,
           "triangles": 460,
-          "url": "/models/gate-complex.t1.bd14ec5a.glb"
+          "url": "/models/gate-complex.t1.32f90215.glb"
         },
         {
-          "bytes": 6952,
+          "bytes": 7032,
           "extensions": [
             "EXT_meshopt_compression",
             "KHR_mesh_quantization"
           ],
-          "integrity": "sha256-vRTsWgknkrFNYpadSqG1qPbiWV4PkVzJO981muj27g0=",
+          "integrity": "sha256-MvkCFQuIQUhpG2YTM4+oo1irQKkl8sfKv7PM8JBpeVE=",
           "maxTexturePx": 0,
           "requires": [
             "meshopt"
           ],
           "tier": 2,
           "triangles": 460,
-          "url": "/models/gate-complex.t2.bd14ec5a.glb"
+          "url": "/models/gate-complex.t2.32f90215.glb"
         }
       ]
     },

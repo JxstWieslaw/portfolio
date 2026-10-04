@@ -118,6 +118,34 @@ npx gltfjsx public/models/artefact.glb --types --transform -o components/three/m
 ```
 Loading in the site: `useGLTF` with `MeshoptDecoder`/`KTX2Loader` set once in `PersistentCanvas`; the model is `dynamic()`-imported so it never touches the initial JS budget; a poster covers it until loaded.
 
+### 5.1 Flat-colour kit models: the `look` block (material merge and recolour)
+
+Kits such as Kenney's Space Kit colour a model with one flat material per colour (3 or 4 per piece), and the tier budgets allow one material at tier 1 and two at tiers 2 and 3. A source entry with a `look` block in `content/models/sources.json` is merged to **one** material by the pipeline (`apps/web/scripts/assets/look.ts`). Without a `look` block nothing changes.
+
+The rule, in full:
+
+1. Each primitive's material colour is baked into a constant per-vertex `COLOR_0` (VEC3, linear) on a vertex stream of its own (unused vertices dropped), all primitives then share one material with a white base colour, and `join` fuses them into a single draw call. UV sets are dropped (nothing reads them without a texture).
+2. A source with any texture is refused: flattening it would lose the texture.
+3. **Recolour toward the site palette is explicit, never guessed.** `look.palette` maps a source material name to the sRGB hex it becomes (the site's tokens: violet `#7C3AED` / `#A78BFA`, cyan `#22D3EE` / `#67E8F9`, and the cool neutrals around `#1E2238` to `#D3D9F2`). A material not named keeps its source colour. A palette key that matches no material fails the ingest, so a typo cannot pass silently.
+4. The merged material gets `look.metallic` and `look.roughness` (defaults 0.6 and 0.3), and an optional uniform emissive accent (`look.emissive`: colour and an amount from 0 to 1). A uniform emissive lifts the whole piece, not just its crystal, so keep the amount small or leave it out.
+5. Centring on the origin and scaling to bounding radius 1 are the existing normalise step; the ledger's `scale` stays the only size knob.
+
+Why vertex colour and not a texture atlas: it adds no image, no WebP capability and no sampler, the output is a few kilobytes, and the look stays editable in one JSON block.
+
+The first sourced models (all enabled, tiers 1 and 2): `crystal-cluster` (Kenney Space Kit `rock_crystalsLargeB`) in Craft, `gate-complex` (Kenney Space Kit `gate_complex`) in Stack, and the generated `gyroscope` in How I Lead. Why the gate sits in Stack: How I Lead already hosts the gyroscope and the ledger holds one model per formation, and the gate is a threshold into an ordered structure, which is what the turning lattice of Stack is (journey spec section 3.6).
+
+### 5.2 Verifying a raw-source model (CI cannot)
+
+CI has no raw input, so its verify step is `npm run assets:ingest -- --only generated --verify`. For a raw-source model the maintainer re-proves the committed bytes from the pinned source before committing and before merging a change to its `look` block:
+
+```bash
+npm run assets:fetch -- --id crystal-cluster     # checks archiveSha256, extracts to assets-src/ (gitignored)
+npm run assets:fetch -- --id gate-complex
+npm run assets:ingest -- --verify                # every source, raw ones included: exit 1 on any difference
+npm run assets:check                             # what CI runs
+git ls-files assets-src                          # must print nothing: raw sources and zips are never committed
+```
+
 ---
 
 ## 6. Licence & credit checklist (before anything goes live)
