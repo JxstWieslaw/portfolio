@@ -46,6 +46,8 @@ export interface AssemblyUniforms {
   readonly uAttractPull: { value: number }
   /** How many leading entries of `uAttractors` are live; bounds the shader loop. */
   readonly uAttractCount: { value: number }
+  /** Damped scroll speed, 0..1: stretches each cube along the scroll axis. Exactly 0 at rest (animation § 6, A2). */
+  readonly uVelocity: { value: number }
 }
 
 /** The 2D painter's ramp, sRGB; the shader converts to linear. */
@@ -79,6 +81,7 @@ export function createAssemblyUniforms(): AssemblyUniforms {
     uAttractRadius: { value: 1 },
     uAttractPull: { value: 0 },
     uAttractCount: { value: 0 },
+    uVelocity: { value: 0 },
   }
 }
 

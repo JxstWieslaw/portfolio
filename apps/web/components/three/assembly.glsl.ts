@@ -68,7 +68,7 @@ vec3 curl(vec3 p) {
 }
 `
 
-import { BOUNCE, GRAVITY, GROUND_Y } from '@/lib/assembly/motion'
+import { BOUNCE, GRAVITY, GROUND_Y, VELOCITY_STRETCH } from '@/lib/assembly/motion'
 
 export const STAGGER = 0.35
 
@@ -76,6 +76,11 @@ export const STAGGER = 0.35
 export const FLOW_SPEED = 0.35
 export const FLOW_HALF = 3.2
 
+/**
+ * `uVelocity` (animation spec § 6, A2): scroll speed lengthens each cube along y, the scroll axis, and thins x and z to keep its
+ * volume; the normal follows (inverse transpose of that scale). Both lines are skipped at 0, so a resting frame is untouched.
+ * Kept out of the string so the comment is not shipped.
+ */
 export const VERTEX = /* glsl */ `
 attribute vec3 aPosA;
 attribute vec3 aPosB;
@@ -114,6 +119,7 @@ uniform vec4 uAttractors[8];
 uniform float uAttractRadius;
 uniform float uAttractPull;
 uniform int uAttractCount;
+uniform float uVelocity;
 
 varying vec3 vInstanceColor;
 
@@ -237,9 +243,12 @@ void main() {
   vec3 axis = hashAxis(aSeed);
   float angle = m * 3.14159265 + uTime * 0.15 * aSeed;
   vec3 local = rotateAxis(position * edge, axis, angle);
+  float uVelocityS = 1.0 + ${VELOCITY_STRETCH} * uVelocity;
+  if (uVelocity > 0.0) local *= vec3(inversesqrt(uVelocityS), uVelocityS, inversesqrt(uVelocityS));
 
   csm_Position = centre + local;
   csm_Normal = rotateAxis(normal, axis, angle);
+  if (uVelocity > 0.0) csm_Normal = normalize(csm_Normal * vec3(sqrt(uVelocityS), 1.0 / uVelocityS, sqrt(uVelocityS)));
   vInstanceColor = mix(shade(fromT), shade(toT), m);
 }
 `
