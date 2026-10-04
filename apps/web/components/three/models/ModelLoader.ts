@@ -60,7 +60,7 @@ async function classify(error: unknown, url: string): Promise<ModelLoadError> {
   const message = error instanceof Error ? error.message : String(error)
   if (/integrity|digest/i.test(message)) return new ModelLoadError('integrity', message, { cause: error })
   try {
-    const probe = await fetch(url, { method: 'HEAD', mode: 'same-origin', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(5000) })
+    const probe = await fetch(url, { method: 'HEAD', mode: 'same-origin', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(10_000) })
     if (probe.ok) return new ModelLoadError('integrity', `the file is reachable but failed its integrity check (${message})`, { cause: error })
   } catch {
     // Unreachable as well: a network problem.
