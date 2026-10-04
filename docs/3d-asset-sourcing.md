@@ -22,10 +22,10 @@ Everything else (skyboxes, characters, environments) is *not* needed and would f
 
 | Source | Best for | Licence | Notes |
 |---|---|---|---|
-| **Poly Haven** — polyhaven.com | HDRIs, PBR textures, some models | **CC0** | First stop for the HDRI. Download 1k HDR, convert to KTX2 (below). Not fetchable with `assets:fetch` (manual download). |
-| **Sketchfab** — sketchfab.com (filter: *Downloadable* → licence *CC0* or *CC-BY*) | Hero artefact, abstract sculptures, mechanisms | CC0 / CC-BY (credit required in the colophon) | Check triangle count before downloading; prefer ≤ 50 k tris. Avoid "Editorial" and non-commercial licences. |
+| **Poly Haven** — polyhaven.com | HDRIs, PBR textures, some models | **CC0** | First stop for the HDRI. Download 1k HDR, convert to KTX2 (below). Blocked until its host is added to `SOURCE_HOSTS` in `apps/web/scripts/assets/hosts.ts` in a PR that names the source. |
+| **Sketchfab** — sketchfab.com (filter: *Downloadable* → licence *CC0* or *CC-BY*) | Hero artefact, abstract sculptures, mechanisms | CC0 / CC-BY (credit required in the colophon) | Blocked until its host is added to `SOURCE_HOSTS` in `apps/web/scripts/assets/hosts.ts` in a PR that names the source. Check triangle count before downloading; prefer ≤ 50 k tris. Avoid "Editorial" and non-commercial licences. |
 | **Kenney** — kenney.nl | Low-poly props, prototype kits | **CC0** | Great for Lab physics props; consistent style. |
-| **Quaternius** — quaternius.com | Low-poly models | **CC0** | Same as Kenney; slightly more organic. Not fetchable with `assets:fetch` (manual download). |
+| **Quaternius** — quaternius.com | Low-poly models | **CC0** | Same as Kenney; slightly more organic. Blocked until its host is added to `SOURCE_HOSTS` in `apps/web/scripts/assets/hosts.ts` in a PR that names the source. |
 | **pmndrs Market** — market.pmnd.rs | HDRIs, models, materials curated for React Three Fiber | Mixed (each item states it) | Native to your toolchain; drag-and-drop into R3F. |
 | **ambientCG** — ambientcg.com | PBR textures | **CC0** | Only if the artefact needs a real material. |
 | **Spline** — spline.design (community) | Abstract 3D objects made for the web | Per item | Exports GLB; can also embed, but prefer GLB into R3F to stay one renderer. |
@@ -44,12 +44,25 @@ Everything else (skyboxes, characters, environments) is *not* needed and would f
 |---|---|---|
 | Format | **glTF 2.0 binary (.glb)**, single file | R3F/drei loaders; one request |
 | Triangles | **≤ 50 000** for the hero artefact; ≤ 5 000 per Lab prop | Mobile GPU budget alongside the Assembly |
-| Materials | 1 material, PBR metal/rough; **no** transmission/refraction baked in (we add `MeshTransmissionMaterial` in code if wanted) | Batching; we control the look in-shader |
+| Materials | 1 material at tier 1, up to 2 at tiers 2 and 3 (see the Kenney note below); PBR metal/rough; **no** transmission/refraction baked in (we add `MeshTransmissionMaterial` in code if wanted) | Batching; we control the look in-shader |
 | Textures | ≤ 2 (baseColor, normal), **≤ 2048 px**, power of two, no alpha unless needed | Memory on iOS Safari |
 | Scale | 1 unit = 1 metre; artefact fits in a 1 m cube; origin at centre; Y-up | AR placement and camera rig assumptions |
 | Rigging/animation | None (static) | Not used |
 | Naming | Meaningful mesh/material names, no spaces | `gltfjsx` output readability |
 | Draco/Meshopt | Do **not** pre-compress — send raw GLB; compression is done in the pipeline | Reproducible builds |
+
+What `assets:ingest` does to a source rather than refusing it:
+
+- `KHR_lights_punctual` and cameras are removed (lights and camera are ours).
+- `KHR_materials_unlit` is removed, so the material is lit by our lighting.
+- `KHR_materials_emissive_strength` is folded into `emissiveFactor` (factor x strength, clamped to 1) and then removed. A strength above 1 loses its overdrive, because no tier lists the extension.
+- Custom `_UPPERCASE` attributes (Blender's `_BATCHID` and similar) are removed; nothing reads them.
+- Sparse accessors are written dense.
+- Animations not listed in `clips` are dropped with their keyframe data.
+
+**Kenney pieces need a material merge.** Kenney kits arrive with 3 to 5 materials against a budget of 1 (tier 1) or 2 (tiers 2 and 3). Ingest stops with `materials: N > budget M: needs a material merge, see docs/3d-asset-sourcing.md`. The merge (one atlas or recolour pass) is not built yet; it is the integration PR's job, so a Kenney model cannot be ingested before that lands.
+
+**Residual risk: meshopt payloads.** The scanner checks that each meshopt view's `count x byteStride` equals its declared length and that the compressed range is in range, referenced and not overlapping, but it cannot tell whether the compressed bytes themselves carry extra bits: that would need a re-encode comparison. For a third-party source the maintainer re-verifies with `npm run assets:ingest -- --id <id> --verify` from the pinned raw file before committing. Bits hidden inside real geometry cannot be detected by any scan.
 
 For the **USDZ** (iOS AR): same model, exported via Blender's USD exporter or converted with Apple's Reality Converter; ≤ 10 MB; textures baked.
 

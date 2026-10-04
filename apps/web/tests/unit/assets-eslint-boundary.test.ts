@@ -15,11 +15,11 @@ async function lint(file: string, code: string): Promise<string[]> {
 
 const TOOLCHAIN = 'Build-time only: asset tooling must not reach the client bundle.'
 
-describe('the asset toolchain cannot reach the client bundle', () => {
+describe('the asset toolchain cannot reach the client bundle', { timeout: 30_000 }, () => {
   // The first lint loads the whole flat config and the TypeScript parser (13 s on a cold machine), which
   // is longer than the 5 s default and would be charged to whichever case happens to run first.
   beforeAll(async () => {
-    await lint('lib/warm-up.ts', 'export const warm = 1\n')
+    for (const dir of ['app', 'lib', 'components', 'scripts/assets']) await lint(`${dir}/warm-up.ts`, 'export const warm = 1\n')
   }, 60_000)
 
   const forbidden: [string, string][] = [
@@ -81,6 +81,12 @@ describe('the asset toolchain cannot reach the client bundle', () => {
     const code = `import sharp from 'sharp'\nexport const a = sharp\n`
     for (const file of ['scripts/assets/pipeline.ts', 'tests/unit/x.test.ts', 'next.config.ts', 'vitest.config.ts'])
       expect(await lint(file, code), file).toEqual([])
+  })
+
+  it('cannot see a computed specifier, which is why `npm run check:bundle` inspects the built chunks', async () => {
+    // Documented limit: the specifier is not known until run time, so no selector can match it.
+    const computed = ['const a = "sh"', 'const s = require(`${a}arp`)', 'export default s', ''].join('\n')
+    expect(await lint('lib/x.ts', computed)).toEqual([])
   })
 
   it('does not trip on look-alike names', async () => {

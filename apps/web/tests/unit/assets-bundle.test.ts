@@ -1,0 +1,85 @@
+// @vitest-environment node
+/** `npm run check:bundle`: the post-build guard that sits behind the ESLint rule. */
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { main, scanBundle } from '../../scripts/assets/bundle'
+
+const tmp = mkdtempSync(path.join(tmpdir(), 'bundle-'))
+afterAll(() => rmSync(tmp, { recursive: true, force: true }))
+
+let n = 0
+/** A web root whose `.next/static` holds the given files. */
+function webRoot(files: Record<string, string>): string {
+  const root = path.join(tmp, `case-${n++}`)
+  for (const [name, text] of Object.entries(files)) {
+    const file = path.join(root, '.next', 'static', ...name.split('/'))
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, text)
+  }
+  return root
+}
+const staticDir = (root: string) => path.join(root, '.next', 'static')
+
+describe('scanBundle', () => {
+  it('passes chunks that are ordinary client code, including the English word', () => {
+    const root = webRoot({
+      'chunks/app.js': 'export const a = "a sharp edge, sharpen the mesh, meshopt decoder from three"; console.log(1)',
+      'chunks/pages/x.js': 'var gltf = "gltf-transform is a name in prose"',
+    })
+    expect(scanBundle(staticDir(root))).toEqual({ files: 2, findings: [] })
+  })
+
+  it.each([
+    ['an @gltf-transform package', 'var a = require("@gltf-transform/core")', '@gltf-transform'],
+    ['a deep @gltf-transform import', 'import("@gltf-transform/functions/dist/x.js")', '@gltf-transform'],
+    ['require("sharp")', 'var s = require("sharp")', 'sharp'],
+    ['require with single quotes and spaces', "var s = require ( 'sharp' )", 'sharp'],
+    ['import("sharp")', 'const s = await import("sharp")', 'sharp'],
+    ['from "sharp"', 'import x from "sharp"', 'sharp'],
+    ['the native binding package', 'path:"node_modules/@img/sharp-linux-x64/lib"', 'sharp'],
+    ['libvips', 'x("sharp-libvips-linux-x64")', 'sharp'],
+    ['a sharp subpath', 'require("sharp/lib/index")', 'sharp'],
+    ['meshoptimizer', 'require("meshoptimizer/meshopt_encoder.js")', 'meshoptimizer'],
+  ])('flags %s, in a nested chunk, by name', (_label, text, label) => {
+    const root = webRoot({ 'chunks/ok.js': 'var fine = 1', 'chunks/deep/er/bad.js': text })
+    expect(scanBundle(staticDir(root)).findings).toEqual([{ file: 'chunks/deep/er/bad.js', label }])
+  })
+
+  it('reads .mjs too, and ignores files that are not JavaScript', () => {
+    const root = webRoot({ 'chunks/a.mjs': 'require("sharp")', 'media/readme.txt': 'require("sharp")', 'css/a.css': '@gltf-transform/' })
+    expect(scanBundle(staticDir(root)).findings.map((f) => f.file)).toEqual(['chunks/a.mjs'])
+    expect(scanBundle(staticDir(root)).files).toBe(1)
+  })
+})
+
+describe('main', () => {
+  let errors: string[] = []
+  let logs: string[] = []
+  beforeEach(() => {
+    errors = []
+    logs = []
+    vi.spyOn(console, 'error').mockImplementation((line: unknown) => void errors.push(String(line)))
+    vi.spyOn(console, 'log').mockImplementation((line: unknown) => void logs.push(String(line)))
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('exits 0 and says how many files it read', () => {
+    expect(main(webRoot({ 'chunks/a.js': 'var a = 1' }))).toBe(0)
+    expect(logs).toEqual(['check:bundle ok: 1 client JavaScript file(s), none carries asset tooling'])
+  })
+
+  it('exits 1 and names each file and what it carries', () => {
+    expect(main(webRoot({ 'chunks/a.js': 'require("sharp")', 'chunks/b.js': 'require("@gltf-transform/core")' }))).toBe(1)
+    expect(errors).toEqual(['[BUNDLE] chunks/a.js: contains sharp', '[BUNDLE] chunks/b.js: contains @gltf-transform', 'check:bundle failed: 2 client file(s) carry asset tooling'])
+  })
+
+  it('exits 1 when there is nothing to scan, instead of passing on an empty directory (no build ran)', () => {
+    const root = path.join(tmp, 'never-built')
+    expect(main(root)).toBe(1)
+    expect(errors[0]).toContain('found no JavaScript')
+  })
+})
