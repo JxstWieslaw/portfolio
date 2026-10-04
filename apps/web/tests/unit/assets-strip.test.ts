@@ -99,7 +99,12 @@ describe('B2: extensions our renderer does not honour', () => {
       [0.5, 1, 0],
       [1, 1, 1],
     ])
-    expect(lines).toEqual(['  folding emissive strength 2 into the emissive factor', '  folding emissive strength 4 into the emissive factor'])
+    expect(lines).toEqual([
+      '  folding emissive strength 2 into the emissive factor',
+      '  warning: emissive strength 2 is above 1 and is dropped to a factor of at most 1',
+      '  folding emissive strength 4 into the emissive factor',
+      '  warning: emissive strength 4 is above 1 and is dropped to a factor of at most 1',
+    ])
     expect(scanGlb(out.bytes, subject, 2)).toEqual([])
   }, 120_000)
 
@@ -165,8 +170,8 @@ describe('B2: the material budget error says what to do', () => {
   const threeMaterials = (): Document => {
     const doc = uvSphere(8, 10)
     const prim = doc.getRoot().listMeshes()[0]?.listPrimitives()[0]
-    for (const name of ['b', 'c']) {
-      const copy = doc.createPrimitive().setAttribute('POSITION', prim?.getAttribute('POSITION') ?? null).setIndices(prim?.getIndices() ?? null).setMaterial(doc.createMaterial(name))
+    for (const [i, name] of ['b', 'c'].entries()) {
+      const copy = doc.createPrimitive().setAttribute('POSITION', prim?.getAttribute('POSITION') ?? null).setIndices(prim?.getIndices() ?? null).setMaterial(doc.createMaterial(name).setBaseColorFactor([0.2 * (i + 1), 0.9, 0.1, 1]))
       doc.getRoot().listMeshes()[0]?.addPrimitive(copy)
     }
     return doc
@@ -227,4 +232,104 @@ describe('stripGlbMetadata: extensionsUsed is the derived set, sorted', () => {
     }
     expect(jsonOf(stripGlbMetadata(packGlb(json, null)))['extensionsUsed']).toEqual(['KHR_texture_transform'])
   })
+})
+
+describe('M3: emissive strength keeps its hue; unlit stays a flat, non-metal colour', () => {
+  const emissiveOf = async (colour: [number, number, number], strength: number): Promise<number[]> => {
+    const doc = uvSphere(8, 10)
+    const ext = doc.createExtension(KHRMaterialsEmissiveStrength)
+    doc.getRoot().listMaterials()[0]?.setEmissiveFactor(colour).setExtension('KHR_materials_emissive_strength', ext.createEmissiveStrength().setEmissiveStrength(strength))
+    const out = await buildVariant(tc, await roundTrip(doc), { subject, tier: 2 })
+    return ((list(jsonOf(out.bytes), 'materials')[0] ?? {})['emissiveFactor'] ?? []) as number[]
+  }
+  const near = (got: number[], want: number[]) => got.forEach((c, i) => expect(c).toBeCloseTo(want[i] ?? 0, 5))
+
+  it('an orange glow at strength 10 stays orange (red 1, green half of red), and is not clipped to yellow', async () => {
+    near(await emissiveOf([1, 0.5, 0], 10), [1, 0.5, 0])
+    near(await emissiveOf([0.2, 0.1, 0], 10), [1, 0.5, 0])
+  }, 60_000)
+
+  it('a strength that does not pass 1 is a plain multiplication', async () => {
+    near(await emissiveOf([0.2, 0.1, 0.05], 2), [0.4, 0.2, 0.1])
+  }, 60_000)
+
+  it('an unlit flat colour keeps its colour, becomes non-metal and fully rough, and the removal is logged', async () => {
+    const doc = uvSphere(8, 10)
+    const material = doc.getRoot().listMaterials()[0]
+    material?.setBaseColorFactor([0.8, 0.3, 0.1, 1]).setMetallicFactor(1).setRoughnessFactor(1)
+    material?.setExtension('KHR_materials_unlit', doc.createExtension(KHRMaterialsUnlit).createUnlit())
+    const lines: string[] = []
+    const out = await buildVariant(tc, await roundTrip(doc), { subject, tier: 2, log: (l) => lines.push(l) })
+    const m = list(jsonOf(out.bytes), 'materials')[0] ?? {}
+    const pbr = m['pbrMetallicRoughness'] as Json
+    expect(pbr['baseColorFactor']).toEqual([0.8, 0.3, 0.1, 1])
+    expect(pbr['metallicFactor']).toBe(0)
+    expect(lines).toContain('  removing KHR_materials_unlit: the material is lit by our lighting')
+  }, 60_000)
+
+  it('an unlit material with its own metallic and roughness keeps them', async () => {
+    const doc = uvSphere(8, 10)
+    const material = doc.getRoot().listMaterials()[0]
+    material?.setMetallicFactor(0.5).setRoughnessFactor(0.25)
+    material?.setExtension('KHR_materials_unlit', doc.createExtension(KHRMaterialsUnlit).createUnlit())
+    const out = await buildVariant(tc, await roundTrip(doc), { subject, tier: 2 })
+    const pbr = (list(jsonOf(out.bytes), 'materials')[0] ?? {})['pbrMetallicRoughness'] as Json
+    expect(pbr['metallicFactor']).toBe(0.5)
+    expect(pbr['roughnessFactor']).toBe(0.25)
+  }, 60_000)
+})
+
+describe('M5: the material count is taken after dedup and prune', () => {
+  it('a source with 4 materials, two identical and one unused, ingests at tier 2 (budget 2)', async () => {
+    const doc = uvSphere(8, 10)
+    const sphere = doc.getRoot().listMeshes()[0]
+    const prim = sphere?.listPrimitives()[0]
+    const first = prim?.getMaterial()
+    first?.setBaseColorFactor([0.9, 0.1, 0.1, 1])
+    const second = doc.createMaterial('b').setBaseColorFactor([0.1, 0.9, 0.1, 1])
+    const twin = doc.createMaterial('c').setBaseColorFactor([0.1, 0.9, 0.1, 1])
+    doc.createMaterial('never-used').setBaseColorFactor([0.1, 0.1, 0.9, 1])
+    const extra = (material: typeof second) =>
+      doc.createPrimitive().setAttribute('POSITION', prim?.getAttribute('POSITION') ?? null).setIndices(prim?.getIndices() ?? null).setMaterial(material)
+    sphere?.addPrimitive(extra(second)).addPrimitive(extra(twin))
+    expect(doc.getRoot().listMaterials()).toHaveLength(4)
+    const out = await buildVariant(tc, await roundTrip(doc), { subject, tier: 2 })
+    expect(out.report.materials).toBe(2)
+    expect(scanGlb(out.bytes, subject, 2)).toEqual([])
+  }, 60_000)
+})
+
+describe('L4: a multi-scene export with an animation', () => {
+  function twoScenes(): Document {
+    const doc = uvSphere(8, 10)
+    const buffer = doc.getRoot().listBuffers()[0] ?? null
+    const kept = doc.getRoot().listNodes()[0]
+    const other = doc.createNode('elsewhere')
+    doc.createScene('second').addChild(other)
+    const input = doc.createAccessor().setType('SCALAR').setArray(new Float32Array([0, 2])).setBuffer(buffer)
+    const output = doc.createAccessor().setType('VEC3').setArray(new Float32Array([0, 0, 0, 1, 0, 0])).setBuffer(buffer)
+    const sampler = doc.createAnimationSampler().setInput(input).setOutput(output).setInterpolation('LINEAR')
+    const clip = doc.createAnimation('idle').addSampler(sampler)
+    clip.addChannel(doc.createAnimationChannel().setSampler(sampler).setTargetNode(kept ?? null).setTargetPath('translation'))
+    clip.addChannel(doc.createAnimationChannel().setSampler(sampler).setTargetNode(other).setTargetPath('translation'))
+    return doc
+  }
+
+  it('drops the channel that targets a node outside the kept scene, keeps the rest, and the file is clean', async () => {
+    const out = await buildVariant(tc, await roundTrip(twoScenes()), { subject, tier: 2, clips: [{ from: 'idle', as: 'idle' }] })
+    expect(scanGlb(out.bytes, subject, 2)).toEqual([])
+    const clip = list(jsonOf(out.bytes), 'animations')[0] ?? {}
+    expect((clip['channels'] as unknown[]).length).toBe(1)
+    expect(list(jsonOf(out.bytes), 'nodes').every((n) => !('name' in n))).toBe(true)
+  }, 60_000)
+
+  it('a clip that only animates the other scene is refused with a clear message', async () => {
+    const doc = twoScenes()
+    const clip = doc.getRoot().listAnimations()[0]
+    const kept = clip?.listChannels().find((c) => c.getTargetNode()?.getName() !== 'elsewhere')
+    kept?.dispose()
+    const error = await buildVariant(tc, await roundTrip(doc), { subject, tier: 2, clips: [{ from: 'idle', as: 'idle' }] }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(IngestRejected)
+    expect((error as IngestRejected).violations.map((x) => x.message)).toEqual(['clip "idle" only animates nodes outside the kept scene'])
+  }, 60_000)
 })

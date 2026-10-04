@@ -141,6 +141,8 @@ describe('pipeline: a 5 000 triangle generated document', () => {
 
   it('rejects a source with three materials before doing any work, and names the rule', async () => {
     const doc = uvSphere(10, 12, false, 2)
+    // dedup merges identical materials, so each one gets its own colour: this is three real materials.
+    doc.getRoot().listMaterials().forEach((m, i) => m.setBaseColorFactor([i / 4, 0.5, 0.5, 1]))
     const error = await build(doc, 2).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(IngestRejected)
     expect((error as IngestRejected).violations.map((x) => x.code)).toEqual(['MATERIALS'])

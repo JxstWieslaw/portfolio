@@ -46,6 +46,7 @@ import {
   packGlb,
   parseGlb,
   printable,
+  quote,
   scanGlb,
   sha256Hex,
   validateReport,
@@ -157,7 +158,7 @@ const REMOVED_EXTENSIONS: ReadonlySet<string> = new Set([
   'KHR_materials_emissive_strength',
 ])
 
-/** The most materials any tier allows. A source above it cannot be saved by dedup, so it is refused up front. */
+/** The most materials any tier allows. Checked after dedup and prune, so duplicates and unused ones do not count. */
 const MAX_MATERIALS = Math.max(...Object.values(MODEL_BUDGETS).map((b) => b.materials))
 
 /**
@@ -175,8 +176,13 @@ function densify(doc: Document): void {
  * Extensions our renderer does not honour are removed (see REMOVED_EXTENSIONS):
  * - `KHR_lights_punctual`: lights are ours.
  * - `KHR_materials_unlit`: our lighting must apply to every model, so an unlit material becomes a lit one.
- * - `KHR_materials_emissive_strength`: folded into `emissiveFactor` (times the strength, clamped to 1) first.
- *   A strength above 1 therefore loses its overdrive, and no tier lists the extension.
+ *   A flat colour must not turn into a dark mirror, so a material that still has the glTF default
+ *   metallic 1 and roughness 1 (gltf-transform cannot tell "absent" from "explicit 1") and no
+ *   metallic-roughness texture becomes metallic 0, roughness 1. Colour factor and textures are kept.
+ * - `KHR_materials_emissive_strength`: folded into `emissiveFactor` without changing its hue: the colour
+ *   is scaled by the strength, and when the brightest channel would pass 1 the whole colour is scaled
+ *   down together instead of clipping each channel. A strength above 1 therefore loses its overdrive
+ *   (logged), and no tier lists the extension.
  * Custom `_UPPERCASE` attributes are removed too: nothing in the renderer reads them.
  */
 function strip(
@@ -193,8 +199,18 @@ function strip(
     const strength = material.getExtension<EmissiveStrength>('KHR_materials_emissive_strength')?.getEmissiveStrength()
     if (strength === undefined) continue
     const [r, g, b] = material.getEmissiveFactor()
-    material.setEmissiveFactor([Math.min(1, r * strength), Math.min(1, g * strength), Math.min(1, b * strength)])
+    // k is the brightest channel after the strength; if it passes 1, scale all three by 1/max so the hue survives.
+    const k = Math.max(r, g, b) * strength
+    const scale = k > 1 ? strength / k : strength
+    material.setEmissiveFactor([r * scale, g * scale, b * scale])
     log?.(`  folding emissive strength ${strength} into the emissive factor`)
+    if (strength > 1) log?.(`  warning: emissive strength ${strength} is above 1 and is dropped to a factor of at most 1`)
+  }
+  for (const material of root.listMaterials()) {
+    if (!material.getExtension('KHR_materials_unlit')) continue
+    log?.('  removing KHR_materials_unlit: the material is lit by our lighting')
+    if (material.getMetallicFactor() === 1 && material.getRoughnessFactor() === 1 && !material.getMetallicRoughnessTexture())
+      material.setMetallicFactor(0).setRoughnessFactor(1)
   }
   for (const ext of root.listExtensionsUsed()) if (REMOVED_EXTENSIONS.has(ext.extensionName)) ext.dispose()
   for (const mesh of root.listMeshes()) {
@@ -211,6 +227,18 @@ function strip(
   const keep = root.getDefaultScene() ?? scenes[0]
   if (!keep) throw new IngestRejected(subject, [{ code: 'SCHEMA', subject, message: 'source has no scene' }])
   for (const scene of scenes) if (scene !== keep) scene.dispose()
+  // A channel that targets a node outside the kept scene would keep that node alive in the file, unreachable.
+  const reachable = new Set<unknown>()
+  keep.traverse((node) => void reachable.add(node))
+  for (const animation of root.listAnimations()) {
+    for (const channel of animation.listChannels()) {
+      const target = channel.getTargetNode()
+      if (target && !reachable.has(target)) channel.dispose()
+    }
+    for (const sampler of animation.listSamplers()) {
+      if (!animation.listChannels().some((c) => c.getSampler() === sampler)) sampler.dispose()
+    }
+  }
 
   for (const texture of root.listTextures()) texture.setURI('').setName('')
 
@@ -220,7 +248,7 @@ function strip(
     const from = animation.getName()
     const rename = wanted.get(from)
     if (rename === undefined) {
-      log?.(`  dropping animation "${from}": not listed in clips`)
+      log?.(`  dropping animation ${printable(quote(from))}: not listed in clips`)
       // Disposing the animation alone leaves its samplers alive, and a live sampler keeps its keyframe
       // accessors from being pruned: they would be written out and read by nothing.
       for (const sampler of animation.listSamplers()) sampler.dispose()
@@ -234,12 +262,14 @@ function strip(
   }
   for (const from of wanted.keys()) {
     if (!found.has(from))
-      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message: `clip "${from}" not found in the source` }])
+      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message: `clip ${quote(from)} not found in the source` }])
+  }
+  for (const animation of root.listAnimations()) {
+    if (animation.listChannels().length === 0)
+      throw new IngestRejected(subject, [{ code: 'CLIPS', subject, message: `clip ${quote(animation.getName())} only animates nodes outside the kept scene` }])
   }
 
   const violations: Violation[] = []
-  if (root.listMaterials().length > MAX_MATERIALS)
-    violations.push({ code: 'MATERIALS', subject, message: materialsMessage(root.listMaterials().length, MAX_MATERIALS) })
   if (root.listSkins().length > 0 && root.listAnimations().length === 0)
     violations.push({ code: 'CLIPS', subject, message: 'source has a skin but no declared clip' })
   const allowed = new Set<string>(TIER_EXTENSIONS[tier])
@@ -349,7 +379,12 @@ export async function buildVariant(tc: Toolchain, doc: Document, opts: BuildOpti
   normalise(doc, subject)
 
   const animated = doc.getRoot().listAnimations().length > 0 || doc.getRoot().listSkins().length > 0
-  await doc.transform(dedup(), flatten(), weld())
+  await doc.transform(dedup(), flatten(), weld(), prune())
+  // Counted here and not in strip(): duplicate and unused materials are gone by now, so only a real excess is refused.
+  // The final validateReport gate still enforces each tier's own budget.
+  const materialCount = doc.getRoot().listMaterials().length
+  if (materialCount > MAX_MATERIALS)
+    throw new IngestRejected(subject, [{ code: 'MATERIALS', subject, message: materialsMessage(materialCount, MAX_MATERIALS) }])
   if (!animated) await doc.transform(join())
 
   let triangles = countTriangles(doc)
