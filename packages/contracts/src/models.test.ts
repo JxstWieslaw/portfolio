@@ -54,6 +54,16 @@ const entryInput = (variants: ReturnType<typeof variant>[], over: Record<string,
 const entry = (variants: ReturnType<typeof variant>[], over: Record<string, unknown> = {}): ModelEntry =>
   modelEntrySchema.parse(entryInput(variants, over))
 
+describe('buildInputsHash on a manifest entry', () => {
+  it('is optional, 16 lowercase hex when present, and the entry stays strict', () => {
+    const v = [variant(1, ['meshopt'])]
+    expect(() => entry(v)).not.toThrow()
+    expect(entry(v, { buildInputsHash: '0123456789abcdef' }).buildInputsHash).toBe('0123456789abcdef')
+    for (const bad of ['0123', 'ABCDEF0123456789', 'xyz'.repeat(6)]) expect(() => entry(v, { buildInputsHash: bad })).toThrow()
+    expect(() => entry(v, { bogus: 1 })).toThrow()
+  })
+})
+
 describe('the numbers that other code is allowed to depend on', () => {
   it('pins the per-tier budgets', () => {
     expect(MODEL_BUDGETS).toEqual({

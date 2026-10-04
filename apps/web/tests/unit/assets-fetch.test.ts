@@ -323,6 +323,21 @@ describe('fetchSource: writes only into assets-src/<id>/ and only after the hash
     expect(existsSync(path.join(tmp, 'assets-src', 'core-crystal', 'kit', 'tool.exe'))).toBe(false)
   })
 
+  it('refuses an archive whose size differs from the pinned archiveBytes, before hashing it', async () => {
+    const zip = makeZip([{ name: 'kit/model.glb', data: 'x' }])
+    const origin = {
+      type: 'file' as const,
+      path: 'assets-src/core-crystal/kit/model.glb',
+      url: 'https://kenney.nl/kit.zip',
+      sha256: sha256Hex(new TextEncoder().encode('x')),
+      archiveSha256: sha256Hex(zip),
+    }
+    const wrong = entry({ origin: { ...origin, archiveBytes: zip.byteLength + 1 } })
+    await expect(fetchSource(wrong, layoutFor(tmp), { fetch: () => Promise.resolve(bodyOf(zip)) })).rejects.toThrow(/ B, sources.json pins .* B/)
+    const right = entry({ origin: { ...origin, archiveBytes: zip.byteLength } })
+    await expect(fetchSource(right, layoutFor(tmp), { fetch: () => Promise.resolve(bodyOf(zip)) })).resolves.toContain('kit/model.glb')
+  })
+
   it('refuses a zip with no archiveSha256 pinned, and a traversal zip even with correct pins', async () => {
     const zip = makeZip([{ name: 'kit/model.glb', data: 'x' }])
     const unpinned = entry({

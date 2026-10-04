@@ -123,6 +123,27 @@ describe('the look merge', () => {
   }, 60_000)
 })
 
+describe('the look merge refuses what one opaque material cannot express', () => {
+  const refused = async (change: (doc: Document) => void, message: RegExp): Promise<void> => {
+    const doc = kitLike()
+    change(doc)
+    await expect(build(doc, 2)).rejects.toThrow(message)
+  }
+  const material = (doc: Document, name: string) => doc.getRoot().listMaterials().find((m) => m.getName() === name)
+
+  it('a blended material, naming it', () => refused((d) => void material(d, 'beta')?.setAlphaMode('BLEND'), /material "beta" has alphaMode BLEND/), 60_000)
+  it('a double-sided material, naming it', () => refused((d) => void material(d, 'gamma')?.setDoubleSided(true), /material "gamma" is double-sided/), 60_000)
+  it('a base-colour alpha below 1, naming it', () => refused((d) => void material(d, 'alpha')?.setBaseColorFactor([0.9, 0.5, 0.4, 0.5]), /material "alpha" has a base-colour alpha below 1/), 60_000)
+  it('a primitive that already has COLOR_0, naming the mesh', () =>
+    refused((d) => {
+      const prim = d.getRoot().listMeshes()[0]?.listPrimitives()[0]
+      const count = prim?.getAttribute('POSITION')?.getCount() ?? 0
+      prim?.setAttribute('COLOR_0', d.createAccessor().setType('VEC3').setArray(new Float32Array(count * 3)).setBuffer(d.getRoot().listBuffers()[0] ?? null))
+    }, /mesh "kit" already has COLOR_0/), 60_000)
+  it('a material name with a quote or newline is escaped in the message, not printed raw', () =>
+    refused((d) => void material(d, 'beta')?.setName('be"ta\nx').setAlphaMode('BLEND'), /"be\\"ta\\nx"/), 60_000)
+})
+
 describe('the look schema', () => {
   it('accepts a palette, metallic, roughness and an emissive accent', () => {
     expect(sourceLookSchema.parse(LOOK)).toEqual(LOOK)

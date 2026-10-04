@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { main, runCheck } from '../../scripts/assets/check'
 import * as images from '../../scripts/assets/images'
 import * as pipeline from '../../scripts/assets/pipeline'
-import { defaultRoot, layoutFor, type Layout } from '../../scripts/assets/sources'
+import { buildInputsHash } from '../../scripts/assets/build-inputs'
+import { defaultRoot, layoutFor, sourceEntrySchema, type Layout } from '../../scripts/assets/sources'
 import { copyGyroscopeTree } from './assets-fixtures'
 import {
   buildReport,
@@ -341,8 +342,13 @@ describe('assets:check re-derives every claim, so each check is load-bearing', (
     source['enabled'] = true
     source['tiers'] = [1, 2, 3]
     writeFileSync(l.sourcesFile, canonicalJson(sources))
+    // The edit to tiers is a real input change: keep the recorded build hash honest so only COMPLETE is reported.
+    const hash = buildInputsHash(sourceEntrySchema.parse(source))
     editManifest((m) => {
-      for (const e of m) e['enabled'] = true
+      for (const e of m) {
+        e['enabled'] = true
+        e['buildInputsHash'] = hash
+      }
     })
     const credit = source['credit'] as Record<string, string>
     writeFileSync(
@@ -372,8 +378,8 @@ describe('decoders only ever see a file the scanner passed', () => {
   it('a clean file is decoded and measured (the spies see the real calls)', async () => {
     const { violations } = await runCheck({ root: defaultRoot() })
     expect(violations).toEqual([])
-    // three committed models (gyroscope, crystal-cluster, gate-complex) at two tiers each
-    expect(calls()).toEqual([6, 6])
+    // four committed variants: the gyroscope at two tiers, the two Kenney pieces at tier 1
+    expect(calls()).toEqual([4, 4])
   })
 
   it('a meshopt view that claims 4294967295 elements of 252 bytes is refused, and its decoder never runs', async () => {

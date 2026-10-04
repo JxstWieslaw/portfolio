@@ -56,6 +56,8 @@ const fileOrigin = z.object({
   sha256,
   /** Set when `url` is a zip: sha256 of the archive as downloaded, checked before extraction. */
   archiveSha256: sha256.optional(),
+  /** Set with `archiveSha256`: the archive's size in bytes, checked by `assets:fetch` before it hashes anything. */
+  archiveBytes: z.number().int().positive().optional(),
 }).strict()
 
 const generatedOrigin = z.object({

@@ -66,6 +66,16 @@ describe('the committed manifest', () => {
   })
 
 
+  it('a tier-2 request resolves to the tier-1 file for the Kenney pieces, which ship one variant', () => {
+    for (const id of ['crystal-cluster', 'gate-complex']) {
+      const resolved = resolveModel(id, 2)
+      expect(resolved.kind).toBe('resolved')
+      if (resolved.kind === 'resolved') expect(resolved.model.variant.url).toMatch(/.t1.[0-9a-f]{8}.glb$/)
+    }
+    const gyro = resolveModel('gyroscope', 2)
+    if (gyro.kind === 'resolved') expect(gyro.model.variant.url).toMatch(/.t2./)
+  })
+
   it('treats an id the manifest does not contain as a bug (it throws), not as a quiet rollback', () => {
     expect(() => resolveModel('does-not-exist', 2)).toThrow(/not in the manifest/)
   })

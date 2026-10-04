@@ -125,7 +125,7 @@ Kits such as Kenney's Space Kit colour a model with one flat material per colour
 The rule, in full:
 
 1. Each primitive's material colour is baked into a constant per-vertex `COLOR_0` (VEC3, linear) on a vertex stream of its own (unused vertices dropped), all primitives then share one material with a white base colour, and `join` fuses them into a single draw call. UV sets are dropped (nothing reads them without a texture).
-2. A source with any texture is refused: flattening it would lose the texture.
+2. A source is refused (with a message naming the material) when flattening would change its look: any texture, a non-OPAQUE alpha mode, a double-sided material, a base-colour alpha below 1, or a primitive that already has `COLOR_0`.
 3. **Recolour toward the site palette is explicit, never guessed.** `look.palette` maps a source material name to the sRGB hex it becomes (the site's tokens: violet `#7C3AED` / `#A78BFA`, cyan `#22D3EE` / `#67E8F9`, and the cool neutrals around `#1E2238` to `#D3D9F2`). A material not named keeps its source colour. A palette key that matches no material fails the ingest, so a typo cannot pass silently.
 4. The merged material gets `look.metallic` and `look.roughness` (defaults 0.6 and 0.3), and an optional uniform emissive accent (`look.emissive`: colour and an amount from 0 to 1). A uniform emissive lifts the whole piece, not just its crystal, so keep the amount small or leave it out.
 5. Centring on the origin and scaling to bounding radius 1 are the existing normalise step; the ledger's `scale` stays the only size knob.
@@ -136,7 +136,7 @@ The first sourced models (all enabled, tiers 1 and 2): `crystal-cluster` (Kenney
 
 ### 5.2 Verifying a raw-source model (CI cannot)
 
-CI has no raw input, so its verify step is `npm run assets:ingest -- --only generated --verify`. For a raw-source model the maintainer re-proves the committed bytes from the pinned source before committing and before merging a change to its `look` block:
+CI has no raw input, so its verify step is `npm run assets:ingest -- --only generated --verify`. What CI can prove for a raw-source model is that its committed bytes were built from the **current** `sources.json`: every manifest entry stores a `buildInputsHash` (`scripts/assets/build-inputs.ts`: the pinned raw and archive hashes or generator id, `look`, tiers, clips and `PIPELINE_VERSION`, canonical JSON, first 16 hex), and `assets:check` and `assets:ingest --verify` recompute it for every enabled entry. Edit a palette colour, `metallic`, a tier list or a clip and forget to re-ingest, and both fail with `sources.json changed since the last ingest for "<id>": run npm run assets:ingest`. Bump `PIPELINE_VERSION` when a change to the pipeline code changes bytes for the same inputs. The hash cannot prove the bytes are what the pipeline would write from the raw file; for that the maintainer re-proves the committed bytes from the pinned source before committing and before merging a change to its `look` block:
 
 ```bash
 npm run assets:fetch -- --id crystal-cluster     # checks archiveSha256, extracts to assets-src/ (gitignored)
@@ -145,6 +145,9 @@ npm run assets:ingest -- --verify                # every source, raw ones includ
 npm run assets:check                             # what CI runs
 git ls-files assets-src                          # must print nothing: raw sources and zips are never committed
 ```
+
+CI also refuses any tracked `.glb` outside `apps/web/public/models` and `apps/web/tests/fixtures`, and `.gitignore` covers `*.zip` and `*.blend`. A source that pins `archiveSha256` may also pin `archiveBytes`, which `assets:fetch` checks before it hashes the archive.
+
 
 ---
 

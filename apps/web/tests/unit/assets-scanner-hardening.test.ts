@@ -209,7 +209,7 @@ describe('A3: structural keys', () => {
     expect(scanGlb(committed(2), 'gyroscope', 2)).toEqual([])
     // The merged third-party pieces: one material, COLOR_0 vertex colour, no UVs.
     for (const id of ['crystal-cluster', 'gate-complex'])
-      for (const tier of [1, 2] as const) {
+      for (const tier of [1] as const) {
         const bytes = committedGlb(tier, id)
         expect(scanGlb(bytes, id, tier), `${id} tier ${tier}`).toEqual([])
         expect(JSON.stringify(parseGlb(bytes).json)).toMatch(/"COLOR_0"/)

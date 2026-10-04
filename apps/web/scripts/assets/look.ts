@@ -7,9 +7,11 @@
  * primitives then share one material (white base colour, so the vertex colour is the colour), and
  * `join` can fuse the lot into a single draw call.
  *
- * The rule, in full (documented in docs/3d-asset-sourcing.md section 7):
+ * The rule, in full (documented in docs/3d-asset-sourcing.md section 5.1):
  * 1. Applies only to a source entry that has a `look` block. No `look`, no change.
- * 2. Refuses a source with any texture: a textured material cannot be flattened without losing the texture.
+ * 2. Refuses a source that the merge would change the look of: any texture, a non-OPAQUE alpha mode, a
+ *    double-sided material, a base-colour alpha below 1, or a primitive that already has COLOR_0. One merged
+ *    opaque, single-sided material cannot express those, and baking them in silently would be wrong.
  * 3. Recolour: a material whose name is a key of `look.palette` gets that sRGB hex colour instead of
  *    its own; a material that is not listed keeps its source colour. There is no automatic "nearest
  *    token" guess: which source colour becomes violet, cyan or a neutral is an art-direction call
@@ -69,8 +71,16 @@ export function mergeMaterials(doc: Document, look: SourceLook): MergeResult {
       const material = prim.getMaterial()
       if (material) used.add(material)
     }
-  for (const material of used)
-    if (hasTexture(material)) throw new MergeRefused(`material ${JSON.stringify(material.getName())} has a texture; the look merge only flattens flat-colour sources`)
+  for (const material of used) {
+    const name = JSON.stringify(material.getName())
+    if (hasTexture(material)) throw new MergeRefused(`material ${name} has a texture; the look merge only flattens flat-colour sources`)
+    if (material.getAlphaMode() !== 'OPAQUE') throw new MergeRefused(`material ${name} has alphaMode ${material.getAlphaMode()}; the look merge only flattens opaque materials`)
+    if (material.getDoubleSided()) throw new MergeRefused(`material ${name} is double-sided; the look merge only flattens single-sided materials`)
+    if (material.getBaseColorFactor()[3] < 1) throw new MergeRefused(`material ${name} has a base-colour alpha below 1; the look merge only flattens opaque colours`)
+  }
+  for (const mesh of root.listMeshes())
+    for (const prim of mesh.listPrimitives())
+      if (prim.getAttribute('COLOR_0')) throw new MergeRefused(`mesh ${JSON.stringify(mesh.getName())} already has COLOR_0 vertex colours; the look merge would overwrite them`)
 
   const merged = doc
     .createMaterial('look')
