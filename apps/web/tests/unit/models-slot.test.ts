@@ -332,6 +332,18 @@ describe('clips', () => {
 })
 
 describe('the artefact role', () => {
+  it.each([
+    ['a network failure', () => new ModelLoadError('network', 'dead')],
+    ['a rejected integrity hash', () => new ModelLoadError('integrity', 'bad digest')],
+    ['an unexpected throw', () => new Error('boom')],
+  ])('never hides the procedural artefact when the model failed to load: %s', async (_label, failure) => {
+    prepareModel.mockRejectedValue(failure())
+    const { slot } = setup(placement({ role: 'artefact' }))
+    expect(slot.update(frameAt()).suppressArtefact).toBe(false)
+    await flush()
+    for (let i = 0; i < 3; i += 1) expect(slot.update(frameAt()).suppressArtefact).toBe(false)
+  })
+
   it('asks the canvas to hide the procedural artefact only while a loaded artefact-role model is on screen', async () => {
     const m = fakeModel()
     prepareModel.mockResolvedValue(m.ready)

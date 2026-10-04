@@ -339,8 +339,11 @@ test.describe('the first models, from the committed ledger (no seam)', () => {
       await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 60_000 })
       const tier = (await html(page).getAttribute('data-models-gate'))?.slice(-1)
       expect(tier === '1' || tier === '2').toBe(true)
-      expect(seen.committed().filter((url) => url.includes(`/models/${asset}.t${tier}.`))).toHaveLength(1)
-      expect(seen.committed().every((url) => url.includes(`.t${tier}.`))).toBe(true)
+      // A variant is picked by tier and capability: the gyroscope ships tiers 1 and 2, the Kenney pieces tier 1 only,
+      // so a tier-2 visitor correctly receives their tier-1 file.
+      const variantTier = asset === 'gyroscope' ? tier : '1'
+      expect(seen.committed().filter((url) => url.includes(`/models/${asset}.t${variantTier}.`))).toHaveLength(1)
+      expect(seen.committed().every((url) => url.includes(`.t${variantTier}.`))).toBe(true)
       await scrollToTop(page)
       await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 15_000 })
       await expect(html(page)).toHaveAttribute('data-models-failed', '0')
@@ -348,6 +351,22 @@ test.describe('the first models, from the committed ledger (no seam)', () => {
       expect(seen.errors).toEqual([])
     })
   }
+
+  test('a 404 on the gyroscope in How I Lead is a counted failure: the page stays live and the Assembly keeps its procedural artefact', async ({ page }) => {
+    const seen = watch(page)
+    await page.route(/\/models\/gyroscope\.t[12]\.[0-9a-f]{8}\.glb$/, (route) => route.fulfill({ status: 404, body: 'not found' }))
+    await page.goto('/')
+    await goLive(page)
+    await showFormation(page, 'orbit')
+    await expect(html(page)).toHaveAttribute('data-models-failed', '1', { timeout: 60_000 })
+    await expect(html(page)).toHaveAttribute('data-models', '0')
+    await expect(html(page)).toHaveAttribute('data-gl', 'live')
+    // The role: 'artefact' model never became resident, so nothing asked the canvas to hide the procedural one
+    // (that decision is unit-tested in models-slot.test.ts and keyed on a resident model).
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(html(page)).toHaveAttribute('data-models', '0')
+    expect(seen.errors).toEqual([])
+  })
 
   test('?tier=1 asks for tier-1 variants only', async ({ page }) => {
     const seen = watch(page)
