@@ -188,6 +188,9 @@ test.describe('no models, no requests', () => {
     await goLive(page)
     await showFormation(page, 'lattice')
     await scrollWholePage(page)
+    // Under a loaded runner the scroll can outrun the load: settle on a section that hosts a committed model.
+    await showFormation(page, 'scatter')
+    await expect(html(page)).toHaveAttribute('data-models', '1', { timeout: 60_000 })
     // A full scroll visits the three sections that host a committed model; nothing else may be requested.
     expect(seen.glbs()).toEqual([])
     expect(seen.committed().length).toBeGreaterThanOrEqual(1)
@@ -343,7 +346,8 @@ test.describe('the first models, from the committed ledger (no seam)', () => {
       // so a tier-2 visitor correctly receives their tier-1 file.
       const variantTier = asset === 'gyroscope' ? tier : '1'
       expect(seen.committed().filter((url) => url.includes(`/models/${asset}.t${variantTier}.`))).toHaveLength(1)
-      expect(seen.committed().every((url) => url.includes(`.t${variantTier}.`))).toBe(true)
+      // Prefetch may also have fetched the NEXT section's model: judge this asset's requests only.
+      expect(seen.committed().filter((url) => url.includes(`/models/${asset}.`)).every((url) => url.includes(`.t${variantTier}.`))).toBe(true)
       await scrollToTop(page)
       await expect(html(page)).toHaveAttribute('data-models', '0', { timeout: 15_000 })
       await expect(html(page)).toHaveAttribute('data-models-failed', '0')
