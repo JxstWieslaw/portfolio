@@ -76,6 +76,11 @@ export const STAGGER = 0.35
 export const FLOW_SPEED = 0.35
 export const FLOW_HALF = 3.2
 
+/**
+ * `uVelocity` (animation spec § 6, A2): scroll speed lengthens each cube along y, the scroll axis, and thins x and z to keep its
+ * volume; the normal follows (inverse transpose of that scale). Both lines are skipped at 0, so a resting frame is untouched.
+ * Kept out of the string so the comment is not shipped.
+ */
 export const VERTEX = /* glsl */ `
 attribute vec3 aPosA;
 attribute vec3 aPosB;
@@ -238,13 +243,12 @@ void main() {
   vec3 axis = hashAxis(aSeed);
   float angle = m * 3.14159265 + uTime * 0.15 * aSeed;
   vec3 local = rotateAxis(position * edge, axis, angle);
-  // uVelocity: scroll speed lengthens each cube along y (the scroll axis) and thins x and z to keep its volume. Skipped at rest, so a resting frame is untouched.
-  if (uVelocity > 0.0) local *= vec3(inversesqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity), 1.0 + ${VELOCITY_STRETCH} * uVelocity, inversesqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity));
+  float uVelocityS = 1.0 + ${VELOCITY_STRETCH} * uVelocity;
+  if (uVelocity > 0.0) local *= vec3(inversesqrt(uVelocityS), uVelocityS, inversesqrt(uVelocityS));
 
   csm_Position = centre + local;
   csm_Normal = rotateAxis(normal, axis, angle);
-  // uVelocity: the normal follows the stretch (inverse transpose of the scale above).
-  if (uVelocity > 0.0) csm_Normal = normalize(csm_Normal * vec3(sqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity), 1.0 / (1.0 + ${VELOCITY_STRETCH} * uVelocity), sqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity)));
+  if (uVelocity > 0.0) csm_Normal = normalize(csm_Normal * vec3(sqrt(uVelocityS), 1.0 / uVelocityS, sqrt(uVelocityS)));
   vInstanceColor = mix(shade(fromT), shade(toT), m);
 }
 `

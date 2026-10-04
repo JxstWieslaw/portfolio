@@ -221,16 +221,17 @@ describe('with velocity 0 the cubes are byte-identical to develop (1b1694e golde
 
   it("the vertex program is develop's with only the velocity lines added, and the fragment program is untouched", () => {
     const added = VERTEX.split('\n').filter((line) => line.includes('uVelocity'))
-    // The uniform; the comment and guarded line for the stretch; the comment and guarded line for its normal (5 lines): nothing else.
-    expect(added).toHaveLength(5)
+    // The uniform, the shared scale, the guarded stretch and the guarded normal (4 lines): nothing else.
+    expect(added).toHaveLength(4)
     expect(sha(VERTEX.split('\n').filter((line) => !line.includes('uVelocity')).join('\n'))).toBe(golden.vertex)
     expect(sha(FRAGMENT)).toBe(golden.fragment)
   })
 
   it('the stretch is guarded so a resting frame never runs it, and is volume-preserving', () => {
-    const line = VERTEX.split('\n').find((l) => l.includes('local *=')) ?? ''
-    expect(line).toContain('if (uVelocity > 0.0)')
-    expect(line).toContain(String(VELOCITY_STRETCH))
+    const find = (needle: string): string => VERTEX.split('\n').find((l) => l.includes(needle)) ?? ''
+    expect(find('local *=')).toContain('if (uVelocity > 0.0)')
+    expect(find('csm_Normal = normalize(csm_Normal')).toContain('if (uVelocity > 0.0)')
+    expect(find('float uVelocityS')).toContain(String(VELOCITY_STRETCH))
     // y grows by k, x and z shrink by 1/sqrt(1+k): the product of the three scales is 1 for any weight.
     for (const w of [0.1, 0.5, 1]) {
       const y = 1 + VELOCITY_STRETCH * w
