@@ -23,14 +23,12 @@ import { FOOTER_COLUMNS, type FooterColumn, type FooterLink } from '@/lib/nav-it
  */
 
 /**
- * design-home.md § 12 describes the finished site's stack — React Three
- * Fiber, Rapier, one draw call — and that milestone (M2) has not shipped.
- * This M0 build has no renderer and no draw call: the backdrop is a 2D
- * canvas (`FieldCanvas`). The colophon says what is actually running today
- * and gets rewritten again when the WebGL milestone lands.
+ * What is actually running: the backdrop is a WebGL scene drawn with three.js through React Three Fiber, and
+ * the 2D canvases (`FieldCanvas`) are its fallback where WebGL does not mount. One sentence, kept true:
+ * the owner may reword it, but it must keep matching what ships.
  */
 export const COLOPHON =
-  'Built with Next.js. The backdrop is a 2D canvas, not a renderer — React Three Fiber and Rapier ship with the WebGL milestone.'
+  'Built with Next.js. The backdrop is a three.js scene (React Three Fiber) over a 2D canvas fallback.'
 
 /**
  * Fixed rather than `new Date().getFullYear()`. The export reads `© 2026`, a
