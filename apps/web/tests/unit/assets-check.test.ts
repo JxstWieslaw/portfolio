@@ -22,11 +22,11 @@ import {
 
 // Passthrough spies: the real decoder and bounds reader still run, and a test can see whether they were asked to.
 vi.mock('../../scripts/assets/images', async (original) => {
-  const actual = await original<typeof import('../../scripts/assets/images')>()
+  const actual = await original<typeof images>()
   return { ...actual, verifyImages: vi.fn(actual.verifyImages) }
 })
 vi.mock('../../scripts/assets/pipeline', async (original) => {
-  const actual = await original<typeof import('../../scripts/assets/pipeline')>()
+  const actual = await original<typeof pipeline>()
   return { ...actual, measureBoundsRadius: vi.fn(actual.measureBoundsRadius) }
 })
 
