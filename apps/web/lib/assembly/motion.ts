@@ -154,6 +154,78 @@ export function dropTrigger(state: DropState, from: BundleKind, to: BundleKind, 
   return state
 }
 
+// --- Scroll speed (animation § 6, A2) --------------------------------------
+
+/** Scroll speed, in viewport heights per second, at which the cubes are fully stretched. */
+export const VELOCITY_FULL = 4
+/** Below this speed (reading, a trackpad's drift) the cubes do not react at all. */
+export const VELOCITY_DEADZONE = 0.1
+/** How much longer a cube gets along the scroll axis at full speed: `1 + VELOCITY_STRETCH`. */
+export const VELOCITY_STRETCH = 0.35
+/** The weight chases the speed at these rates, 1/s: it picks up quickly and lets go more slowly. */
+export const VELOCITY_RISE = 16
+export const VELOCITY_FALL = 6
+/** A decaying weight below this snaps to exactly 0, so the demand loop can stop. */
+export const VELOCITY_EPSILON = 0.002
+/** A gap between two frames longer than this (a hidden layer, a stalled tab) is not a scroll speed. */
+export const VELOCITY_MAX_GAP = 0.5
+/** Frames closer together than this are measured as if they were this far apart. */
+export const VELOCITY_MIN_DT = 1 / 120
+
+/**
+ * 0 at rest, 1 at `VELOCITY_FULL`: the stretch weight of a scroll speed in
+ * viewport heights per second. Symmetric for up and down, monotonic in the
+ * speed, clamped. `NaN` reads as rest.
+ */
+export function velocityWeight(vel: number): number {
+  const speed = Math.abs(vel)
+  if (!(speed > VELOCITY_DEADZONE)) return 0
+  return Math.min(1, (speed - VELOCITY_DEADZONE) / (VELOCITY_FULL - VELOCITY_DEADZONE))
+}
+
+/**
+ * The damped stretch weight the shader reads as `uVelocity`. Feed it the
+ * scroll position and the clock once per drawn frame; it returns the weight.
+ * `active` is false exactly when the weight is 0, which is what lets the
+ * frame loop stop asking for frames once the scroll has stopped.
+ */
+export class ScrollVelocity {
+  weight = 0
+  private y = Number.NaN
+  private t = Number.NaN
+
+  get active(): boolean {
+    return this.weight > 0
+  }
+
+  step(y: number, t: number, viewport: number): number {
+    const dt = t - this.t
+    // The first sample, or two draws in the same instant: nothing to measure yet.
+    if (!(dt > 0)) {
+      if (Number.isNaN(this.t)) {
+        this.y = y
+        this.t = t
+      }
+      return this.weight
+    }
+    const measured = dt <= VELOCITY_MAX_GAP && viewport > 0
+    const target = measured ? velocityWeight((y - this.y) / viewport / Math.max(dt, VELOCITY_MIN_DT)) : 0
+    this.y = y
+    this.t = t
+    // Exponential approach: the ease stays inside (0, 1), so the weight never overshoots its target or changes sign.
+    const ease = 1 - Math.exp(-(target > this.weight ? VELOCITY_RISE : VELOCITY_FALL) * Math.min(dt, 0.1))
+    this.weight += (target - this.weight) * ease
+    if (target === 0 && this.weight < VELOCITY_EPSILON) this.weight = 0
+    return this.weight
+  }
+
+  reset(): void {
+    this.weight = 0
+    this.y = Number.NaN
+    this.t = Number.NaN
+  }
+}
+
 // --- The contact ring's calm (§ 3.7) --------------------------------------
 
 export const CALM_SECONDS = 2

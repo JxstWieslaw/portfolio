@@ -29,6 +29,8 @@ declare global {
   interface Window {
     __ASSEMBLY_MODELS_TEST__?: ModelTestSeam
     __ASSEMBLY_DEBUG__?: AssemblyDebug
+    /** The cubes' damped scroll-speed weight (`uVelocity`), 0 at rest. Same switch and the same guard as the rest of the seam. */
+    __ASSEMBLY_VELOCITY__?: () => number
   }
 }
 

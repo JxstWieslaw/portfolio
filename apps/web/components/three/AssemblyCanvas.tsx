@@ -29,7 +29,7 @@ import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
 import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
-import { BREATH_FPS, NO_DROP, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
+import { BREATH_FPS, NO_DROP, ScrollVelocity, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
 import { EMPTY_SLOTS, planSlots, type SlotState } from '@/lib/assembly/slots'
@@ -89,6 +89,9 @@ export interface AssemblyCanvasProps {
   /** Second context loss in a session: unmount for good. */
   readonly onGiveUp: () => void
 }
+
+/** The scroll-speed read for the e2e job; module-local so it folds away in production (see `test-seam.ts`). */
+const DEBUG_HOOK: boolean = process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_MODEL_TEST === '1'
 
 /** Idle wobble — the 2D hero's values, verbatim. */
 const WOBBLE_RATE = 0.35
@@ -288,6 +291,8 @@ interface Motion {
   drop: DropState
   /** `uTime` at which the ring fully landed; `-1` otherwise. */
   settledAt: number
+  /** The damped scroll speed behind `uVelocity`. */
+  velocity: ScrollVelocity
 }
 
 function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
@@ -467,7 +472,17 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     orbit: 0,
     drop: NO_DROP,
     settledAt: -1,
+    velocity: new ScrollVelocity(),
   })
+
+  // The velocity read exists only where the model test seam does (a dev build, or the e2e job's); the guard script greps for the name.
+  useEffect(() => {
+    if (!DEBUG_HOOK) return undefined
+    window.__ASSEMBLY_VELOCITY__ = () => rig.uniforms.uVelocity.value
+    return () => {
+      delete window.__ASSEMBLY_VELOCITY__
+    }
+  }, [rig])
   /** The on-load assembly clock; `-1` until the first drawn frame. */
   const assemblyStart = useRef(-1)
   const scratch = useMemo(() => ({ origin: new Vector3(), dir: new Vector3(), point: new Vector3(), ndc: new Vector3() }), [])
@@ -623,6 +638,8 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     uniforms.uEdgeB.value = sb.edge
     uniforms.uBias.value = lerp(biasFor(from), biasFor(to), mix)
     uniforms.uCalm.value = calm
+    // Scroll speed: one damped scalar, one uniform. Cubes only: the models are separate meshes and never see it.
+    uniforms.uVelocity.value = m.velocity.step(window.scrollY, t, size.height)
     uniforms.uStaggerByT.value = to === 'ring' ? 1 : 0
     geometry.instanceCount = Math.max(a.count, b.count)
 
@@ -692,6 +709,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
       Math.abs(chapter.target[0] - look.x) + Math.abs(chapter.target[1] - look.y) + Math.abs(chapter.target[2] - look.z) > 1e-4 ||
       Math.abs(chapter.keyBias - look.key) + Math.abs(chapter.fillBias - look.fill) > 1e-4 ||
       shiver > 0 ||
+      m.velocity.active ||
       (calm > 0 && calm < 1) ||
       Math.abs(ny * parallax - m.parallaxX) > 1e-4 ||
       Math.abs(nx * parallax - m.parallaxY) > 1e-4

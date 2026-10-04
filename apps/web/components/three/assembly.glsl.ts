@@ -68,7 +68,7 @@ vec3 curl(vec3 p) {
 }
 `
 
-import { BOUNCE, GRAVITY, GROUND_Y } from '@/lib/assembly/motion'
+import { BOUNCE, GRAVITY, GROUND_Y, VELOCITY_STRETCH } from '@/lib/assembly/motion'
 
 export const STAGGER = 0.35
 
@@ -114,6 +114,7 @@ uniform vec4 uAttractors[8];
 uniform float uAttractRadius;
 uniform float uAttractPull;
 uniform int uAttractCount;
+uniform float uVelocity;
 
 varying vec3 vInstanceColor;
 
@@ -237,6 +238,8 @@ void main() {
   vec3 axis = hashAxis(aSeed);
   float angle = m * 3.14159265 + uTime * 0.15 * aSeed;
   vec3 local = rotateAxis(position * edge, axis, angle);
+  // uVelocity: scroll speed lengthens each cube along y (the scroll axis) and thins x and z to keep its volume. Skipped at rest, so a resting frame is untouched.
+  if (uVelocity > 0.0) local *= vec3(inversesqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity), 1.0 + ${VELOCITY_STRETCH} * uVelocity, inversesqrt(1.0 + ${VELOCITY_STRETCH} * uVelocity));
 
   csm_Position = centre + local;
   csm_Normal = rotateAxis(normal, axis, angle);
