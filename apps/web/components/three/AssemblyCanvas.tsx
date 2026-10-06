@@ -11,6 +11,7 @@ import {
   DirectionalLight,
   DoubleSide,
   Group,
+  IcosahedronGeometry,
   HemisphereLight,
   InstancedBufferGeometry,
   Matrix4,
@@ -19,7 +20,6 @@ import {
   PMREMGenerator,
   PlaneGeometry,
   Scene as ThreeScene,
-  SphereGeometry,
   Vector3,
   type PerspectiveCamera,
   type WebGLRenderTarget,
@@ -265,7 +265,7 @@ function bakeEnvironment(gl: WebGLRenderer): WebGLRenderTarget {
     scene.add(plane)
   }
   // The dim gradient dome: violet at the bottom pole to cyan at the top, so no reflection is plain black.
-  const dome = new SphereGeometry(ENVIRONMENT_DOME.radius, 16, 12)
+  const dome = new IcosahedronGeometry(ENVIRONMENT_DOME.radius, 3)
   const domePositions = dome.getAttribute('position')
   const domeColours = new Float32Array(domePositions.count * 3)
   const bottom = new Color(ENVIRONMENT_DOME.bottom)
@@ -273,7 +273,7 @@ function bakeEnvironment(gl: WebGLRenderer): WebGLRenderTarget {
   const mixed = new Color()
   for (let i = 0; i < domePositions.count; i += 1) {
     mixed.copy(bottom).lerp(top, (domePositions.getY(i) / ENVIRONMENT_DOME.radius + 1) / 2).multiplyScalar(ENVIRONMENT_DOME.intensity)
-    domeColours.set([mixed.r, mixed.g, mixed.b], i * 3)
+    mixed.toArray(domeColours, i * 3)
   }
   dome.setAttribute('color', new BufferAttribute(domeColours, 3))
   const domeMaterial = new MeshBasicMaterial({ vertexColors: true, side: BackSide })

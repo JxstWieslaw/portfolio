@@ -142,10 +142,12 @@ export const FILM = {
   thickness: [120, 700] as readonly [number, number],
   clearcoat: 1,
   clearcoatRoughness: 0.08,
-  roughness: 0.16,
-  metalness: 0.85,
+  roughness: 0.14,
+  metalness: 1,
+  /** On top of `scene.environmentIntensity`: the shell is the one object meant to out-shine the cubes. */
+  envMapIntensity: 1.7,
   /** Diffuse/base tint: the brand's violet, lifted so facets away from the strips are not navy. */
-  tint: '#a995ff',
+  tint: '#cfc4ff',
   /** The cheap path's baked tint: the film's average, a little cooler than the base. */
   bakedTint: '#b7a8ff',
   /** Faint violet emissive so the shell never goes fully dark between reflections. */
@@ -156,27 +158,25 @@ export const FILM = {
   drift: [0.006, 0.0035] as readonly [number, number],
 } as const
 
+/** Integer wave numbers (x, y), phase and weight: whole numbers per texture, so the map tiles. */
+const FILM_WAVES = [
+  [2, 3, 0.4, 1],
+  [-3, 2, 2.1, 0.8],
+  [5, -4, 4, 0.5],
+  [4, 5, 1, 0.4],
+] as const
+
 /**
- * A tileable noise field in 0..255: a sum of sine waves whose frequencies are
- * whole numbers per texture, so the left edge meets the right and the top meets
- * the bottom. Pure and seeded, one byte per texel (the film reads the G channel).
+ * The film's thickness map as RGBA bytes: a sum of sine waves with whole-number
+ * frequencies, so the left edge meets the right and the top meets the bottom.
+ * Pure and deterministic. The shader reads G; every colour channel carries the value.
  */
-export function filmNoise(px: number = FILM.noisePx, seed: number = seedFor('film')): Uint8Array {
-  const r = createRng(seed)
-  const waves: Array<readonly [number, number, number, number]> = []
-  for (let i = 0; i < 6; i += 1) {
-    const fx = 1 + Math.floor(r() * 3)
-    const fy = 1 + Math.floor(r() * 3)
-    waves.push([i % 2 === 0 ? fx : -fx, fy, r() * Math.PI * 2, 1 / (1 + i * 0.35)])
-  }
-  const total = waves.reduce((sum, w) => sum + w[3], 0)
-  const out = new Uint8Array(px * px)
-  for (let y = 0; y < px; y += 1) {
-    for (let x = 0; x < px; x += 1) {
-      let v = 0
-      for (const [fx, fy, phase, amp] of waves) v += Math.sin(((x / px) * fx + (y / px) * fy) * Math.PI * 2 + phase) * amp
-      out[y * px + x] = Math.round(((v / total) * 0.5 + 0.5) * 255)
-    }
+export function filmTexels(px: number = FILM.noisePx): Uint8Array {
+  const out = new Uint8Array(px * px * 4).fill(255)
+  for (let i = 0; i < px * px; i += 1) {
+    let v = 0
+    for (const [fx, fy, phase, weight] of FILM_WAVES) v += Math.sin(((i % px) * fx + Math.floor(i / px) * fy) * (Math.PI * 2 / px) + phase) * weight
+    out.fill(Math.round((v / 2.7 / 2 + 0.5) * 255), i * 4, i * 4 + 3)
   }
   return out
 }

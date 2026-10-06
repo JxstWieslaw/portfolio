@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FILM, filmNoise, shellLookFor } from '@/lib/assembly/artefact'
+import { FILM, filmTexels, shellLookFor } from '@/lib/assembly/artefact'
 import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 
 const luminance = (hex: string): number => {
@@ -74,23 +74,35 @@ describe('artefact shell look', () => {
 })
 
 describe('film noise', () => {
-  it('is deterministic, one byte per texel, and uses the byte range', () => {
-    const a = filmNoise()
-    expect(a).toHaveLength(FILM.noisePx * FILM.noisePx)
-    expect(Array.from(filmNoise())).toEqual(Array.from(a))
-    expect(Math.max(...a) - Math.min(...a)).toBeGreaterThan(100)
+  const px = FILM.noisePx
+  const green = (texels: Uint8Array): number[] => Array.from({ length: px * px }, (_, i) => texels[i * 4 + 1] as number)
+
+  it('is deterministic RGBA with opaque alpha, equal colour channels and a wide byte range', () => {
+    const a = filmTexels()
+    expect(a).toHaveLength(px * px * 4)
+    expect(Array.from(filmTexels())).toEqual(Array.from(a))
+    for (let i = 0; i < px * px; i += 1) {
+      expect(a[i * 4]).toBe(a[i * 4 + 1])
+      expect(a[i * 4 + 2]).toBe(a[i * 4 + 1])
+      expect(a[i * 4 + 3]).toBe(255)
+    }
+    const g = green(a)
+    expect(Math.max(...g) - Math.min(...g)).toBeGreaterThan(150)
   })
 
   it('tiles: the wrap seam is no rougher than the average step between neighbouring columns', () => {
-    const px = FILM.noisePx
-    const n = filmNoise(px)
+    const g = green(filmTexels())
     const step = (x0: number, x1: number): number => {
       let sum = 0
-      for (let y = 0; y < px; y += 1) sum += Math.abs((n[y * px + x0] as number) - (n[y * px + x1] as number))
+      for (let y = 0; y < px; y += 1) sum += Math.abs((g[y * px + x0] as number) - (g[y * px + x1] as number))
       return sum
     }
     let interior = 0
     for (let x = 0; x < px - 1; x += 1) interior += step(x, x + 1)
     expect(step(px - 1, 0)).toBeLessThanOrEqual((interior / (px - 1)) * 2)
+    const rows = (y0: number, y1: number): number => g.slice(y0 * px, y0 * px + px).reduce((sum, v, x) => sum + Math.abs(v - (g[y1 * px + x] as number)), 0)
+    let rowInterior = 0
+    for (let y = 0; y < px - 1; y += 1) rowInterior += rows(y, y + 1)
+    expect(rows(px - 1, 0)).toBeLessThanOrEqual((rowInterior / (px - 1)) * 2)
   })
 })

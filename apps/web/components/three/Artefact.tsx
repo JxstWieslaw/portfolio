@@ -10,13 +10,10 @@ import {
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   PointLight,
-  RGBAFormat,
   RepeatWrapping,
   TorusGeometry,
-  UnsignedByteType,
   Vector3,
   LinearFilter,
-  NoColorSpace,
 } from 'three'
 import {
   ARTEFACT_CENTRE,
@@ -27,7 +24,7 @@ import {
   FILM,
   RINGS,
   displaceShell,
-  filmNoise,
+  filmTexels,
   shellLookFor,
 } from '@/lib/assembly/artefact'
 
@@ -61,21 +58,9 @@ const CYAN = new Color('#22D3EE')
  * G), repeating, with no mipmaps (64 px is already smoother than the facets).
  */
 function createFilmMap(): DataTexture {
-  const bytes = filmNoise()
-  const data = new Uint8Array(bytes.length * 4)
-  for (let i = 0; i < bytes.length; i += 1) {
-    const v = bytes[i] as number
-    data[i * 4] = v
-    data[i * 4 + 1] = v
-    data[i * 4 + 2] = v
-    data[i * 4 + 3] = 255
-  }
-  const map = new DataTexture(data, FILM.noisePx, FILM.noisePx, RGBAFormat, UnsignedByteType)
-  map.wrapS = RepeatWrapping
-  map.wrapT = RepeatWrapping
-  map.magFilter = LinearFilter
-  map.minFilter = LinearFilter
-  map.colorSpace = NoColorSpace
+  const map = new DataTexture(filmTexels(), FILM.noisePx, FILM.noisePx)
+  map.wrapS = map.wrapT = RepeatWrapping
+  map.magFilter = map.minFilter = LinearFilter
   map.needsUpdate = true
   return map
 }
@@ -104,6 +89,7 @@ export function createArtefact(keep = 1): Artefact {
           roughness: FILM.roughness,
           clearcoat: FILM.clearcoat,
           clearcoatRoughness: FILM.clearcoatRoughness,
+          envMapIntensity: FILM.envMapIntensity,
           iridescence: FILM.iridescence,
           iridescenceIOR: FILM.ior,
           iridescenceThicknessRange: [FILM.thickness[0], FILM.thickness[1]],
