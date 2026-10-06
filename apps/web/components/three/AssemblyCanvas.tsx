@@ -31,7 +31,7 @@ import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
-import { assemblyClock } from '@/lib/hero/clock'
+import { assemblyClock, resetAssemblyClock } from '@/lib/hero/clock'
 import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { BREATH_FPS, NO_DROP, ScrollVelocity, bindReducedMotion, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
@@ -326,6 +326,9 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInva
   useLayoutEffect(() => {
     invalidate()
   }, [heroOwns, invalidate])
+  // A remounted page starts a new assembly: forget this one, so the hero is never seeded from a stale start.
+  useEffect(() => resetAssemblyClock, [])
+
 
   useEffect(() => {
     bindInvalidate(invalidate)

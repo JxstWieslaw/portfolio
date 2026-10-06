@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HeroEngine } from '@/components/three/hero/HeroEngine'
+import { assemblyClock, resetAssemblyClock } from '@/lib/hero/clock'
 import { HeroController, LIVE_HYSTERESIS_MS, RELEASE_AFTER_MS, resetHeroForTests, RESTORE_DEADLINE_MS } from '@/components/three/hero/HeroLayer'
 
 /**
@@ -385,6 +386,46 @@ describe('going live late, and restore with the tab hidden', () => {
   })
 })
 
+describe('a loss seen without its event', () => {
+  it('a context already lost when compile ends waits under the restore deadline, then gives up', async () => {
+    const engine = stubEngine({ compile: vi.fn(async () => false), isLost: vi.fn(() => true) })
+    const { controller, onGiveUp } = setup('/?hero=a&tier=2', () => engine)
+    controller.start()
+    await run(100)
+    expect(onGiveUp).not.toHaveBeenCalled()
+    await run(RESTORE_DEADLINE_MS + 100)
+    expect(mark('data-hero-reason')).toBe('restore-timeout')
+    controller.stop()
+  })
+})
+
+describe('the assembly clock', () => {
+  const firstS = async (): Promise<number> => {
+    const engine = stubEngine()
+    const { controller } = setup('/?hero=a&tier=2', () => engine)
+    controller.start()
+    await run(60)
+    const call = engine.render.mock.calls[0]?.[0] as { s: number } | undefined
+    controller.stop()
+    return call?.s ?? -1
+  }
+
+  afterEach(() => resetAssemblyClock())
+
+  it('joins the cubes where they got to: a start 5 s ago means the first frame is already assembled', async () => {
+    await run(6000)
+    assemblyClock.t0 = performance.now() - 5000
+    expect(await firstS()).toBeCloseTo(1, 1)
+  })
+
+  it('after the 3D scene unmounts the start is forgotten, and the hero assembles from its own first frame', async () => {
+    await run(6000)
+    assemblyClock.t0 = performance.now() - 5000
+    resetAssemblyClock()
+    expect(await firstS()).toBeLessThan(0.1)
+  })
+})
+
 describe('out of view', () => {
   it('releases the context after 8 s away, hands the cubes back, and re-acquires on scroll-back', async () => {
     const { controller, onLive, create } = setup('/?hero=a&tier=2', () => stubEngine())
@@ -458,7 +499,9 @@ describe('the governor, wired in', () => {
     await scrolling(40_000)
     expect(mark('data-hero-tier')).toBe('1')
     expect(engine.setTier).toHaveBeenCalledTimes(1)
-    expect(Number(window.sessionStorage.getItem('hero-cap'))).toBeGreaterThan(32)
+    const saved = JSON.parse(window.sessionStorage.getItem('hero-cap') ?? 'null') as { cap: number; at: number }
+    expect(saved.cap).toBeGreaterThan(32)
+    expect(saved.at).toBeGreaterThan(0)
     expect(onGiveUp).not.toHaveBeenCalled()
     window.sessionStorage.removeItem('hero-cap')
     controller.stop()
@@ -479,6 +522,28 @@ describe('the governor, wired in', () => {
     expect(window.sessionStorage.getItem('hero-cap')).toBeNull()
     expect(document.body.textContent).toMatch(/no rAF cap/)
     controller.stop()
+  })
+
+  it('a remembered cap expires after ten minutes, and a stale one is dropped by the first window and removed', async () => {
+    const store = (at: number): void => window.sessionStorage.setItem('hero-cap', JSON.stringify({ cap: 33.3, at }))
+    // Expired: the key is ignored, so a 16 ms stream is simply governed normally and nothing is stored.
+    store(Date.now() - 11 * 60 * 1000)
+    frameMs = 16
+    const expired = setup('/?hero=a&perf=1', () => stubEngine())
+    expired.controller.start()
+    await scrolling(3000)
+    expect(document.body.textContent).toMatch(/no rAF cap/)
+    expired.controller.stop()
+    window.sessionStorage.removeItem('hero-cap')
+
+    // Fresh but wrong (the phone left Low Power Mode): the first window is not cap-like, so the cap is dropped and the key removed.
+    store(Date.now())
+    const stale = setup('/?hero=a&perf=1', () => stubEngine())
+    stale.controller.start()
+    await scrolling(6000)
+    expect(document.body.textContent).toMatch(/no rAF cap/)
+    expect(window.sessionStorage.getItem('hero-cap')).toBeNull()
+    stale.controller.stop()
   })
 
   it('in production a ?tier is only a starting tier: the governor keeps governing', async () => {
