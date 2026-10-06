@@ -121,3 +121,62 @@ export function checksum(values: ArrayLike<number>): number {
   for (let i = 0; i < values.length; i += 1) sum = (sum * 31 + Math.round((values[i] ?? 0) * 1e5)) % 2147483647
   return sum
 }
+
+/**
+ * The shell's material. Two paths, chosen once at build time (never per frame):
+ * `film` is a thin-film `MeshPhysicalMaterial`, `standard` is the cheap
+ * `MeshStandardMaterial` with the film's average tint baked into its colour
+ * (tier 1, `reduced-instances`: one fewer physical lobe, no noise texture).
+ */
+export type ShellLook = 'film' | 'standard'
+
+export function shellLookFor(keep: number): ShellLook {
+  return keep < 1 ? 'standard' : 'film'
+}
+
+/** Thin-film parameters. The thickness range is nanometres; the ranges below are asserted in a test. */
+export const FILM = {
+  iridescence: 1,
+  ior: 1.3,
+  /** Thickness map texel 0 maps to the first value, texel 1 to the second. */
+  thickness: [120, 700] as readonly [number, number],
+  clearcoat: 1,
+  clearcoatRoughness: 0.08,
+  roughness: 0.16,
+  metalness: 0.85,
+  /** Diffuse/base tint: the brand's violet, lifted so facets away from the strips are not navy. */
+  tint: '#a995ff',
+  /** The cheap path's baked tint: the film's average, a little cooler than the base. */
+  bakedTint: '#b7a8ff',
+  /** Faint violet emissive so the shell never goes fully dark between reflections. */
+  emissive: '#5b32c9',
+  emissiveIntensity: 0.18,
+  /** Noise texture edge in texels, and how fast the film drifts across the shell (uv per second). */
+  noisePx: 64,
+  drift: [0.006, 0.0035] as readonly [number, number],
+} as const
+
+/**
+ * A tileable noise field in 0..255: a sum of sine waves whose frequencies are
+ * whole numbers per texture, so the left edge meets the right and the top meets
+ * the bottom. Pure and seeded, one byte per texel (the film reads the G channel).
+ */
+export function filmNoise(px: number = FILM.noisePx, seed: number = seedFor('film')): Uint8Array {
+  const r = createRng(seed)
+  const waves: Array<readonly [number, number, number, number]> = []
+  for (let i = 0; i < 6; i += 1) {
+    const fx = 1 + Math.floor(r() * 3)
+    const fy = 1 + Math.floor(r() * 3)
+    waves.push([i % 2 === 0 ? fx : -fx, fy, r() * Math.PI * 2, 1 / (1 + i * 0.35)])
+  }
+  const total = waves.reduce((sum, w) => sum + w[3], 0)
+  const out = new Uint8Array(px * px)
+  for (let y = 0; y < px; y += 1) {
+    for (let x = 0; x < px; x += 1) {
+      let v = 0
+      for (const [fx, fy, phase, amp] of waves) v += Math.sin(((x / px) * fx + (y / px) * fy) * Math.PI * 2 + phase) * amp
+      out[y * px + x] = Math.round(((v / total) * 0.5 + 0.5) * 255)
+    }
+  }
+  return out
+}

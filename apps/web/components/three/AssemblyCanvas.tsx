@@ -4,6 +4,8 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
 import {
   ACESFilmicToneMapping,
+  BackSide,
+  BufferAttribute,
   BoxGeometry,
   Color,
   DirectionalLight,
@@ -17,6 +19,7 @@ import {
   PMREMGenerator,
   PlaneGeometry,
   Scene as ThreeScene,
+  SphereGeometry,
   Vector3,
   type PerspectiveCamera,
   type WebGLRenderTarget,
@@ -28,7 +31,7 @@ import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
-import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
+import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { BREATH_FPS, NO_DROP, ScrollVelocity, bindReducedMotion, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
@@ -202,7 +205,7 @@ interface Rig {
   dispose(): void
 }
 
-function createRig(capacity: number): Rig {
+function createRig(capacity: number, keep: number): Rig {
   // A plain Mesh over an InstancedBufferGeometry: position, scale and rotation
   // live in the vertex program, so there is no instance matrix to upload
   // (an InstancedMesh would carry 192 kB of identity matrices for nothing).
@@ -217,7 +220,7 @@ function createRig(capacity: number): Rig {
   const mesh = new Mesh(geometry, material)
   mesh.frustumCulled = false
 
-  const artefact = createArtefact()
+  const artefact = createArtefact(keep)
   artefact.group.scale.setScalar(0)
 
   const group = new Group()
@@ -261,11 +264,27 @@ function bakeEnvironment(gl: WebGLRenderer): WebGLRenderTarget {
     plane.lookAt(0, 0, 0)
     scene.add(plane)
   }
+  // The dim gradient dome: violet at the bottom pole to cyan at the top, so no reflection is plain black.
+  const dome = new SphereGeometry(ENVIRONMENT_DOME.radius, 16, 12)
+  const domePositions = dome.getAttribute('position')
+  const domeColours = new Float32Array(domePositions.count * 3)
+  const bottom = new Color(ENVIRONMENT_DOME.bottom)
+  const top = new Color(ENVIRONMENT_DOME.top)
+  const mixed = new Color()
+  for (let i = 0; i < domePositions.count; i += 1) {
+    mixed.copy(bottom).lerp(top, (domePositions.getY(i) / ENVIRONMENT_DOME.radius + 1) / 2).multiplyScalar(ENVIRONMENT_DOME.intensity)
+    domeColours.set([mixed.r, mixed.g, mixed.b], i * 3)
+  }
+  dome.setAttribute('color', new BufferAttribute(domeColours, 3))
+  const domeMaterial = new MeshBasicMaterial({ vertexColors: true, side: BackSide })
+  scene.add(new Mesh(dome, domeMaterial))
   const generator = new PMREMGenerator(gl)
-  // 64 px faces: five soft planes need no detail, and 256 would allocate a 6.3 MB target.
-  const target = generator.fromScene(scene, 0.04, 0.1, 100, { size: 64 })
+  // Small faces: soft strips need no detail, and 256 px would allocate a 6.3 MB target.
+  const target = generator.fromScene(scene, 0.04, 0.1, 100, { size: ENVIRONMENT_FACE_PX })
   generator.dispose()
   geometry.dispose()
+  dome.dispose()
+  domeMaterial.dispose()
   for (const material of materials) material.dispose()
   return target
 }
@@ -320,7 +339,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   }, [capacity, keep])
 
   const rung = keep < 1 ? 'reduced-instances' : 'live'
-  const rig = useMemo(() => createRig(capacity), [capacity])
+  const rig = useMemo(() => createRig(capacity, keep), [capacity, keep])
   // Created and disposed with the scene (not with the memoised rig) so StrictMode's mount, cleanup, mount
   // leaves a live slot and its markers. `null` once a throw has killed it: the procedural artefact carries on.
   const models = useRef<ModelSlot | null>(null)
