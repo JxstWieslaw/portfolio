@@ -173,6 +173,13 @@ test.describe('mobile navigation', () => {
     await page.getByRole('button', { name: /open menu/i }).click()
     const sheet = page.getByRole('dialog', { name: 'Menu' })
     await expect(sheet).toBeVisible()
+    // The slide must really animate: `translate` is a transitioned property, and the open position differs from the
+    // closed one (translate-y-full vs translate-y-0).
+    await expect.poll(() => sheet.evaluate((el) => getComputedStyle(el).translate)).toMatch(/^(none|0px( 0px)?)$/)
+    expect(await sheet.evaluate((el) => getComputedStyle(el).transitionProperty)).toContain('translate')
+    await sheet.evaluate((el) => el.removeAttribute('data-open'))
+    expect(await sheet.evaluate((el) => getComputedStyle(el).translate)).not.toMatch(/^(none|0px( 0px)?)$/)
+    await sheet.evaluate((el) => el.setAttribute('data-open', 'true'))
     await sheet.locator('a[href="#work"]').click()
     await expect(sheet).toBeHidden()
     await expect(page).toHaveURL(/#work$/)
