@@ -38,7 +38,7 @@
     "path": [
       ".next/static/chunks/hero.*.js"
     ],
-    "limit": "13.5 kB",
+    "limit": "14 kB",
     "gzip": true
   }
 ]

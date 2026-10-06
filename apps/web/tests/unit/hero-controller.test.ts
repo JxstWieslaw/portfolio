@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HeroEngine } from '@/components/three/hero/HeroEngine'
+import { assemblyClock, resetAssemblyClock } from '@/lib/hero/clock'
 import { HeroController, LIVE_HYSTERESIS_MS, RELEASE_AFTER_MS, resetHeroForTests, RESTORE_DEADLINE_MS } from '@/components/three/hero/HeroLayer'
 
 /**
@@ -395,6 +396,33 @@ describe('a loss seen without its event', () => {
     await run(RESTORE_DEADLINE_MS + 100)
     expect(mark('data-hero-reason')).toBe('restore-timeout')
     controller.stop()
+  })
+})
+
+describe('the assembly clock', () => {
+  const firstS = async (): Promise<number> => {
+    const engine = stubEngine()
+    const { controller } = setup('/?hero=a&tier=2', () => engine)
+    controller.start()
+    await run(60)
+    const call = engine.render.mock.calls[0]?.[0] as { s: number } | undefined
+    controller.stop()
+    return call?.s ?? -1
+  }
+
+  afterEach(() => resetAssemblyClock())
+
+  it('joins the cubes where they got to: a start 5 s ago means the first frame is already assembled', async () => {
+    await run(6000)
+    assemblyClock.t0 = performance.now() - 5000
+    expect(await firstS()).toBeCloseTo(1, 1)
+  })
+
+  it('after the 3D scene unmounts the start is forgotten, and the hero assembles from its own first frame', async () => {
+    await run(6000)
+    assemblyClock.t0 = performance.now() - 5000
+    resetAssemblyClock()
+    expect(await firstS()).toBeLessThan(0.1)
   })
 })
 

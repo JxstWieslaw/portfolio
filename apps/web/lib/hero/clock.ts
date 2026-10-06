@@ -6,3 +6,8 @@
  * instead, so it joins at the progress the cubes had reached. `-1` until the cubes have started.
  */
 export const assemblyClock = { t0: -1 }
+
+/** Called when the 3D scene unmounts. */
+export function resetAssemblyClock(): void {
+  assemblyClock.t0 = -1
+}

@@ -544,12 +544,10 @@ export class HeroController {
       this.lastOpacity = -1
     }
     if (this.lostCount >= 2) return this.giveUp('lost-x2')
-    this.status = 'lost'
-    this.hiddenDuringLoss = document.visibilityState === 'hidden'
-    this.armRestore()
+    this.awaitRestore()
   }
 
-  /** A loss seen by `isLost()` before (or without) its event: wait for the restore under the same deadline, so `starting` cannot hang. */
+  /** A loss (with its event, or seen by `isLost()` without one): wait for the restore under the same deadline, so `starting` cannot hang. */
   private awaitRestore(): void {
     this.status = 'lost'
     this.hiddenDuringLoss = document.visibilityState === 'hidden'
