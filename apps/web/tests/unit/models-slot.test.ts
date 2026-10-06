@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHAPTERS, type Chapter, type ModelPlacement } from '@/lib/assembly/chapters'
 import type * as DisposeModule from '@/lib/models/dispose'
 import { ModelLoadError } from '@/lib/models/errors'
-import type { FormationId } from '@/lib/formations/config'
+import { FORMATION_IDS, type FormationId } from '@/lib/formations/config'
 import type { ModelFrame } from '@/components/three/models/ModelSlot'
 
 /**
@@ -289,6 +289,9 @@ describe('the gate', () => {
       parent: new Group(),
       rung: 'live',
       invalidate: vi.fn(),
+      // An explicit all-null ledger: the committed one has rows now, and its next-asset prefetch fires on a 200ms idle
+      // timer, which `flush` outlasts on a slow-timer machine (Windows) but not on a CI Linux runner.
+      ledger: Object.fromEntries(FORMATION_IDS.map((id) => [id, { ...CHAPTERS[id], model: null }])) as Record<FormationId, Chapter>,
     })
     expect(slot.update(frameAt())).toEqual({ suppressArtefact: false })
     await flush()

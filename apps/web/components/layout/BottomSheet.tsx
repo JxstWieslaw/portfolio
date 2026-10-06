@@ -118,7 +118,9 @@ const SHEET_SHELL = [
   'pointer-events-auto',
   'text-[var(--fg-1)] opacity-0 data-[open=true]:opacity-100',
   // Enter is --d-3 (320ms): a menu opened on demand should arrive, not drift.
-  'transition-[opacity,transform] duration-[var(--d-3)] ease-[var(--ease)]',
+  // Tailwind v4 emits `translate-*` as the CSS `translate` property, not `transform`, so `translate` is what
+  // must be transitioned; `transition-[opacity,transform]` left the slide snapping with only the fade animating.
+  'transition-[opacity,translate] duration-[var(--d-3)] ease-[var(--ease)]',
   // Reduced motion keeps the fade and drops the slide. Both translate
   // utilities are gated; neither may ever appear ungated.
   'motion-safe:translate-y-full motion-safe:data-[open=true]:translate-y-0',

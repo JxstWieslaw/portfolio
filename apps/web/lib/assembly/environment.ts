@@ -6,8 +6,10 @@
  * key above and a rim behind), two thin coloured edge strips in the brand's
  * violet and cyan, and a dim violet-to-cyan gradient dome so nothing a metal
  * face can see is plain black. The scene builds a tiny `Scene` from this
- * table and runs it through `PMREMGenerator.fromScene` once, one frame after
- * the first draw, then sets the result as `scene.environment`.
+ * table and runs it through `PMREMGenerator.fromScene` once per `prepare()`
+ * (`AssemblyCanvas`), before `compileAsync` and so before the first draw, then
+ * sets the result as `scene.environment`. Baking first means the program that
+ * links is the final one, since the envMap define is part of the program key.
  *
  * Long strips, not square panels: a strip reads as a streak across a facet or
  * a ring, which is what makes polished metal look polished. A square panel
