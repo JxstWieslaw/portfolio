@@ -6,7 +6,7 @@ set -euo pipefail
 dir="${1:?usage: check-no-model-seam.sh <dir>}"
 test -d "$dir" || { echo "seam guard could not run: $dir is not a directory"; exit 1; }
 set +e
-grep -rlE "__ASSEMBLY_MODELS_TEST__|__ASSEMBLY_DEBUG__|__ASSEMBLY_VELOCITY__" "$dir"
+grep -rlE "__ASSEMBLY_MODELS_TEST__|__ASSEMBLY_DEBUG__|__ASSEMBLY_VELOCITY__|__ASSEMBLY_HERO__" "$dir"
 rc=$?
 set -e
 [ "$rc" -eq 1 ] || { echo "seam present or guard could not run (grep rc=$rc)"; exit 1; }

@@ -5,6 +5,13 @@ import type { NextConfig } from 'next'
 const MODELS_CHUNK =
   /[\\/](?:components[\\/]three[\\/]models[\\/]ModelLoader\.ts|lib[\\/]models[\\/]manifest\.ts|public[\\/]models[\\/]manifest\.json|three[\\/]examples[\\/]jsm[\\/](?:loaders[\\/]GLTFLoader|libs[\\/]meshopt_decoder\.module|utils[\\/](?:BufferGeometryUtils|SkeletonUtils))\.js)$/
 
+/**
+ * Modules that belong to the lazy `hero` chunk (the monolith engine, raw WebGL2, no three). `lib/hero/gate.ts`
+ * is deliberately not here: the initial bundle's `AssemblyLayer` decides with it.
+ */
+const HERO_CHUNK =
+  /[\\/](?:components[\\/]three[\\/]hero[\\/](?:HeroLayer\.tsx|HeroEngine\.ts|hero\.glsl\.ts)|lib[\\/]hero[\\/](?:geometry|progress|frame|governor|tiers)\.ts)$/
+
 const config: NextConfig = {
   reactStrictMode: true,
   // Always defined, so the bundler inlines it either way and the model test seam
@@ -55,6 +62,14 @@ const config: NextConfig = {
           enforce: true,
           priority: 60,
           test: MODELS_CHUNK,
+        },
+        // Same trap, same fix: the hero engine's budget is the size of one named file.
+        hero: {
+          name: 'hero',
+          chunks: 'async',
+          enforce: true,
+          priority: 60,
+          test: HERO_CHUNK,
         },
       }
     }

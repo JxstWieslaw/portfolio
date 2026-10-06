@@ -88,6 +88,8 @@ export interface AssemblyCanvasProps {
   readonly onLive: (live: boolean) => void
   /** Second context loss in a session: unmount for good. */
   readonly onGiveUp: () => void
+  /** The hero monolith engine owns the hero: draw no cubes or artefact while the view is the hero. */
+  readonly hero?: boolean
 }
 
 /** The scroll-speed read for the e2e job; module-local so it folds away in production (see `test-seam.ts`). */
@@ -275,6 +277,7 @@ interface SceneProps {
   readonly keep: number
   readonly onLive: (live: boolean) => void
   readonly onGiveUp: () => void
+  readonly hero?: boolean
   readonly bindInvalidate: (invalidate: () => void) => void
 }
 
@@ -295,7 +298,7 @@ interface Motion {
   velocity: ScrollVelocity
 }
 
-function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
+function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInvalidate }: SceneProps) {
   const { gl, scene, camera, size, invalidate } = useThree()
 
   useEffect(() => {
@@ -650,7 +653,9 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     // Scroll speed: one damped scalar, one uniform. Cubes only: the models are separate meshes and never see it.
     uniforms.uVelocity.value = m.velocity.step(window.scrollY, t, size.height)
     uniforms.uStaggerByT.value = to === 'ring' ? 1 : 0
-    geometry.instanceCount = Math.max(a.count, b.count)
+    // The hero engine draws the hero: no cubes while the view is the hero (spec 4.4).
+    const inHero = heroOwns && (from === 'cloud' ? to === 'monolith' : from === 'monolith' && mix === 0)
+    geometry.instanceCount = inHero ? 0 : Math.max(a.count, b.count)
 
     // The artefact: ignites 0.6 s into the assembly and belongs to the hero,
     // so it fades with the monolith's share of the morph; it returns as the
@@ -659,7 +664,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
     const orbitWeight = to === 'orbit' ? smoothstep(0.5, 1, mix) : from === 'orbit' ? 1 - smoothstep(0, 0.5, mix) : 0
     const heroUnit = scalars('monolith').unit
     const ignite = igniteScale(elapsed)
-    const hero = heroUnit * ignite * heroWeight
+    const hero = inHero ? 0 : heroUnit * ignite * heroWeight
     const asCore = sTo.unit * ORBIT_ARTEFACT_SCALE * orbitWeight
     if (hero >= asCore) {
       artefact.group.position.set(ARTEFACT_CENTRE[0] * heroUnit, ARTEFACT_CENTRE[1] * heroUnit, ARTEFACT_CENTRE[2] * heroUnit)
@@ -728,7 +733,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   return null
 }
 
-export default function AssemblyCanvas({ keep, onLive, onGiveUp }: AssemblyCanvasProps) {
+export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero }: AssemblyCanvasProps) {
   const store = useRef<AssemblyStore>({
     scroll: { from: 'monolith', to: 'monolith', mix: 0, opacity: 1 },
     pointer: { x: 0, y: 0, active: false },
@@ -743,29 +748,32 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp }: AssemblyCanva
     invalidateRef.current = invalidate
   }, [])
 
+  // The hero engine paints the hero's own background, so its wash must not cover it (spec 4.1).
+  const washOf = useCallback((kind: FormationId) => (hero && kind === 'monolith' ? 'transparent' : washCss(kind)), [hero])
+
   // The washes carry each formation's radial accent (the 2D wash divs fade out
   // under `data-gl="live"`), cross-faded by the same mix the cubes use.
   const apply = useCallback((state: ScrollState) => {
     store.current.scroll = state
     if (wrapper.current) wrapper.current.style.opacity = state.opacity.toFixed(3)
     if (washFrom.current && washes.current.from !== state.from) {
-      washFrom.current.style.background = washCss(state.from)
+      washFrom.current.style.background = washOf(state.from)
       washes.current.from = state.from
     }
     if (washTo.current) {
       if (washes.current.to !== state.to) {
-        washTo.current.style.background = washCss(state.to)
+        washTo.current.style.background = washOf(state.to)
         washes.current.to = state.to
       }
       washTo.current.style.opacity = state.mix.toFixed(3)
     }
     invalidateRef.current()
-  }, [])
+  }, [washOf])
   useAssemblyScroll(apply)
 
   return (
     <div ref={wrapper} className="absolute inset-0">
-      <div ref={washFrom} className="absolute inset-0" style={{ background: washCss('monolith') }} />
+      <div ref={washFrom} className="absolute inset-0" style={{ background: washOf('monolith') }} />
       <div ref={washTo} className="absolute inset-0" style={{ opacity: 0 }} />
       <Canvas
         frameloop="demand"
@@ -785,7 +793,7 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp }: AssemblyCanva
         }}
         style={{ position: 'absolute', inset: 0 }}
       >
-        <Scene store={store} keep={keep} onLive={onLive} onGiveUp={onGiveUp} bindInvalidate={bindInvalidate} />
+        <Scene store={store} keep={keep} onLive={onLive} onGiveUp={onGiveUp} hero={hero} bindInvalidate={bindInvalidate} />
       </Canvas>
     </div>
   )

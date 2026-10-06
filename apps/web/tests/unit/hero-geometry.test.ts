@@ -57,17 +57,17 @@ describe('buildSlab', () => {
 
   it('has unit normals that agree with the plane of their triangle', () => {
     for (let t = 0; t < vertexCount / 3; t += 1) {
-      const at = (i: number): number[] => [0, 1, 2].map((k) => slab.positions[(t * 3 + i) * 3 + k] as number)
-      const [a, b, c] = [at(0), at(1), at(2)] as [number[], number[], number[]]
-      const e1 = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]
-      const e2 = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!]
-      const cross = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!]
+      const at = (i: number): V3 => v3(slab.positions, (t * 3 + i) * 3)
+      const [a, b, c] = [at(0), at(1), at(2)]
+      const e1 = sub(b, a)
+      const e2 = sub(c, a)
+      const cross = crossOf(e1, e2)
       const area = Math.hypot(...cross)
       expect(area).toBeGreaterThan(1e-9)
-      const n = [0, 1, 2].map((k) => slab.normals[t * 9 + k] as number)
+      const n = v3(slab.normals, t * 9)
       expect(Math.hypot(...n)).toBeCloseTo(1, 5)
       // The mesh is built to be wound outward: the geometric normal and the stored normal point the same way.
-      expect((cross[0]! * n[0]! + cross[1]! * n[1]! + cross[2]! * n[2]!) / area).toBeCloseTo(1, 4)
+      expect((cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2]) / area).toBeCloseTo(1, 4)
     }
   })
 
@@ -116,7 +116,7 @@ describe('the small meshes', () => {
     const cube = buildCube()
     expect(cube.positions.length / 9).toBe(12)
     for (let i = 0; i < cube.normals.length; i += 3) {
-      expect(Math.hypot(cube.normals[i]!, cube.normals[i + 1]!, cube.normals[i + 2]!)).toBeCloseTo(1, 6)
+      expect(Math.hypot(...v3(cube.normals, i))).toBeCloseTo(1, 6)
     }
   })
 
@@ -132,3 +132,8 @@ describe('the small meshes', () => {
 
 const PIN_INSIDE = 106
 const PIN_OUTER = 867
+
+type V3 = readonly [number, number, number]
+const v3 = (a: Float32Array, o: number): V3 => [a[o] ?? 0, a[o + 1] ?? 0, a[o + 2] ?? 0]
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+const crossOf = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]

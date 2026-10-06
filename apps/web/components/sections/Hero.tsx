@@ -273,7 +273,7 @@ export function Hero({
       <div aria-hidden="true" className="hero-mobile-scrim" />
 
       <Reveal className="hero-panel">
-        <GlassCard variant="panel" className="w-full">
+        <GlassCard variant="panel" className="w-full" data-hero-panel="">
           {eyebrow ? <Eyebrow className="hero-eyebrow">{eyebrow}</Eyebrow> : null}
 
           <h1 id="hero-h" className="type-display-hero hero-h1">
