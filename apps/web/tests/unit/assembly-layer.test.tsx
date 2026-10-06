@@ -183,7 +183,7 @@ describe('AssemblyLayer', () => {
     expect(dynamicProbe.requests).toBe(0)
   })
 
-  it('registers exactly one dynamic chunk for the whole module', () => {
-    expect(dynamicProbe.loaders).toBe(1)
+  it('registers exactly two dynamic chunks for the whole module: three, and the flagged hero engine', () => {
+    expect(dynamicProbe.loaders).toBe(2)
   })
 })

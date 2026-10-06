@@ -30,6 +30,8 @@ interface HeroSeam {
   readonly tier: number
   readonly lost: number
   readonly ready: boolean
+  /** Renders a deterministic still: the clock stops at `t` and the assembly is `s`. */
+  setFreeze(t: number, s: number): void
 }
 
 declare global {
@@ -74,7 +76,7 @@ class HeroController {
   private governor: GovernorState
   private readonly override: HeroTier | null
   private readonly fine: boolean
-  private readonly freeze: { t: number; s: number } | null
+  private freeze: { t: number; s: number } | null
   private readonly grain: number
   private readonly perf: boolean
 
@@ -128,6 +130,11 @@ class HeroController {
         tier: { enumerable: true, get: (): number => this.tier },
         lost: { enumerable: true, get: (): number => this.lostCount },
         ready: { enumerable: true, get: (): boolean => this.firstShown },
+        setFreeze: {
+          value: (t: number, s: number): void => {
+            this.freeze = { t, s }
+          },
+        },
       })
       window.__ASSEMBLY_HERO__ = seam as HeroSeam
     }
@@ -168,7 +175,8 @@ class HeroController {
     window.clearInterval(this.hudTimer)
     this.hud?.remove()
     this.hud = null
-    setMark('data-hero', null)
+    // A layer that gave up leaves its marker: the poster is what the page is showing now.
+    if (!gaveUp) setMark('data-hero', null)
     setMark('data-hero-tier', null)
     if (SEAM_ENABLED) delete window.__ASSEMBLY_HERO__
   }
