@@ -37,7 +37,20 @@ appear only when `VERCEL_ENV=preview`; production and local builds never list th
 
 ## Violations found
 
-See the PR description for the run (home, a scroll through every section, `?modeltest=1`, `?hero=a`, production build).
+None on the pages tested. Method: production build served by `next start`, Chromium (SwiftShader WebGL2),
+a `securitypolicyviolation` listener from first paint, then a scroll through the whole page, on `/`, `/?modeltest=1`
+(compiled out in a normal build, so the same as `/`) and `/?hero=a` (tier 3 engine running). Run against a normal
+build and against a build with `NEXT_PUBLIC_MODEL_TEST=1` (the CI e2e build). Three GLBs loaded and decoded in every run.
+
+Two controls show the listener and the policy are real, not silent:
+
+- A deliberate `fetch('https://example.com/x')` was reported as a `connect-src` violation.
+- Serving the same page with `'wasm-unsafe-eval'` stripped produced `script-src wasm-eval`. So the Meshopt decoder does
+  need it, and nothing in the policy is wider than it has to be on this path.
+
+Not covered: real GPUs and WebKit/Firefox in the field, `/api` calls (the contact form posts to
+`NEXT_PUBLIC_API_URL`; that origin is in `connect-src` when set, and no test exercises a live API), and Vercel preview
+toolbar origins (listed from Vercel's documented set, not observed). This is why enforcing waits for a report sink.
 
 ## What the enforcing step needs
 
