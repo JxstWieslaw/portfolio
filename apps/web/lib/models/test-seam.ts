@@ -31,6 +31,8 @@ declare global {
     __ASSEMBLY_DEBUG__?: AssemblyDebug
     /** The cubes' damped scroll-speed weight (`uVelocity`), 0 at rest. Same switch and the same guard as the rest of the seam. */
     __ASSEMBLY_VELOCITY__?: () => number
+    /** How many cubes the last drawn frame instanced (0 while the hero engine owns the hero). Same switch and guard. */
+    __ASSEMBLY_CUBES__?: number
   }
 }
 

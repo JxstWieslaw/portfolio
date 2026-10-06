@@ -32,6 +32,10 @@ vi.mock('@/components/three/AssemblyCanvas', () => {
   throw new Error('ChunkLoadError: Loading chunk three failed')
 })
 
+vi.mock('@/components/three/hero/HeroLayer', () => {
+  throw new Error('ChunkLoadError: Loading chunk hero failed')
+})
+
 import { AssemblyLayer, resetAssemblyForTests } from '@/components/three/AssemblyLayer'
 
 /** Past the idle macrotask fallback and the rejected import. */
@@ -144,6 +148,16 @@ describe('AssemblyLayer', () => {
     expect(document.documentElement.hasAttribute('data-gl')).toBe(false)
   })
 
+  it('a rejected hero chunk import gives up with the reason import, and only the flag asks for it', async () => {
+    webgl2 = true
+    window.history.replaceState({}, '', '/?hero=a')
+    render(<AssemblyLayer />)
+    await settle(AFTER_IDLE_MS)
+    expect(dynamicProbe.requests).toBe(2)
+    expect(document.documentElement.getAttribute('data-hero-reason')).toBe('import')
+    document.documentElement.removeAttribute('data-hero-reason')
+  })
+
   it('asks for the chunk after an idle period when a fresh canvas offers WebGL2', async () => {
     webgl2 = true
     render(<AssemblyLayer />)
@@ -183,7 +197,7 @@ describe('AssemblyLayer', () => {
     expect(dynamicProbe.requests).toBe(0)
   })
 
-  it('registers exactly one dynamic chunk for the whole module', () => {
-    expect(dynamicProbe.loaders).toBe(1)
+  it('registers exactly two dynamic chunks for the whole module: three, and the flagged hero engine', () => {
+    expect(dynamicProbe.loaders).toBe(2)
   })
 })
