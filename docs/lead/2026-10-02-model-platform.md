@@ -3,6 +3,7 @@
 **Mission (Wieslaw):** add more animation and 3D models to the portfolio, pick open-source models and configure them onto the platform using the build-awwwards-quality-sites approach, and build the platform prospectively.
 **Repo:** portfolio · **Profile:** `creative-3d, marketing-site` · **Base:** `develop` · `auto_main: no` (nothing here went to `main`; the release PR is left for Wieslaw).
 **Stop condition (met):** a merged, reviewed model platform (contracts, ingest, runtime slot), motion work that fits the budgets, and the first models integrated with credits.
+**Released:** the owner merged release PR #53 to `main` on 2026-10-06 at 04:28 UTC (`348ca6c`). Verified afterwards by the lead: CI on `main` passed; the Cloud Run "Deploy API" workflow succeeded (04:39 UTC); Vercel production deployment `dpl_4c2azX5D…` is READY on that commit; the live API answers 200 on `/v1/health` and `{"status":"ready","checks":{"postgres":"ok"}}` on `/v1/ready`. The production site sits behind Vercel Authentication, so the models were not checked in a browser from production; the preview and e2e checks stand as the evidence.
 
 ## Outcome in one paragraph
 The site now has a reviewed, budget-checked model platform and three models in the journey. A build-time pipeline (`npm run assets:fetch | ingest | check`) turns pinned sources into hashed GLBs plus a manifest and credits; a runtime slot inside the single persistent canvas loads at most two models per section, falls back to the procedural artefact on any failure, and costs 23.5 kB gz in its own lazy chunk. Three models are live in the ledger (our own gyroscope in How I Lead, Kenney's crystal cluster in Craft and gate in Stack, both CC0) with credits in the footer. Motion work: reveal stagger, nav, hover gating and heading reveal (#43), canvas gating (#45), scroll-velocity stretch (#50). GSAP and Lenis were rejected on measured budgets. The hero stays procedural.
@@ -34,6 +35,9 @@ The site now has a reviewed, budget-checked model platform and three models in t
 | #49 | scanner hardening 2 (values, reachability, tiling, decode gating, strip fixes, canary) | security + code review, verified, 1 High fixed |
 | #50 | scroll-velocity response | code review, refresh-rate bug fixed |
 | #51 | first models, material-merge look step, credits | code + security/provenance review, 8-item fix round |
+| #52 | final mission log | docs |
+| #54 | sync main into develop (history only): release #41 had been squashed onto `main`, so `develop` and `main` had diverged and #53 showed conflicts | merge commit (a squash would have kept the divergence) |
+| #53 | **release to `main`**, merged by the owner 2026-10-06 | CI green before merge; deploys verified after (see Released above) |
 
 ## Baseline and final numbers (SwiftShader on a Windows laptop: relative only)
 Before (develop 0cdd8a8): initial JS 118.27 of 120 kB gz, core 262.37 of 275 kB; LCP median about 3.0 s with and without the Assembly; TBT about 0.8 s with `?nogl=1`, about 10 s with the Assembly live under software GL; 5 draw calls and 35,280 triangles per frame.
