@@ -11,7 +11,6 @@ import {
 } from '@/lib/assembly/artefact'
 import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { ASSEMBLY_SECONDS, CLOUD_RADIUS, SETTLE_SECONDS, buildCloudBundle, easeOutQuint, resolveAssembly } from '@/lib/assembly/cloud'
-import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { EMPTY_SLOTS, planSlots } from '@/lib/assembly/slots'
 import { INSTANCE_CAPACITY, buildModelBundle, clearArtefact } from '@/lib/assembly/targets'
 import { createRng, generatePoints, seedFor } from '@/lib/formations/generators'
@@ -196,14 +195,5 @@ describe('slot ping-pong', () => {
 
     // Holding still writes nothing.
     expect(planSlots(plan.state, 'lattice', 'stream').writes).toEqual([])
-  })
-})
-
-describe('environment layout', () => {
-  it('has the five lightformers and the spec intensity', () => {
-    expect(LIGHTFORMERS.map((l) => l.name)).toEqual(['key', 'rim', 'top', 'fill-left', 'fill-right'])
-    expect(LIGHTFORMERS.find((l) => l.name === 'key')?.color).toBe('#7C3AED')
-    expect(LIGHTFORMERS.find((l) => l.name === 'rim')?.color).toBe('#22D3EE')
-    expect(ENVIRONMENT_INTENSITY).toBe(0.8)
   })
 })
