@@ -69,6 +69,8 @@ test('compiles every program and renders, with no error anywhere', async ({ page
   // The hero engine owns the hero: the cube rig draws none and the layer is a canvas of its own.
   await expect(page.locator('canvas[data-hero-canvas]')).toHaveCount(1)
   expect(errors).toEqual([])
+  // A give-up is never silent: on the happy path there is no reason marker.
+  await expect(page.locator('html')).not.toHaveAttribute('data-hero-reason', /.+/)
 })
 
 for (const tier of [1, 3] as const) {
@@ -106,6 +108,8 @@ test('a lost context brings the poster back, a restore re-renders, a second loss
 
   await fire('webglcontextlost')
   await expect(html).toHaveAttribute('data-hero', 'poster')
+  await expect(html).toHaveAttribute('data-hero-reason', /^lost-x2/)
+  expect(await washTransparent(page)).toBe(false)
   await expect(page.locator('canvas[data-hero-canvas]')).toHaveCount(0)
 })
 
@@ -136,4 +140,60 @@ test('without the flag the hero chunk is never fetched and the page is unchanged
   expect(chunks).toEqual([])
   await expect(page.locator('html')).not.toHaveAttribute('data-hero', /.+/)
   await expect(page.locator('canvas[data-hero-canvas]')).toHaveCount(0)
+})
+
+/**
+ * The monolith's wash is transparent exactly while the hero engine is reported live (and the cubes are hidden);
+ * otherwise it is the normal opaque wash and the cubes draw. So "never transparent without a live hero" is
+ * "something is always painted behind the page".
+ */
+const washTransparent = (page: Page): Promise<boolean> =>
+  page.evaluate(() => {
+    const wash = document.querySelector('[data-assembly] > div > div')
+    return wash ? getComputedStyle(wash).backgroundImage === 'none' : false
+  })
+
+const heroPainting = (page: Page): Promise<boolean> =>
+  page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas[data-hero-canvas]')
+    return document.documentElement.dataset.hero === 'live' && canvas !== null && Number(canvas.style.opacity) > 0
+  })
+
+/** Samples every 250 ms and returns the instants at which the wash was transparent with no hero painting. */
+async function sampleBlank(page: Page, ms: number): Promise<number> {
+  let blank = 0
+  for (let waited = 0; waited < ms; waited += 250) {
+    if ((await washTransparent(page)) && !(await heroPainting(page))) blank += 1
+    await page.waitForTimeout(250)
+  }
+  return blank
+}
+
+test('a context that never comes back hands the page and the cubes back, with a reason', async ({ page }) => {
+  await page.goto('/?hero=a&tier=1')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  await expect.poll(() => washTransparent(page), { timeout: 20_000 }).toBe(true)
+  // A real loss, and no restoreContext() ever.
+  await page.evaluate(() => {
+    const gl = document.querySelector<HTMLCanvasElement>('canvas[data-hero-canvas]')?.getContext('webgl2')
+    gl?.getExtension('WEBGL_lose_context')?.loseContext()
+  })
+  await expect(page.locator('html')).toHaveAttribute('data-hero-reason', /^restore-timeout/, { timeout: 15_000 })
+  await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster')
+  expect(await washTransparent(page)).toBe(false)
+})
+
+test('away for more than 9 s and back: something is painted at every sampled instant', async ({ page }) => {
+  await page.goto('/?hero=a&tier=1')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  let blank = await sampleBlank(page, 1500)
+  await page.evaluate(() => window.scrollTo(0, window.innerHeight * 2))
+  blank += await sampleBlank(page, 9500)
+  await expect(page.locator('html')).not.toHaveAttribute('data-hero', /.+/)
+  await page.evaluate(() => window.scrollTo(0, 0))
+  blank += await sampleBlank(page, 1000)
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  blank += await sampleBlank(page, 1500)
+  expect(blank).toBe(0)
+  await expect(page.locator('html')).not.toHaveAttribute('data-hero-reason', /.+/)
 })

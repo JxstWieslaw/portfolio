@@ -18,7 +18,11 @@ const config: NextConfig = {
   // (`lib/models/test-seam.ts`) folds to `false` and is removed in a normal production build.
   // Only the e2e job's build sets NEXT_PUBLIC_MODEL_TEST=1; a Vercel (deployed) build never carries the seam,
   // whatever the dashboard's environment variables say.
-  env: { NEXT_PUBLIC_MODEL_TEST: process.env.NEXT_PUBLIC_MODEL_TEST === '1' && !process.env.VERCEL ? '1' : '0' },
+  env: {
+    NEXT_PUBLIC_MODEL_TEST: process.env.NEXT_PUBLIC_MODEL_TEST === '1' && !process.env.VERCEL ? '1' : '0',
+    // The hero flag folds at build time: unset means the `process.env` read in lib/hero/gate.ts is a constant.
+    NEXT_PUBLIC_HERO: process.env.NEXT_PUBLIC_HERO === 'monolith' ? 'monolith' : '',
+  },
   // `@repo/contracts` ships TypeScript source rather than a build artefact
   // (`"main": "./src/index.ts"`), which is what lets a contract change fail this
   // app's typecheck in CI instead of at runtime. Next has to compile it.

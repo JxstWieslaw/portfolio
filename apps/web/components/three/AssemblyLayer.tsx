@@ -51,7 +51,10 @@ const HeroLayer = dynamic(
   () =>
     import(/* webpackChunkName: "hero" */ './hero/HeroLayer').catch(() => ({
       default: ({ onGiveUp }: { onGiveUp: () => void }) => {
-        useEffect(onGiveUp, [onGiveUp])
+        useEffect(() => {
+          document.documentElement.setAttribute('data-hero-reason', 'import')
+          onGiveUp()
+        }, [onGiveUp])
         return null
       },
     })),
@@ -105,7 +108,11 @@ class AssemblyBoundary extends Component<BoundaryProps, { failed: boolean }> {
 export function AssemblyLayer() {
   const [keep, setKeep] = useState<number | null>(null)
   const [hero, setHero] = useState(false)
-  const heroOff = useCallback(() => setHero(false), [])
+  const [heroLive, setHeroLive] = useState(false)
+  const heroOff = useCallback(() => {
+    setHero(false)
+    setHeroLive(false)
+  }, [])
 
   useEffect(() => {
     if (gaveUp) return undefined
@@ -149,10 +156,14 @@ export function AssemblyLayer() {
       data-assembly={keep === null ? 'idle' : 'live'}
       className="pointer-events-none fixed inset-0 z-0"
     >
-      {hero ? <HeroLayer onGiveUp={heroOff} /> : null}
+      {hero ? (
+        <AssemblyBoundary onError={heroOff}>
+          <HeroLayer onGiveUp={heroOff} onLive={setHeroLive} />
+        </AssemblyBoundary>
+      ) : null}
       {keep === null ? null : (
         <AssemblyBoundary onError={giveUp}>
-          <AssemblyCanvas keep={keep} hero={hero} onLive={setLive} onGiveUp={giveUp} />
+          <AssemblyCanvas keep={keep} hero={heroLive} onLive={setLive} onGiveUp={giveUp} />
         </AssemblyBoundary>
       )}
     </div>

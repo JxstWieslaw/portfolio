@@ -35,9 +35,9 @@ describe('governorStep', () => {
 
   it('steps down exactly one tier when the assembly p75 is above 22 ms after 45 samples', () => {
     const warm = feed(initialGovernor(3), repeat(16, WARMUP_SAMPLES), 'assembly')
-    const almost = feed(warm, repeat(30, ASSEMBLY_WINDOW - 1), 'assembly')
+    const almost = feed(warm, repeat(42, ASSEMBLY_WINDOW - 1), 'assembly')
     expect(almost.tier).toBe(3)
-    const stepped = governorStep(almost, 30, 'assembly')
+    const stepped = governorStep(almost, 42, 'assembly')
     expect(stepped.tier).toBe(2)
     expect(stepped.cooldown).toBe(COOLDOWN_SAMPLES)
     expect(stepped.samples).toHaveLength(0)
@@ -57,7 +57,7 @@ describe('governorStep', () => {
     let s = feed(initialGovernor(3), repeat(16, WARMUP_SAMPLES), 'assembly')
     s = feed(s, repeat(40, ASSEMBLY_WINDOW), 'assembly')
     expect(s.tier).toBe(2)
-    s = feed(s, repeat(40, COOLDOWN_SAMPLES - 1), 'assembly')
+    s = feed(s, repeat(40, WARMUP_SAMPLES + COOLDOWN_SAMPLES - 1), 'assembly')
     expect(s.tier).toBe(2)
     s = feed(s, repeat(40, 1), 'assembly')
     expect(s.tier).toBe(1)
@@ -97,6 +97,34 @@ describe('governorStep', () => {
       expect(feed(initialGovernor(tier), repeat(16, 1000), 'assembly').tier).toBe(tier)
       expect(feed(initialGovernor(tier), repeat(16.7, 1000), 'scroll').tier).toBe(tier)
     }
+  })
+
+  it('drops intervals over 100 ms: a hitch or a hidden tab is not a budget sample', () => {
+    const s0 = initialGovernor(3)
+    expect(governorStep(s0, 101, 'scroll')).toBe(s0)
+    expect(governorStep(s0, 100, 'scroll').seen).toBe(1)
+  })
+
+  it('restarts the warm-up after every step down', () => {
+    let s = feed(initialGovernor(3), [...repeat(16, WARMUP_SAMPLES), ...repeat(40, ASSEMBLY_WINDOW)], 'assembly')
+    expect(s.tier).toBe(2)
+    expect(s.seen).toBe(0)
+    expect(s.reason).toMatch(/p75 40.0 over 22 ms at tier 3/)
+    s = governorStep(s, 16, 'assembly')
+    expect(s.seen).toBe(1)
+  })
+
+  it('treats a steady 30 Hz cap as the budget instead of stepping down', () => {
+    const capped = Array.from({ length: 300 }, (_, i) => 33.3 + (i % 3) * 0.4)
+    const s = feed(initialGovernor(2), capped, 'assembly')
+    expect(s.tier).toBe(2)
+    expect(s.cap).toBeGreaterThan(32)
+    expect(feed(initialGovernor(2), capped, 'scroll').tier).toBe(2)
+  })
+
+  it('still steps down a ragged 33 ms stream: a cap is steady, a struggling GPU is not', () => {
+    const ragged = Array.from({ length: 300 }, (_, i) => (i % 2 === 0 ? 20 : 48))
+    expect(feed(initialGovernor(2), ragged, 'assembly').tier).toBeLessThan(2)
   })
 
   it('ignores idle intervals, and bad numbers', () => {

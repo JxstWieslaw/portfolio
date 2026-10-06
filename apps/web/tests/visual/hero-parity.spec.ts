@@ -107,8 +107,8 @@ function hueShares(r: Raster): { cyan: number; violet: number; magenta: number }
 }
 
 /** Renders the hero canvas alone at a fixed tier and returns one PNG per `s`. */
-async function stills(page: Page, tier: number, size: Size): Promise<Map<number, Buffer>> {
-  await page.goto(`/?hero=a&tier=${tier}&freeze=3,1&grain=0`)
+async function stills(page: Page, tier: number, size: Size, extra = ''): Promise<Map<number, Buffer>> {
+  await page.goto(`/?hero=a&tier=${tier}&freeze=3,1&grain=0${extra}`)
   await page.waitForSelector('html[data-hero="live"]', { timeout: 120_000 })
   // Only the hero canvas: the page content, the nav and the 3D layer are hidden, the layout stays.
   await page.addStyleTag({ content: 'main>:not([data-assembly]),header,footer{visibility:hidden!important}[data-assembly]>div:not([data-hero-layer]){display:none!important}' })
@@ -162,3 +162,27 @@ for (const size of SIZES) {
     }
   })
 }
+
+// A device with no float render targets takes the RGBA8 path (headroom factor, reflection mixed by weight). It must still
+// look like the half-float render: the same tolerances, against the same tier.
+test('the RGBA8 fallback matches half-float at phone size', async ({ browser }) => {
+  const size = SIZES[0] as Size
+  const render = async (extra: string): Promise<Map<number, Buffer>> => {
+    const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 1, isMobile: true, hasTouch: true })
+    const page = await context.newPage()
+    const shots = await stills(page, 2, size, extra)
+    if (extra) await expect(page.locator('html')).toHaveAttribute('data-hero-target', 'rgba8')
+    await context.close()
+    return shots
+  }
+  const half = await render('')
+  const rgba = await render('&hdr=0')
+  for (const { s, mean, p95, luma } of TOLERANCE) {
+    const result = compare(await grid(half.get(s) as Buffer, size), await grid(rgba.get(s) as Buffer, size))
+    test.info().annotations.push({ type: `rgba8 s=${s}`, description: JSON.stringify(result) })
+    // Looser than tier-to-tier: the RGBA8 path trades darks for headroom, but colour and shape must hold.
+    expect(result.mean, `rgba8 s=${s} mean`).toBeLessThanOrEqual(mean * 2)
+    expect(result.p95, `rgba8 s=${s} p95`).toBeLessThanOrEqual(p95 * 2)
+    expect(result.luma, `rgba8 s=${s} luma`).toBeLessThanOrEqual(luma * 3)
+  }
+})

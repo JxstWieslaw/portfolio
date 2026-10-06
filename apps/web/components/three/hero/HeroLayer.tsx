@@ -3,10 +3,10 @@
 import { useEffect, useRef } from 'react'
 import { readCapabilities, resolveRung } from '@/lib/formations/fallback'
 import { dampFrame, freeRect, heroFrame, type HeroFrame } from '@/lib/hero/frame'
-import { governorStep, initialGovernor, percentile, type GovernorPhase, type GovernorState } from '@/lib/hero/governor'
+import { governorStep, initialGovernor, MAX_SAMPLE_MS, percentile, type GovernorPhase, type GovernorState } from '@/lib/hero/governor'
 import { assemblyS, cameraFor, heroWeight, loadAt, LOAD_SECONDS, scrollP, type Pointer } from '@/lib/hero/progress'
 import { initialTier, TIERS, tierOverride, type HeroTier } from '@/lib/hero/tiers'
-import { HeroEngine, type EngineTier } from './HeroEngine'
+import { HeroEngine, type EngineOptions, type EngineTier } from './HeroEngine'
 
 /**
  * The hero layer — hero monolith spec § 3 and § 4.1.
@@ -18,8 +18,15 @@ import { HeroEngine, type EngineTier } from './HeroEngine'
  * hero has been out of view for a while. `AssemblyLayer` mounts it after the
  * LCP gate, only when the flag is on and the gate says yes.
  *
- * `html[data-hero]` is `live` after the first presented frame and `poster`
- * once the layer has given up; `html[data-hero-tier]` carries the tier.
+ * Contract with the page:
+ * - `html[data-hero]` is `live` after the first presented frame and `poster`
+ *   once the layer has given up; `html[data-hero-tier]` carries the tier.
+ * - `onLive(true)` is called only while the hero is genuinely painting, and
+ *   `onLive(false)` the moment it is not (loading, lost, released, given up),
+ *   so the 3D cubes are hidden for exactly as long as the hero covers them.
+ * - A give-up is never silent: `html[data-hero-reason]` carries the reason code
+ *   (and the first line of any shader log), and `console.warn` carries the rest,
+ *   in production too.
  */
 
 const SEAM_ENABLED: boolean = process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_MODEL_TEST === '1'
@@ -41,13 +48,34 @@ declare global {
   }
 }
 
+export type HeroReason =
+  | 'no-context'
+  | 'compile'
+  | 'target'
+  | 'render'
+  | 'tick'
+  | 'begin'
+  | 'import'
+  | 'lost-x2'
+  | 'restore-timeout'
+  | 'floor'
+  | 'session'
+  | 'tier-0'
+  | 'override-0'
+
 const FLOOR_KEY = 'hero-floor'
+/** The governor's floor is remembered this long, not for the whole tab. */
+export const FLOOR_MEMORY_MS = 10 * 60 * 1000
 /** Out of view this long, the GL context is released. */
-const RELEASE_AFTER_MS = 8000
+export const RELEASE_AFTER_MS = 8000
 /** The loop counts as continuous for this long after a scroll, pointer or resize. */
 const ACTIVE_MS = 400
-/** An interval longer than this is a hidden tab or a hitch, not a frame budget sample. */
-const MAX_SAMPLE_MS = 250
+/** A lost context that does not come back within this long is given up on. */
+export const RESTORE_DEADLINE_MS = 3000
+/** After this long of stable live frames, earlier context losses are forgotten. */
+export const LOSS_DECAY_MS = 60_000
+/** The hero must have been live this long before the cubes are told to stand down: no one-frame flashes. */
+export const LIVE_HYSTERESIS_MS = 150
 
 /** Once the hero has given up it stays off for the session, across remounts. */
 let gaveUp = false
@@ -59,26 +87,34 @@ const setMark = (name: string, value: string | null): void => {
 }
 
 type Status = 'starting' | 'live' | 'paused' | 'lost' | 'gone'
+type EngineFactory = (canvas: HTMLCanvasElement, tier: EngineTier, options: EngineOptions) => HeroEngine | null
 
-class HeroController {
+export class HeroController {
   private status: Status = 'gone'
   private engine: HeroEngine | null = null
   private canvas: HTMLCanvasElement | null = null
   private hud: HTMLElement | null = null
   private hudTimer = 0
   private releaseTimer = 0
+  private restoreTimer = 0
+  private liveTimer = 0
+  private idleTimer = 0
   private raf = 0
   private generation = 0
   private stopped = false
   private lostCount = 0
+  private liveReported = false
+  private liveSince = 0
+  private over = false
 
   private tier: HeroTier
   private governor: GovernorState
   private readonly override: HeroTier | null
   private readonly fine: boolean
-  private freeze: { t: number; s: number } | null
+  private freeze: { t: number; s: number } | null = null
   private readonly grain: number
   private readonly perf: boolean
+  private readonly engineOptions: EngineOptions
 
   private frames = 0
   private t0 = -1
@@ -98,30 +134,35 @@ class HeroController {
   constructor(
     private readonly host: HTMLElement,
     private readonly onGiveUp: () => void,
+    private readonly onLive: (live: boolean) => void,
+    private readonly create: EngineFactory = (canvas, tier, options) => HeroEngine.create(canvas, tier, options),
   ) {
     const params = new URLSearchParams(window.location.search)
-    this.override = tierOverride(window.location.search)
     this.perf = params.get('perf') === '1'
     this.fine = window.matchMedia('(pointer: fine)').matches
     const caps = readCapabilities(document.createElement('canvas'))
-    this.tier = initialTier({
+    const computed = initialTier({
       rung: resolveRung(caps),
       finePointer: this.fine,
       cores: navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : null,
       lowPower: caps.lowPower,
-      override: this.override,
+      override: null,
     })
+    // `?tier=` can force any tier in dev and in the test build; in production it can only lower the device's own tier.
+    this.override = tierOverride(window.location.search)
+    this.tier = this.override === null ? computed : SEAM_ENABLED || this.override === 0 ? this.override : (Math.min(this.override, computed) as HeroTier)
     this.governor = initialGovernor(this.tier)
 
-    let freeze: { t: number; s: number } | null = null
     let grain = 1
+    let rgba8 = false
     if (SEAM_ENABLED) {
       const [t, s] = (params.get('freeze') ?? '').split(',').map(Number)
-      if (Number.isFinite(t) && Number.isFinite(s)) freeze = { t: t as number, s: s as number }
+      if (Number.isFinite(t) && Number.isFinite(s)) this.freeze = { t: t as number, s: s as number }
       if (params.get('grain') === '0') grain = 0
+      rgba8 = params.get('hdr') === '0'
     }
-    this.freeze = freeze
     this.grain = grain
+    this.engineOptions = { rgba8, debug: SEAM_ENABLED }
     if (SEAM_ENABLED) {
       const seam = {}
       Object.defineProperties(seam, {
@@ -143,9 +184,10 @@ class HeroController {
   // --------------------------------------------------------------- lifecycle
 
   start(): void {
-    if (gaveUp) return this.giveUp(false)
+    if (gaveUp) return this.giveUp('session')
     try {
-      if (this.override === null && window.sessionStorage.getItem(FLOOR_KEY) === '1') return this.giveUp(false)
+      const at = Number(window.sessionStorage.getItem(FLOOR_KEY))
+      if (this.override === null && at > 0 && Date.now() - at < FLOOR_MEMORY_MS) return this.giveUp('floor')
     } catch {
       // Storage blocked: carry on without the floor memory.
     }
@@ -175,8 +217,12 @@ class HeroController {
     window.clearInterval(this.hudTimer)
     this.hud?.remove()
     this.hud = null
-    // A layer that gave up leaves its marker: the poster is what the page is showing now.
-    if (!gaveUp) setMark('data-hero', null)
+    // A layer that gave up leaves its markers: the poster is what the page is showing now, and the reason is evidence.
+    if (!gaveUp) {
+      setMark('data-hero', null)
+      setMark('data-hero-reason', null)
+    }
+    setMark('data-hero-target', null)
     setMark('data-hero-tier', null)
     if (SEAM_ENABLED) delete window.__ASSEMBLY_HERO__
   }
@@ -185,9 +231,30 @@ class HeroController {
     return heroWeight(scrollP(window.scrollY, window.innerHeight))
   }
 
+  /** Reports to the page whether the hero is painting, with hysteresis on the way up. */
+  private reportLive(live: boolean): void {
+    window.clearTimeout(this.liveTimer)
+    if (!live) {
+      if (this.liveReported) {
+        this.liveReported = false
+        this.onLive(false)
+      }
+      return
+    }
+    if (this.liveReported) return
+    this.liveTimer = window.setTimeout(() => {
+      if (this.status === 'live' && this.firstShown && !this.liveReported) {
+        this.liveReported = true
+        this.onLive(true)
+      }
+    }, LIVE_HYSTERESIS_MS)
+  }
+
   /** Creates (or re-creates) the engine on the current canvas, compiles, primes, and starts the loop. */
   private async begin(): Promise<void> {
     if (this.stopped || this.status === 'starting') return
+    if (this.override === 0) return this.giveUp('override-0')
+    if (this.tier === 0) return this.giveUp('tier-0')
     if (this.currentWeight() <= 0 && this.freeze === null) {
       // Landed past the hero (a hash link, a restored scroll): do not spend a context on it.
       this.status = 'paused'
@@ -205,22 +272,23 @@ class HeroController {
         this.host.appendChild(canvas)
         this.canvas = canvas
       }
-      const tier = Math.max(1, this.tier) as EngineTier
-      const engine = HeroEngine.create(this.canvas, tier)
-      if (!engine) return this.giveUp()
+      const engine = this.create(this.canvas, Math.max(1, this.tier) as EngineTier, this.engineOptions)
+      if (!engine) return this.giveUp('no-context')
       this.engine = engine
-      this.measure(true)
+      if (!this.measure(true)) return this.giveUp('target')
       const ok = await engine.compile()
       if (generation !== this.generation || this.stopped) return
-      if (!ok) return this.giveUp()
-      engine.prime(this.frame, cameraFor(1, 0, 0, this.pointer))
+      if (!ok) return this.giveUp('compile')
+      if (!engine.prime(this.frame, cameraFor(1, 0, 0, this.pointer))) return this.giveUp('render')
+      this.markTarget()
       this.status = 'live'
       this.lastRender = 0
       this.t0 = -1
       this.firstShown = false
+      this.liveSince = performance.now()
       this.raf = requestAnimationFrame(this.tick)
-    } catch {
-      if (generation === this.generation && !this.stopped) this.giveUp()
+    } catch (error) {
+      if (generation === this.generation && !this.stopped) this.giveUp('begin', error)
     }
   }
 
@@ -229,7 +297,10 @@ class HeroController {
     cancelAnimationFrame(this.raf)
     this.raf = 0
     window.clearTimeout(this.releaseTimer)
+    window.clearTimeout(this.idleTimer)
+    window.clearTimeout(this.restoreTimer)
     this.generation += 1
+    this.reportLive(false)
     this.engine?.dispose(release)
     this.engine = null
     if (canvas && this.canvas) {
@@ -240,19 +311,43 @@ class HeroController {
     }
   }
 
-  private giveUp(notify = true): void {
+  /**
+   * The one way out. Never silent: the reason is a marker on <html> and a
+   * console warning, in production too, and any shader log is captured before
+   * the engine that holds it is disposed.
+   */
+  private giveUp(reason: HeroReason, detail?: unknown): void {
+    if (this.over) return
+    this.over = true
     gaveUp = true
+    const log = this.engine?.errors.join(' | ') ?? ''
+    const text = detail instanceof Error ? detail.message : typeof detail === 'string' ? detail : ''
+    const first = (log || text).split('\n')[0]?.slice(0, 160) ?? ''
+    if (reason !== 'session' || !root().hasAttribute('data-hero-reason')) setMark('data-hero-reason', first ? `${reason}: ${first}` : reason)
+    console.warn('[hero] gave up', reason, detail ?? '', log)
     this.teardown(true)
     this.status = 'gone'
     setMark('data-hero', 'poster')
-    if (notify) this.onGiveUp()
-    else queueMicrotask(this.onGiveUp)
+    this.onGiveUp()
+  }
+
+  private markTarget(): void {
+    const info = this.engine?.info
+    setMark('data-hero-target', !info ? null : !info.hdr ? 'rgba8' : info.msaa < info.wantedMsaa ? 'msaa0' : null)
   }
 
   // -------------------------------------------------------------------- loop
 
   private readonly tick = (now: number): void => {
     this.raf = 0
+    try {
+      this.step(now)
+    } catch (error) {
+      this.giveUp('tick', error)
+    }
+  }
+
+  private step(now: number): void {
     const engine = this.engine
     if (!engine || this.status !== 'live' || this.stopped) return
 
@@ -264,11 +359,17 @@ class HeroController {
     const elapsed = (now - this.t0) / 1000
     const phase: GovernorPhase =
       now - this.activeAt < ACTIVE_MS ? 'scroll' : elapsed < LOAD_SECONDS + 0.4 && !this.freeze ? 'assembly' : 'idle'
-    const spec = TIERS[engine.info.tier]
     const interval = now - this.lastRender
-    if (phase === 'idle' && interval < 1000 / spec.idleFps - 3) {
-      this.raf = requestAnimationFrame(this.tick)
-      return
+    if (phase === 'idle' && this.lastRender > 0) {
+      // Wake at the idle rate, not at every vsync.
+      const wait = 1000 / TIERS[engine.info.tier].idleFps - interval - 3
+      if (wait > 2) {
+        this.idleTimer = window.setTimeout(() => {
+          this.idleTimer = 0
+          this.raf = requestAnimationFrame(this.tick)
+        }, wait)
+        return
+      }
     }
     const dt = this.lastRender > 0 ? Math.min(interval / 1000, 0.1) : 1 / 60
 
@@ -283,18 +384,25 @@ class HeroController {
 
     const time = this.freeze ? this.freeze.t : elapsed + 1
     const s = this.freeze ? this.freeze.s : assemblyS(loadAt(elapsed), p)
-    engine.render({ time, s, camera: cameraFor(s, p, time, this.pointer), frame: this.frame, grain: this.grain })
+    const drawn = engine.render({ time, s, camera: cameraFor(s, p, time, this.pointer), frame: this.frame, grain: this.grain })
+    if (!drawn) {
+      // A lost context is the loss handler's business; anything else means we would be reporting a dead hero as live.
+      if (!engine.isLost()) this.giveUp('render')
+      return
+    }
     this.frames += 1
+    if (this.lostCount > 0 && now - this.liveSince > LOSS_DECAY_MS) this.lostCount = 0
 
     if (!this.firstShown) {
       this.firstShown = true
       const canvas = this.canvas
       // One frame after the first one is presented, so the marker never leads the pixels.
       requestAnimationFrame(() => {
-        if (!canvas || canvas !== this.canvas) return
+        if (this.status !== 'live' || !canvas || canvas !== this.canvas) return
         canvas.style.transition = 'opacity 500ms ease-out'
         this.setOpacity(weight)
         setMark('data-hero', 'live')
+        this.reportLive(true)
         window.setTimeout(() => {
           canvas.style.transition = 'none'
         }, 600)
@@ -303,7 +411,7 @@ class HeroController {
       this.setOpacity(weight)
     }
 
-    if (phase !== 'idle' && this.lastPhase !== 'idle' && interval <= MAX_SAMPLE_MS && this.lastRender > 0) {
+    if (phase !== 'idle' && this.lastPhase !== 'idle' && this.lastRender > 0 && interval <= MAX_SAMPLE_MS) {
       this.intervals.push(interval)
       if (this.intervals.length > 120) this.intervals.shift()
       if (this.override === null) this.govern(interval, phase)
@@ -321,19 +429,22 @@ class HeroController {
 
   private govern(interval: number, phase: GovernorPhase): void {
     const next = governorStep(this.governor, interval, phase)
+    const was = this.tier
     this.governor = next
-    if (next.tier === this.tier) return
+    if (next.tier === was) return
     this.tier = next.tier
     setMark('data-hero-tier', String(next.tier))
+    setMark('data-hero-governor', `${was}>${next.tier} ${next.reason}`)
     if (next.tier === 0) {
       try {
-        window.sessionStorage.setItem(FLOOR_KEY, '1')
+        window.sessionStorage.setItem(FLOOR_KEY, String(Date.now()))
       } catch {
         // Storage blocked: the floor is just not remembered.
       }
-      return this.giveUp()
+      return this.giveUp('floor', next.reason)
     }
-    this.engine?.setTier(next.tier as EngineTier)
+    if (!this.engine?.setTier(next.tier as EngineTier)) return this.giveUp('target')
+    this.markTarget()
   }
 
   /** Out of view: stop drawing, and release the GL context if the visitor stays away. */
@@ -371,7 +482,7 @@ class HeroController {
 
   private readonly onResize = (): void => {
     this.activeAt = performance.now()
-    this.measure(false)
+    if (!this.measure(false)) this.giveUp('target')
   }
 
   private readonly onVisibility = (): void => {
@@ -389,20 +500,27 @@ class HeroController {
     this.lostCount += 1
     this.teardown(false, false)
     setMark('data-hero', null)
-    if (this.lostCount >= 2) return this.giveUp()
+    if (this.canvas) {
+      this.canvas.style.opacity = '0'
+      this.lastOpacity = -1
+    }
+    if (this.lostCount >= 2) return this.giveUp('lost-x2')
     this.status = 'lost'
+    // A context that never comes back must not leave a blank hero: give up and hand the page back.
+    this.restoreTimer = window.setTimeout(() => this.giveUp('restore-timeout'), RESTORE_DEADLINE_MS)
   }
 
   private readonly onRestored = (): void => {
     if (this.status !== 'lost' || this.stopped) return
+    window.clearTimeout(this.restoreTimer)
     this.status = 'gone'
     void this.begin()
   }
 
   // ----------------------------------------------------------------- layout
 
-  /** Reads the viewport, the nav and the glass panel, and tells the engine. */
-  private measure(snap: boolean): void {
+  /** Reads the viewport, the nav and the glass panel, and tells the engine. False when no render target could be built. */
+  private measure(snap: boolean): boolean {
     const w = window.innerWidth
     const h = window.innerHeight
     const view = { w, h }
@@ -413,7 +531,7 @@ class HeroController {
     const free = freeRect(view, nav ? nav.getBoundingClientRect().bottom : 0, rect ? { left: rect.left, top: rect.top + window.scrollY, right: rect.right } : null)
     this.target = heroFrame(view, free)
     if (snap) this.frame = this.target
-    this.engine?.setSize(w, h, window.devicePixelRatio || 1)
+    return this.engine ? this.engine.setSize(w, h, window.devicePixelRatio || 1) : true
   }
 
   // -------------------------------------------------------------------- HUD
@@ -422,35 +540,50 @@ class HeroController {
     const hud = document.createElement('div')
     hud.setAttribute('aria-hidden', 'true')
     hud.style.cssText =
-      'position:fixed;left:8px;bottom:8px;z-index:60;pointer-events:none;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,.72);color:#9fe8ff;font:11px/1.35 ui-monospace,monospace;white-space:pre'
+      'position:fixed;left:8px;bottom:8px;z-index:60;pointer-events:none;padding:6px 8px;background:rgba(0,0,0,.72);color:#9fe8ff;font:11px/1.35 ui-monospace,monospace;white-space:pre'
     document.body.appendChild(hud)
     this.hud = hud
     this.hudTimer = window.setInterval(() => {
       const info = this.engine?.info
-      const sorted = this.intervals
-      const p50 = sorted.length ? percentile(sorted, 0.5) : 0
-      const p90 = sorted.length ? percentile(sorted, 0.9) : 0
+      const samples = this.intervals
+      const p50 = samples.length ? percentile(samples, 0.5) : 0
+      const p90 = samples.length ? percentile(samples, 0.9) : 0
+      const cap = this.governor.cap
       hud.textContent = [
         `hero tier ${this.tier}  ${this.status}`,
         info ? `canvas ${info.width}x${info.height}  msaa ${info.msaa}  ${info.hdr ? 'half-float' : 'rgba8'}` : 'no engine',
-        `frame p50 ${p50.toFixed(1)} ms  p90 ${p90.toFixed(1)} ms  (${sorted.length} samples)`,
+        `frame p50 ${p50.toFixed(1)} ms  p90 ${p90.toFixed(1)} ms  (${samples.length} samples)`,
         `dpr ${(window.devicePixelRatio || 1).toFixed(2)}  frames ${this.frames}`,
+        cap > 0 ? `rAF capped at about ${(1000 / cap).toFixed(0)} Hz, used as budget` : 'no rAF cap',
+        this.governor.reason ? `stepped down: ${this.governor.reason}` : 'no step down',
       ].join('\n')
     }, 500)
   }
 }
 
-export default function HeroLayer({ onGiveUp }: { readonly onGiveUp: () => void }) {
+export default function HeroLayer({ onGiveUp, onLive }: { readonly onGiveUp: () => void; readonly onLive: (live: boolean) => void }) {
   const host = useRef<HTMLDivElement>(null)
-  const giveUp = useRef(onGiveUp)
-  giveUp.current = onGiveUp
+  const callbacks = useRef({ onGiveUp, onLive })
+  callbacks.current = { onGiveUp, onLive }
 
   useEffect(() => {
     const element = host.current
     if (!element) return undefined
-    const controller = new HeroController(element, () => giveUp.current())
-    controller.start()
-    return () => controller.stop()
+    let controller: HeroController | null = null
+    try {
+      controller = new HeroController(
+        element,
+        () => callbacks.current.onGiveUp(),
+        (live) => callbacks.current.onLive(live),
+      )
+      controller.start()
+    } catch (error) {
+      // A synchronous throw must not take the home page down.
+      setMark('data-hero-reason', 'throw')
+      console.warn('[hero] gave up', 'throw', error)
+      callbacks.current.onGiveUp()
+    }
+    return () => controller?.stop()
   }, [])
 
   return <div ref={host} aria-hidden="true" data-hero-layer="" className="pointer-events-none absolute inset-0" />

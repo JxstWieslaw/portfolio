@@ -788,6 +788,12 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero }: Assembl
     }
     invalidateRef.current()
   }, [washOf])
+  // The hero starting or stopping to paint changes the monolith wash: re-apply what is on screen, so a give-up
+  // restores the normal wash instead of leaving it transparent for the session.
+  useEffect(() => {
+    if (washFrom.current) washFrom.current.style.background = washOf(washes.current.from)
+    if (washTo.current && washes.current.to) washTo.current.style.background = washOf(washes.current.to)
+  }, [washOf])
   useAssemblyScroll(apply)
 
   return (

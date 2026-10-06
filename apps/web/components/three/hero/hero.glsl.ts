@@ -20,9 +20,9 @@ const COMMON = `#version 300 es
 precision highp float;
 precision highp int;
 uniform vec2 uRes;uniform float uTime;uniform float uS;uniform vec2 uCenter;uniform float uZoom;uniform float uAspect;
-uniform vec3 uRo;uniform vec3 uUu;uniform vec3 uVv;uniform vec3 uWw;uniform vec4 uP;uniform float uMirror;uniform float uHead;
+uniform vec3 uRo;uniform vec3 uUu;uniform vec3 uVv;uniform vec3 uWw;uniform vec4 uP;uniform float uMirror;uniform float uHead;uniform float uMixRefl;
 const vec3 BG=vec3(.004,.0056,.0086);const vec3 VIOL=vec3(.202,.042,.846);const vec3 VIOLL=vec3(.386,.258,.956);
-const vec3 CYAN=vec3(.016,.651,.855);const vec3 CYANL=vec3(.136,.807,.947);const vec3 MAG=vec3(.694,.061,.863);
+const vec3 CYANL=vec3(.136,.807,.947);const vec3 MAG=vec3(.694,.061,.863);
 vec2 r2(vec2 v,float a){float c=cos(a),s=sin(a);return vec2(v.x*c-v.y*s,v.x*s+v.y*c);}
 float hash21(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
 vec3 hash33(vec3 p3){p3=fract(p3*vec3(.1031,.103,.0973));p3+=dot(p3,p3.yxz+33.33);return fract((p3.xxy+p3.yxx)*p3.zyx);}
@@ -126,7 +126,9 @@ vec3 e=envA(rr)*.3;
 vec3 rc=shadeA(P,N,rr,vId);rc=mix(rc,e,smoothstep(.5,4.,hr));
 float fr=.07+.93*pow(1.-max(-rdc.y,0.),5.);
 float fog=smoothstep(2.,12.,length(pf.xz));
-outColor=vec4((rc-e)*fr*.9*(1.-fog)*uHead,1.);
+float wr=fr*.9*(1.-fog);
+if(uMixRefl>.5){outColor=vec4(rc*wr*uHead,wr);return;}
+outColor=vec4((rc-e)*wr*uHead,1.);
 }`
 
 export const VS_FLOOR = `${COMMON}
