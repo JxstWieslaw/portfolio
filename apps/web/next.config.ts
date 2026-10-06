@@ -13,6 +13,21 @@ const HERO_CHUNK =
   /[\\/](?:components[\\/]three[\\/]hero[\\/](?:HeroLayer\.tsx|HeroEngine\.ts|hero\.glsl\.ts)|lib[\\/]hero[\\/](?:geometry|progress|frame|governor|tiers)\.ts)$/
 
 /**
+ * The API origin for `connect-src`, or '' when the value is unusable. Only http(s) with a plain host is accepted, so a
+ * value like `javascript:x` (origin "null"), `https://*.x.com` or one carrying `;` or `,` can never reach the header.
+ * `URL.origin` drops userinfo, path, query and fragment.
+ */
+function apiOrigin(raw: string | undefined): string {
+  try {
+    const url = new URL((raw ?? '').trim())
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+    return /^[a-z0-9.:-]+$/i.test(url.host) ? url.origin : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * The Content-Security-Policy, report-only for now (docs/security-headers.md). Built per call so the environment it
  * reads (preview or live, dev or production, the API origin) is the one the build or server runs with.
  *
@@ -29,12 +44,7 @@ const HERO_CHUNK =
 function contentSecurityPolicy(): string {
   const dev = process.env.NODE_ENV !== 'production'
   const preview = process.env.VERCEL_ENV === 'preview'
-  let api = ''
-  try {
-    api = process.env.NEXT_PUBLIC_API_URL ? new URL(process.env.NEXT_PUBLIC_API_URL.trim()).origin : ''
-  } catch {
-    api = ''
-  }
+  const api = apiOrigin(process.env.NEXT_PUBLIC_API_URL)
   const live = preview ? ['https://vercel.live', 'https://vercel.com'] : []
   const directives: Record<string, string[]> = {
     'default-src': ["'self'"],
