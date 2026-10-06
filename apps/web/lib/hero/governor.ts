@@ -27,8 +27,12 @@ export interface GovernorState {
   /** Samples still to pass before the next step down is allowed. */
   readonly cooldown: number
   readonly tier: HeroTier
-  /** The detected rAF cap in ms (about 33 for 30 Hz), or 0 when none. */
+  /** The cap-like interval in ms (about 33 for 30 Hz), or 0 when none was seen. Only budget once `capState` is confirmed. */
   readonly cap: number
+  /** none: no cap-like stream. unconfirmed: seen, and stepped down to test it. confirmed: it stayed at lower tiers, so it is the OS. */
+  readonly capState: 'none' | 'unconfirmed' | 'confirmed'
+  /** How many tiers the cap-like interval has persisted through. */
+  readonly capHits: number
   /** Why the last step happened, for the HUD and `data-hero-reason`. Empty until a step. */
   readonly reason: string
 }
@@ -53,9 +57,12 @@ const CAP_BAND: readonly [number, number] = [29, 38]
 const CAP_SPREAD_MS = 3
 /** Slack on top of a detected cap before a sample counts as over budget. */
 const CAP_SLACK_MS = 6
+/** Tiers a cap-like interval must persist through before it is believed. */
+const CAP_CONFIRM_HITS = 3
 
-export function initialGovernor(tier: HeroTier): GovernorState {
-  return { samples: [], seen: 0, cooldown: 0, tier, cap: 0, reason: '' }
+/** `knownCap`: a cap already confirmed earlier in this session. */
+export function initialGovernor(tier: HeroTier, knownCap = 0): GovernorState {
+  return { samples: [], seen: 0, cooldown: 0, tier, cap: knownCap, capState: knownCap > 0 ? 'confirmed' : 'none', capHits: 0, reason: '' }
 }
 
 /** Nearest-rank percentile of a non-empty list; `q` in 0..1. */
@@ -102,21 +109,40 @@ export function governorStep(state: GovernorState, intervalMs: number, phase: Go
   const held = { ...state, seen, cooldown, samples }
   if (cooldown > 0 || seen % EVAL_EVERY !== 0) return held
 
-  const cap = detectCap(tail(samples, ASSEMBLY_WINDOW))
-  const slack = cap > 0 ? cap + CAP_SLACK_MS : 0
-  const noted = cap === state.cap ? held : { ...held, cap }
-  const down = (tier: HeroTier, reason: string): GovernorState => ({ samples: [], seen: 0, cooldown: COOLDOWN_SAMPLES, tier, cap, reason })
+  const detected = detectCap(tail(samples, ASSEMBLY_WINDOW))
+  const trusted = state.capState === 'confirmed'
+  const slack = trusted ? state.cap + CAP_SLACK_MS : 0
+  const down = (tier: HeroTier, reason: string, patch: Partial<GovernorState> = {}): GovernorState => ({
+    ...state,
+    samples: [],
+    seen: 0,
+    cooldown: COOLDOWN_SAMPLES,
+    tier,
+    reason,
+    ...patch,
+  })
+  // A stream that stays cap-like after stepping down is a cap; one that changes is a slow GPU that is now fine.
+  const calm = state.capState === 'unconfirmed' && detected === 0 ? { ...held, capState: 'none' as const, capHits: 0 } : held
 
   if (state.tier === 1) {
+    if (state.capState !== 'confirmed' && detected > 0) return { ...held, capState: 'confirmed', cap: detected }
     const limit = Math.max(FLOOR_LIMIT_MS, slack)
     const p75 = percentile(samples, 0.75)
-    return samples.length >= FLOOR_WINDOW && p75 > limit ? down(0, `p75 ${p75.toFixed(1)} over ${limit.toFixed(0)} ms at tier 1`) : noted
+    return samples.length >= FLOOR_WINDOW && p75 > limit ? down(0, `p75 ${p75.toFixed(1)} over ${limit.toFixed(0)} ms at tier 1`) : calm
   }
   const assembly = phase === 'assembly'
-  const window = tail(samples, assembly ? ASSEMBLY_WINDOW : SCROLL_WINDOW)
+  const need = assembly ? ASSEMBLY_WINDOW : SCROLL_WINDOW
+  const window = tail(samples, need)
   const limit = Math.max(assembly ? ASSEMBLY_LIMIT_MS : SCROLL_LIMIT_MS, slack)
-  if (window.length < (assembly ? ASSEMBLY_WINDOW : SCROLL_WINDOW)) return noted
+  if (window.length < need) return calm
   const q = assembly ? 0.75 : 0.9
   const value = percentile(window, q)
-  return value > limit ? down((state.tier - 1) as HeroTier, `p${q * 100} ${value.toFixed(1)} over ${limit.toFixed(0)} ms at tier ${state.tier}`) : noted
+  if (value <= limit) return calm
+  const why = `p${q * 100} ${value.toFixed(1)} over ${limit.toFixed(0)} ms at tier ${state.tier}`
+  if (detected === 0) return down((state.tier - 1) as HeroTier, why, { capState: 'none', capHits: 0 })
+  // Cap-looking and over budget: a vsync-quantised slow GPU looks exactly like this. Step down and see whether the
+  // interval changes; only after it stays put at two lower tiers is it a cap, and then the stepping stops.
+  const hits = state.capHits + 1
+  if (hits >= CAP_CONFIRM_HITS) return { ...held, capState: 'confirmed', cap: detected, capHits: hits, reason: `${why}; stayed ${detected.toFixed(1)} ms at lower tiers: a refresh cap` }
+  return down((state.tier - 1) as HeroTier, why, { capState: 'unconfirmed', cap: detected, capHits: hits })
 }

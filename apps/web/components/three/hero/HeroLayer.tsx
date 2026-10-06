@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { readCapabilities, resolveRung } from '@/lib/formations/fallback'
+import { assemblyClock } from '@/lib/hero/clock'
 import { dampFrame, freeRect, heroFrame, type HeroFrame } from '@/lib/hero/frame'
 import { governorStep, initialGovernor, MAX_SAMPLE_MS, percentile, type GovernorPhase, type GovernorState } from '@/lib/hero/governor'
 import { assemblyS, cameraFor, heroWeight, loadAt, LOAD_SECONDS, scrollP, type Pointer } from '@/lib/hero/progress'
@@ -70,8 +71,12 @@ export const FLOOR_MEMORY_MS = 10 * 60 * 1000
 export const RELEASE_AFTER_MS = 8000
 /** The loop counts as continuous for this long after a scroll, pointer or resize. */
 const ACTIVE_MS = 400
-/** A lost context that does not come back within this long is given up on. */
-export const RESTORE_DEADLINE_MS = 3000
+/**
+ * A lost context that does not come back within this long, with the tab visible, is given up on. Phones lose the
+ * context when a tab is backgrounded and restore it on return, so the clock only runs while the tab is visible.
+ */
+export const RESTORE_DEADLINE_MS = 5000
+const CAP_KEY = 'hero-cap'
 /** After this long of stable live frames, earlier context losses are forgotten. */
 export const LOSS_DECAY_MS = 60_000
 /** The hero must have been live this long before the cubes are told to stand down: no one-frame flashes. */
@@ -104,12 +109,17 @@ export class HeroController {
   private stopped = false
   private lostCount = 0
   private liveReported = false
+  private hiddenDuringLoss = false
+  private weight = 1
+  private firstAt = -1
   private liveSince = 0
   private over = false
 
   private tier: HeroTier
   private governor: GovernorState
   private readonly override: HeroTier | null
+  /** The governor runs unless the test build was told which tier to hold. A production override is only a starting tier. */
+  private readonly governed: boolean
   private readonly fine: boolean
   private freeze: { t: number; s: number } | null = null
   private readonly grain: number
@@ -151,7 +161,14 @@ export class HeroController {
     // `?tier=` can force any tier in dev and in the test build; in production it can only lower the device's own tier.
     this.override = tierOverride(window.location.search)
     this.tier = this.override === null ? computed : SEAM_ENABLED || this.override === 0 ? this.override : (Math.min(this.override, computed) as HeroTier)
-    this.governor = initialGovernor(this.tier)
+    this.governed = !SEAM_ENABLED || this.override === null
+    let knownCap = 0
+    try {
+      knownCap = Number(window.sessionStorage.getItem(CAP_KEY)) || 0
+    } catch {
+      // Storage blocked: the cap is simply re-learned.
+    }
+    this.governor = initialGovernor(this.tier, knownCap)
 
     let grain = 1
     let rgba8 = false
@@ -187,7 +204,7 @@ export class HeroController {
     if (gaveUp) return this.giveUp('session')
     try {
       const at = Number(window.sessionStorage.getItem(FLOOR_KEY))
-      if (this.override === null && at > 0 && Date.now() - at < FLOOR_MEMORY_MS) return this.giveUp('floor')
+      if (this.governed && at > 0 && Date.now() - at < FLOOR_MEMORY_MS) return this.giveUp('floor')
     } catch {
       // Storage blocked: carry on without the floor memory.
     }
@@ -231,22 +248,30 @@ export class HeroController {
     return heroWeight(scrollP(window.scrollY, window.innerHeight))
   }
 
-  /** Reports to the page whether the hero is painting, with hysteresis on the way up. */
+  /**
+   * Reports to the page whether the hero is painting, with hysteresis on the way up. Going live is one step: the
+   * marker, the canvas opacity and `onLive(true)` (which flips the wash and the cubes) happen in the same task, so
+   * the page never shows both, or neither. Going not-live hands everything back at once.
+   */
   private reportLive(live: boolean): void {
-    window.clearTimeout(this.liveTimer)
     if (!live) {
+      window.clearTimeout(this.liveTimer)
+      this.liveTimer = 0
       if (this.liveReported) {
         this.liveReported = false
         this.onLive(false)
       }
       return
     }
-    if (this.liveReported) return
+    if (this.liveReported || this.liveTimer !== 0) return
     this.liveTimer = window.setTimeout(() => {
-      if (this.status === 'live' && this.firstShown && !this.liveReported) {
-        this.liveReported = true
-        this.onLive(true)
-      }
+      this.liveTimer = 0
+      if (this.status !== 'live' || !this.firstShown || this.liveReported) return
+      this.liveReported = true
+      if (this.canvas) this.canvas.style.transition = 'none'
+      this.setOpacity(this.weight)
+      setMark('data-hero', 'live')
+      this.onLive(true)
     }, LIVE_HYSTERESIS_MS)
   }
 
@@ -278,13 +303,15 @@ export class HeroController {
       if (!this.measure(true)) return this.giveUp('target')
       const ok = await engine.compile()
       if (generation !== this.generation || this.stopped) return
-      if (!ok) return this.giveUp('compile')
-      if (!engine.prime(this.frame, cameraFor(1, 0, 0, this.pointer))) return this.giveUp('render')
+      // A context lost while compiling is the loss handler's business: wait for the restore, do not give up.
+      if (!ok) return engine.isLost() ? undefined : this.giveUp('compile')
+      if (!engine.prime(this.frame, cameraFor(1, 0, 0, this.pointer))) return engine.isLost() ? undefined : this.giveUp('render')
       this.markTarget()
       this.status = 'live'
       this.lastRender = 0
       this.t0 = -1
       this.firstShown = false
+      this.firstAt = -1
       this.liveSince = performance.now()
       this.raf = requestAnimationFrame(this.tick)
     } catch (error) {
@@ -301,6 +328,8 @@ export class HeroController {
     window.clearTimeout(this.restoreTimer)
     this.generation += 1
     this.reportLive(false)
+    if (this.canvas) this.canvas.style.opacity = '0'
+    this.lastOpacity = -1
     this.engine?.dispose(release)
     this.engine = null
     if (canvas && this.canvas) {
@@ -316,10 +345,10 @@ export class HeroController {
    * console warning, in production too, and any shader log is captured before
    * the engine that holds it is disposed.
    */
-  private giveUp(reason: HeroReason, detail?: unknown): void {
+  private giveUp(reason: HeroReason, detail?: unknown, sticky = true): void {
     if (this.over) return
     this.over = true
-    gaveUp = true
+    gaveUp = sticky
     const log = this.engine?.errors.join(' | ') ?? ''
     const text = detail instanceof Error ? detail.message : typeof detail === 'string' ? detail : ''
     const first = (log || text).split('\n')[0]?.slice(0, 160) ?? ''
@@ -355,10 +384,12 @@ export class HeroController {
     const weight = this.freeze ? 1 : heroWeight(p)
     if (weight <= 0) return this.pause()
 
-    if (this.t0 < 0) this.t0 = now
+    if (this.firstAt < 0) this.firstAt = now
+    // Join the page's assembly where the cubes got to, instead of restarting it from the hero's own first frame.
+    if (this.t0 < 0) this.t0 = this.freeze || assemblyClock.t0 < 0 || assemblyClock.t0 > now ? now : assemblyClock.t0
     const elapsed = (now - this.t0) / 1000
     const phase: GovernorPhase =
-      now - this.activeAt < ACTIVE_MS ? 'scroll' : elapsed < LOAD_SECONDS + 0.4 && !this.freeze ? 'assembly' : 'idle'
+      now - this.activeAt < ACTIVE_MS ? 'scroll' : (now - this.firstAt) / 1000 < LOAD_SECONDS + 0.4 && !this.freeze ? 'assembly' : 'idle'
     const interval = now - this.lastRender
     if (phase === 'idle' && this.lastRender > 0) {
       // Wake at the idle rate, not at every vsync.
@@ -393,28 +424,17 @@ export class HeroController {
     this.frames += 1
     if (this.lostCount > 0 && now - this.liveSince > LOSS_DECAY_MS) this.lostCount = 0
 
-    if (!this.firstShown) {
-      this.firstShown = true
-      const canvas = this.canvas
-      // One frame after the first one is presented, so the marker never leads the pixels.
-      requestAnimationFrame(() => {
-        if (this.status !== 'live' || !canvas || canvas !== this.canvas) return
-        canvas.style.transition = 'opacity 500ms ease-out'
-        this.setOpacity(weight)
-        setMark('data-hero', 'live')
-        this.reportLive(true)
-        window.setTimeout(() => {
-          canvas.style.transition = 'none'
-        }, 600)
-      })
-    } else {
-      this.setOpacity(weight)
-    }
+    this.weight = weight
+    this.firstShown = true
+    // Not yet reported, or reported late after a scroll away and back: ask again. The canvas stays hidden under the
+    // opaque wash until the page is told, so nothing leads the pixels.
+    if (!this.liveReported) this.reportLive(true)
+    else this.setOpacity(weight)
 
     if (phase !== 'idle' && this.lastPhase !== 'idle' && this.lastRender > 0 && interval <= MAX_SAMPLE_MS) {
       this.intervals.push(interval)
       if (this.intervals.length > 120) this.intervals.shift()
-      if (this.override === null) this.govern(interval, phase)
+      if (this.governed) this.govern(interval, phase)
     }
     this.lastPhase = phase
     this.lastRender = now
@@ -430,6 +450,13 @@ export class HeroController {
   private govern(interval: number, phase: GovernorPhase): void {
     const next = governorStep(this.governor, interval, phase)
     const was = this.tier
+    if (next.capState === 'confirmed' && this.governor.capState !== 'confirmed') {
+      try {
+        window.sessionStorage.setItem(CAP_KEY, String(next.cap))
+      } catch {
+        // Storage blocked: the cap is re-learned next time.
+      }
+    }
     this.governor = next
     if (next.tier === was) return
     this.tier = next.tier
@@ -450,6 +477,7 @@ export class HeroController {
   /** Out of view: stop drawing, and release the GL context if the visitor stays away. */
   private pause(): void {
     this.status = 'paused'
+    this.weight = 0
     this.setOpacity(0)
     window.clearTimeout(this.releaseTimer)
     this.releaseTimer = window.setTimeout(() => {
@@ -488,6 +516,9 @@ export class HeroController {
   private readonly onVisibility = (): void => {
     this.lastRender = 0
     this.lastPhase = 'idle'
+    if (this.status !== 'lost') return
+    if (document.visibilityState === 'hidden') this.hiddenDuringLoss = true
+    this.armRestore()
   }
 
   private readonly onPointer = (e: PointerEvent): void => {
@@ -506,8 +537,19 @@ export class HeroController {
     }
     if (this.lostCount >= 2) return this.giveUp('lost-x2')
     this.status = 'lost'
-    // A context that never comes back must not leave a blank hero: give up and hand the page back.
-    this.restoreTimer = window.setTimeout(() => this.giveUp('restore-timeout'), RESTORE_DEADLINE_MS)
+    this.hiddenDuringLoss = document.visibilityState === 'hidden'
+    this.armRestore()
+  }
+
+  /**
+   * A context that never comes back must not leave a blank hero: give up and hand the page back. The clock runs only
+   * while the tab is visible (a backgrounded tab is expected to lose its context and get it back on return), and a
+   * give-up after the tab was hidden during the loss is not sticky for the session.
+   */
+  private armRestore(): void {
+    window.clearTimeout(this.restoreTimer)
+    if (this.status !== 'lost' || document.visibilityState !== 'visible') return
+    this.restoreTimer = window.setTimeout(() => this.giveUp('restore-timeout', undefined, !this.hiddenDuringLoss), RESTORE_DEADLINE_MS)
   }
 
   private readonly onRestored = (): void => {
@@ -548,13 +590,18 @@ export class HeroController {
       const samples = this.intervals
       const p50 = samples.length ? percentile(samples, 0.5) : 0
       const p90 = samples.length ? percentile(samples, 0.9) : 0
-      const cap = this.governor.cap
+      const g = this.governor
+      const hz = g.cap > 0 ? (1000 / g.cap).toFixed(0) : ''
       hud.textContent = [
         `hero tier ${this.tier}  ${this.status}`,
         info ? `canvas ${info.width}x${info.height}  msaa ${info.msaa}  ${info.hdr ? 'half-float' : 'rgba8'}` : 'no engine',
         `frame p50 ${p50.toFixed(1)} ms  p90 ${p90.toFixed(1)} ms  (${samples.length} samples)`,
         `dpr ${(window.devicePixelRatio || 1).toFixed(2)}  frames ${this.frames}`,
-        cap > 0 ? `rAF capped at about ${(1000 / cap).toFixed(0)} Hz, used as budget` : 'no rAF cap',
+        g.capState === 'confirmed'
+          ? `rAF capped at about ${hz} Hz, confirmed: used as budget`
+          : g.capState === 'unconfirmed'
+            ? `rAF cap-like at about ${hz} Hz, unconfirmed: stepped down to test it`
+            : 'no rAF cap',
         this.governor.reason ? `stepped down: ${this.governor.reason}` : 'no step down',
       ].join('\n')
     }, 500)

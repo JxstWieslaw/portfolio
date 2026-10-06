@@ -180,6 +180,7 @@ export class HeroEngine {
       if (parallel === null) await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
     if (parallel !== null) {
+      // Wall time, not frame time: a backgrounded tab throttles timers, so a slow return may time out; accepted.
       const deadline = Date.now() + COMPILE_DEADLINE_MS
       const done = await new Promise<boolean>((resolve) => {
         const poll = (): void => {

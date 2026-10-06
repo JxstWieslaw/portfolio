@@ -1,7 +1,7 @@
 'use client'
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import {
   ACESFilmicToneMapping,
   BackSide,
@@ -31,6 +31,7 @@ import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
+import { assemblyClock } from '@/lib/hero/clock'
 import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { BREATH_FPS, NO_DROP, ScrollVelocity, bindReducedMotion, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
@@ -546,7 +547,10 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInva
 
     // The on-load assembly: cloud -> monolith on a clock from the first drawn
     // frame, then the scroll state settles in without a step (`resolveAssembly`).
-    if (assemblyStart.current < 0) assemblyStart.current = t
+    if (assemblyStart.current < 0) {
+      assemblyStart.current = t
+      assemblyClock.t0 = performance.now()
+    }
     const elapsed = t - assemblyStart.current
     const { from, to, mix } = resolveAssembly(scroll, elapsed)
 
@@ -675,6 +679,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInva
     // The hero engine draws the hero: no cubes while the view is the hero (spec 4.4).
     const inHero = heroOwns && (from === 'cloud' ? to === 'monolith' : from === 'monolith' && mix === 0)
     geometry.instanceCount = inHero ? 0 : Math.max(a.count, b.count)
+    if (DEBUG_HOOK) window.__ASSEMBLY_CUBES__ = geometry.instanceCount
 
     // The artefact: ignites 0.6 s into the assembly and belongs to the hero,
     // so it fades with the monolith's share of the morph; it returns as the
@@ -790,9 +795,11 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero }: Assembl
   }, [washOf])
   // The hero starting or stopping to paint changes the monolith wash: re-apply what is on screen, so a give-up
   // restores the normal wash instead of leaving it transparent for the session.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (washFrom.current) washFrom.current.style.background = washOf(washes.current.from)
     if (washTo.current && washes.current.to) washTo.current.style.background = washOf(washes.current.to)
+    // Layout, not passive, and an explicit frame: the wash and the cubes change before the next paint, together.
+    invalidateRef.current()
   }, [washOf])
   useAssemblyScroll(apply)
 

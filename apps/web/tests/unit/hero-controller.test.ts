@@ -154,9 +154,11 @@ describe('the loop', () => {
     expect(onLive).not.toHaveBeenCalled()
     await run(100)
     expect(engine.render).toHaveBeenCalled()
-    expect(mark('data-hero')).toBe('live')
+    // Drawn, but not yet reported: the marker, the canvas and the page's cube hand-off all wait for the same moment.
+    expect(mark('data-hero')).toBeNull()
     expect(onLive).not.toHaveBeenCalled()
     await run(LIVE_HYSTERESIS_MS + 20)
+    expect(mark('data-hero')).toBe('live')
     expect(onLive).toHaveBeenCalledWith(true)
     expect(mark('data-hero-reason')).toBeNull()
     controller.stop()
@@ -291,6 +293,98 @@ describe('context loss', () => {
   })
 })
 
+describe('going live late, and restore with the tab hidden', () => {
+  const visibility = (state: 'visible' | 'hidden'): void => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: state })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }
+  afterEach(() => visibility('visible'))
+  const fire = (host: HTMLElement, type: string): void => {
+    host.querySelector('canvas')?.dispatchEvent(new Event(type, { cancelable: true }))
+  }
+
+  it('scrolling away inside the hysteresis does not strand the hero: it reports live when it wakes', async () => {
+    const { controller, onLive } = setup('/?hero=a&tier=2', () => stubEngine())
+    controller.start()
+    await run(40)
+    scrollTo(5000)
+    await run(LIVE_HYSTERESIS_MS + 100)
+    expect(onLive).not.toHaveBeenCalledWith(true)
+    scrollTo(0)
+    await run(LIVE_HYSTERESIS_MS + 200)
+    expect(onLive).toHaveBeenLastCalledWith(true)
+    expect(mark('data-hero')).toBe('live')
+    controller.stop()
+  })
+
+  it('the restore clock does not run while the tab is hidden, and a hidden-tab restore-timeout is not sticky', async () => {
+    const { controller, host, onGiveUp, create } = setup('/?hero=a&tier=2', () => stubEngine())
+    controller.start()
+    await run(200)
+    visibility('hidden')
+    fire(host, 'webglcontextlost')
+    await run(RESTORE_DEADLINE_MS * 3)
+    expect(onGiveUp).not.toHaveBeenCalled()
+    // Back on screen: the clock starts now, and the browser restores the context in time.
+    visibility('visible')
+    await run(RESTORE_DEADLINE_MS - 500)
+    fire(host, 'webglcontextrestored')
+    await run(300)
+    expect(onGiveUp).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledTimes(2)
+    controller.stop()
+  })
+
+  it('a loss while visible still times out after 5 s, and that give-up is sticky; one that began hidden is not', async () => {
+    const sticky = setup('/?hero=a&tier=2', () => stubEngine())
+    sticky.controller.start()
+    await run(200)
+    fire(sticky.host, 'webglcontextlost')
+    await run(RESTORE_DEADLINE_MS + 100)
+    expect(mark('data-hero-reason')).toBe('restore-timeout')
+    sticky.controller.stop()
+    const again = setup('/?hero=a&tier=2', () => stubEngine())
+    again.controller.start()
+    await run(50)
+    expect(mark('data-hero-reason')).toBe('restore-timeout')
+    again.controller.stop()
+
+    resetHeroForTests()
+    html.removeAttribute('data-hero-reason')
+    const soft = setup('/?hero=a&tier=2', () => stubEngine())
+    soft.controller.start()
+    await run(200)
+    visibility('hidden')
+    fire(soft.host, 'webglcontextlost')
+    visibility('visible')
+    await run(RESTORE_DEADLINE_MS + 100)
+    expect(mark('data-hero-reason')).toBe('restore-timeout')
+    soft.controller.stop()
+    html.removeAttribute('data-hero-reason')
+    const next = setup('/?hero=a&tier=2', () => stubEngine())
+    next.controller.start()
+    await run(200)
+    expect(mark('data-hero-reason')).toBeNull()
+    next.controller.stop()
+  })
+
+  it('a context lost while compiling waits for the restore instead of giving up', async () => {
+    let resolveCompile: (ok: boolean) => void = () => {}
+    const engine = stubEngine({
+      compile: vi.fn(() => new Promise<boolean>((resolve) => (resolveCompile = resolve))),
+      isLost: vi.fn(() => true),
+    })
+    const { controller, onGiveUp } = setup('/?hero=a&tier=2', () => engine)
+    controller.start()
+    await run(20)
+    resolveCompile(false)
+    await run(100)
+    expect(onGiveUp).not.toHaveBeenCalled()
+    expect(mark('data-hero-reason')).toBeNull()
+    controller.stop()
+  })
+})
+
 describe('out of view', () => {
   it('releases the context after 8 s away, hands the cubes back, and re-acquires on scroll-back', async () => {
     const { controller, onLive, create } = setup('/?hero=a&tier=2', () => stubEngine())
@@ -348,13 +442,71 @@ describe('the governor, wired in', () => {
     controller.stop()
   })
 
-  it('treats a steady 30 Hz cap as the budget: no step down', async () => {
+  /** Keeps the hero in the continuous (scroll) phase, the one the governor samples, for `ms`. */
+  async function scrolling(ms: number): Promise<void> {
+    for (let t = 0; t < ms; t += 300) {
+      scrollTo(0)
+      await run(300)
+    }
+  }
+
+  it('does not trust a 30 Hz stream at once: it steps down to test it, and stops once the cap persists', async () => {
     frameMs = 33
     const engine = stubEngine()
-    const { controller } = setup('/?hero=a', () => engine)
+    const { controller, onGiveUp } = setup('/?hero=a', () => engine)
     controller.start()
-    await run(8000)
-    expect(mark('data-hero-tier')).toBe('2')
+    await scrolling(40_000)
+    expect(mark('data-hero-tier')).toBe('1')
+    expect(engine.setTier).toHaveBeenCalledTimes(1)
+    expect(Number(window.sessionStorage.getItem('hero-cap'))).toBeGreaterThan(32)
+    expect(onGiveUp).not.toHaveBeenCalled()
+    window.sessionStorage.removeItem('hero-cap')
+    controller.stop()
+  })
+
+  it('a vsync-quantised slow GPU is not a cap: 33 ms at tier 2, 16 ms at tier 1, so it steps down once and no cap is stored', async () => {
+    frameMs = 33
+    const engine = stubEngine({
+      setTier: vi.fn(() => {
+        frameMs = 16
+        return true
+      }),
+    })
+    const { controller } = setup('/?hero=a&perf=1', () => engine)
+    controller.start()
+    await scrolling(30_000)
+    expect(mark('data-hero-tier')).toBe('1')
+    expect(window.sessionStorage.getItem('hero-cap')).toBeNull()
+    expect(document.body.textContent).toMatch(/no rAF cap/)
+    controller.stop()
+  })
+
+  it('in production a ?tier is only a starting tier: the governor keeps governing', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.resetModules()
+    const mod = await import('@/components/three/hero/HeroLayer')
+    mod.resetHeroForTests()
+    frameMs = 50
+    window.history.replaceState({}, '', '/?hero=a&tier=2')
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const engine = stubEngine()
+    const controller = new mod.HeroController(host, vi.fn(), vi.fn(), () => engine)
+    controller.start()
+    await scrolling(8000)
+    expect(engine.setTier).toHaveBeenCalledWith(1)
+    expect(mark('data-hero-tier')).toBe('1')
+    controller.stop()
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it('in the test build an override still holds the tier', async () => {
+    frameMs = 50
+    const engine = stubEngine()
+    const { controller } = setup('/?hero=a&tier=2', () => engine)
+    controller.start()
+    await scrolling(8000)
     expect(engine.setTier).not.toHaveBeenCalled()
     controller.stop()
   })
@@ -397,8 +549,9 @@ describe('the governor, wired in', () => {
     frameMs = 33
     const { controller } = setup('/?hero=a&perf=1', () => stubEngine())
     controller.start()
-    await run(5000)
-    expect(document.body.textContent).toMatch(/rAF capped at about 30 Hz/)
+    await scrolling(40_000)
+    expect(document.body.textContent).toMatch(/rAF capped at about 30 Hz, confirmed/)
+    window.sessionStorage.removeItem('hero-cap')
     controller.stop()
   })
 })

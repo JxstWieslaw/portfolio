@@ -62,7 +62,7 @@ const HeroLayer = dynamic(
 )
 
 interface BoundaryProps {
-  readonly onError: GiveUpHandler
+  readonly onError: (error?: unknown) => void
   readonly children: ReactNode
 }
 
@@ -77,8 +77,8 @@ class AssemblyBoundary extends Component<BoundaryProps, { failed: boolean }> {
     return { failed: true }
   }
 
-  override componentDidCatch(): void {
-    this.props.onError()
+  override componentDidCatch(error: unknown): void {
+    this.props.onError(error)
   }
 
   override render(): ReactNode {
@@ -109,6 +109,12 @@ export function AssemblyLayer() {
   const [keep, setKeep] = useState<number | null>(null)
   const [hero, setHero] = useState(false)
   const [heroLive, setHeroLive] = useState(false)
+  const heroCaught = useCallback((error?: unknown) => {
+    document.documentElement.setAttribute('data-hero-reason', 'throw')
+    console.warn('[hero] gave up', 'throw', error)
+    setHero(false)
+    setHeroLive(false)
+  }, [])
   const heroOff = useCallback(() => {
     setHero(false)
     setHeroLive(false)
@@ -157,7 +163,7 @@ export function AssemblyLayer() {
       className="pointer-events-none fixed inset-0 z-0"
     >
       {hero ? (
-        <AssemblyBoundary onError={heroOff}>
+        <AssemblyBoundary onError={heroCaught}>
           <HeroLayer onGiveUp={heroOff} onLive={setHeroLive} />
         </AssemblyBoundary>
       ) : null}

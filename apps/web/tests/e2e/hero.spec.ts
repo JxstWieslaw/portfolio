@@ -197,3 +197,58 @@ test('away for more than 9 s and back: something is painted at every sampled ins
   expect(blank).toBe(0)
   await expect(page.locator('html')).not.toHaveAttribute('data-hero-reason', /.+/)
 })
+
+/**
+ * Per-frame sampler. Every animation frame it records whether the hero engine is painting (live, canvas visible) and
+ * whether the 3D layer instanced any cubes. The page may be momentarily skewed by one sample (the cube count is read
+ * in the same frame the 3D layer draws it), so a flash is a run of two or more samples of "neither" or "both".
+ */
+const SAMPLER = `
+  window.__frames = []
+  const tick = () => {
+    const canvas = document.querySelector('canvas[data-hero-canvas]')
+    const hero = document.documentElement.dataset.hero === 'live' && canvas !== null && Number(canvas.style.opacity) > 0
+    const cubes = (window.__ASSEMBLY_CUBES__ ?? -1) > 0
+    window.__frames.push([hero, cubes, window.__ASSEMBLY_CUBES__ === undefined])
+    requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+`
+
+async function flashes(page: Page): Promise<{ neither: number; both: number; frames: number }> {
+  return page.evaluate(() => {
+    const frames = (window as unknown as { __frames: [boolean, boolean, boolean][] }).__frames
+    // Ignore the page before the 3D layer exists: nothing can be painted yet, and that is not a flash.
+    const start = frames.findIndex(([hero, cubes]) => hero || cubes)
+    let neither = 0
+    let both = 0
+    let runN = 0
+    let runB = 0
+    for (const [hero, cubes] of frames.slice(Math.max(0, start))) {
+      runN = !hero && !cubes ? runN + 1 : 0
+      runB = hero && cubes ? runB + 1 : 0
+      if (runN === 2) neither += 1
+      if (runB === 2) both += 1
+    }
+    return { neither, both, frames: frames.length }
+  })
+}
+
+test('going live and a forced loss never leave the page with neither, or both, for two frames in a row', async ({ page }) => {
+  await page.addInitScript(SAMPLER)
+  await page.goto('/?hero=a&tier=1')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  await page.waitForTimeout(2000)
+  const fire = (type: string): Promise<void> =>
+    page.evaluate((name) => {
+      document.querySelector('canvas[data-hero-canvas]')?.dispatchEvent(new Event(name, { cancelable: true }))
+    }, type)
+  await fire('webglcontextlost')
+  await page.waitForTimeout(1500)
+  await fire('webglcontextrestored')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  await page.waitForTimeout(2000)
+  const result = await flashes(page)
+  expect(result.frames).toBeGreaterThan(30)
+  expect(result).toMatchObject({ neither: 0, both: 0 })
+})

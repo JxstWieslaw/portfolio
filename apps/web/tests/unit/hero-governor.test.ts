@@ -114,12 +114,47 @@ describe('governorStep', () => {
     expect(s.seen).toBe(1)
   })
 
-  it('treats a steady 30 Hz cap as the budget instead of stepping down', () => {
-    const capped = Array.from({ length: 300 }, (_, i) => 33.3 + (i % 3) * 0.4)
-    const s = feed(initialGovernor(2), capped, 'assembly')
+  /** Feeds a stream whose interval depends on the current tier, the way a real device's does. */
+  function simulate(start: 1 | 2 | 3, ms: (tier: number, i: number) => number, n: number, phase: GovernorPhase = 'assembly'): GovernorState {
+    let s = initialGovernor(start)
+    for (let i = 0; i < n; i += 1) s = governorStep(s, ms(s.tier, i), phase)
+    return s
+  }
+  const jitter = (i: number): number => (i % 3) * 0.3
+
+  it('does not trust a cap-looking stream at once: it steps down to test it', () => {
+    const s = feed(initialGovernor(3), [...repeat(16, WARMUP_SAMPLES), ...repeat(33.3, ASSEMBLY_WINDOW)], 'assembly')
     expect(s.tier).toBe(2)
+    expect(s.capState).toBe('unconfirmed')
+  })
+
+  it('a vsync-quantised slow GPU (33 ms at tier 3, 16.7 ms lower) steps down once and is not mistaken for a cap', () => {
+    const s = simulate(3, (tier, i) => (tier === 3 ? 33.3 : 16.7) + jitter(i), 600)
+    expect(s.tier).toBe(2)
+    expect(s.capState).toBe('none')
+    expect(simulate(3, (tier, i) => (tier === 3 ? 33.3 : 16.7) + jitter(i), 600, 'scroll').tier).toBe(2)
+  })
+
+  it('a true 30 Hz cap that stays 33 ms at every tier is confirmed after two lower tiers, then stepping stops', () => {
+    const s = simulate(3, (_t, i) => 33.3 + jitter(i), 900)
+    expect(s.capState).toBe('confirmed')
+    expect(s.tier).toBe(1)
     expect(s.cap).toBeGreaterThan(32)
-    expect(feed(initialGovernor(2), capped, 'scroll').tier).toBe(2)
+    const more = feed(s, Array.from({ length: 600 }, (_, i) => 33.3 + jitter(i)), 'scroll')
+    expect(more.tier).toBe(1)
+    expect(more.cap).toBe(s.cap)
+  })
+
+  it('from tier 2 a persisting cap is confirmed at tier 1, the last tier there is', () => {
+    const s = simulate(2, (_t, i) => 33.3 + jitter(i), 600, 'scroll')
+    expect(s.tier).toBe(1)
+    expect(s.capState).toBe('confirmed')
+  })
+
+  it('a cap confirmed earlier in the session is trusted from the start', () => {
+    const s = feed(initialGovernor(2, 33.3), Array.from({ length: 300 }, (_, i) => 33.3 + jitter(i)), 'assembly')
+    expect(s.tier).toBe(2)
+    expect(s.capState).toBe('confirmed')
   })
 
   it('still steps down a ragged 33 ms stream: a cap is steady, a struggling GPU is not', () => {
