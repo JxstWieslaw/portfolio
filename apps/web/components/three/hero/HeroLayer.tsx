@@ -164,7 +164,9 @@ export class HeroController {
     this.governed = !SEAM_ENABLED || this.override === null
     let knownCap = 0
     try {
-      knownCap = Number(window.sessionStorage.getItem(CAP_KEY)) || 0
+      // A remembered cap expires like the floor does, and the governor re-checks it against the first window.
+      const saved = JSON.parse(window.sessionStorage.getItem(CAP_KEY) ?? 'null') as { cap?: number; at?: number } | null
+      if (saved && typeof saved.cap === 'number' && typeof saved.at === 'number' && Date.now() - saved.at < FLOOR_MEMORY_MS) knownCap = saved.cap
     } catch {
       // Storage blocked: the cap is simply re-learned.
     }
@@ -304,8 +306,8 @@ export class HeroController {
       const ok = await engine.compile()
       if (generation !== this.generation || this.stopped) return
       // A context lost while compiling is the loss handler's business: wait for the restore, do not give up.
-      if (!ok) return engine.isLost() ? undefined : this.giveUp('compile')
-      if (!engine.prime(this.frame, cameraFor(1, 0, 0, this.pointer))) return engine.isLost() ? undefined : this.giveUp('render')
+      if (!ok) return engine.isLost() ? this.awaitRestore() : this.giveUp('compile')
+      if (!engine.prime(this.frame, cameraFor(1, 0, 0, this.pointer))) return engine.isLost() ? this.awaitRestore() : this.giveUp('render')
       this.markTarget()
       this.status = 'live'
       this.lastRender = 0
@@ -452,9 +454,15 @@ export class HeroController {
     const was = this.tier
     if (next.capState === 'confirmed' && this.governor.capState !== 'confirmed') {
       try {
-        window.sessionStorage.setItem(CAP_KEY, String(next.cap))
+        window.sessionStorage.setItem(CAP_KEY, JSON.stringify({ cap: next.cap, at: Date.now() }))
       } catch {
         // Storage blocked: the cap is re-learned next time.
+      }
+    } else if (this.governor.capState === 'confirmed' && next.capState === 'none') {
+      try {
+        window.sessionStorage.removeItem(CAP_KEY)
+      } catch {
+        // Storage blocked: nothing was stored.
       }
     }
     this.governor = next
@@ -536,6 +544,13 @@ export class HeroController {
       this.lastOpacity = -1
     }
     if (this.lostCount >= 2) return this.giveUp('lost-x2')
+    this.status = 'lost'
+    this.hiddenDuringLoss = document.visibilityState === 'hidden'
+    this.armRestore()
+  }
+
+  /** A loss seen by `isLost()` before (or without) its event: wait for the restore under the same deadline, so `starting` cannot hang. */
+  private awaitRestore(): void {
     this.status = 'lost'
     this.hiddenDuringLoss = document.visibilityState === 'hidden'
     this.armRestore()

@@ -135,13 +135,13 @@ describe('governorStep', () => {
     expect(simulate(3, (tier, i) => (tier === 3 ? 33.3 : 16.7) + jitter(i), 600, 'scroll').tier).toBe(2)
   })
 
-  it('a true 30 Hz cap that stays 33 ms at every tier is confirmed after two lower tiers, then stepping stops', () => {
+  it('a true 30 Hz cap that stays 33 ms is confirmed after ONE lower tier, then stepping stops', () => {
     const s = simulate(3, (_t, i) => 33.3 + jitter(i), 900)
     expect(s.capState).toBe('confirmed')
-    expect(s.tier).toBe(1)
+    expect(s.tier).toBe(2)
     expect(s.cap).toBeGreaterThan(32)
     const more = feed(s, Array.from({ length: 600 }, (_, i) => 33.3 + jitter(i)), 'scroll')
-    expect(more.tier).toBe(1)
+    expect(more.tier).toBe(2)
     expect(more.cap).toBe(s.cap)
   })
 
@@ -149,6 +149,28 @@ describe('governorStep', () => {
     const s = simulate(2, (_t, i) => 33.3 + jitter(i), 600, 'scroll')
     expect(s.tier).toBe(1)
     expect(s.capState).toBe('confirmed')
+  })
+
+  it('a cap-like stream at tier 1 that was never tested at a higher tier is not believed or stored', () => {
+    const s = simulate(1, (_t, i) => 33.3 + jitter(i), 600, 'scroll')
+    expect(s.capState).toBe('none')
+    expect(s.tier).toBe(1)
+  })
+
+  it('a remembered cap is re-checked: a first window that is not cap-like drops it', () => {
+    const stale = feed(initialGovernor(2, 33.3), Array.from({ length: 120 }, (_, i) => 16.7 + jitter(i)), 'assembly')
+    expect(stale.capState).toBe('none')
+    expect(stale.cap).toBe(0)
+    expect(stale.capVerified).toBe(true)
+    const still = feed(initialGovernor(2, 33.3), Array.from({ length: 120 }, (_, i) => 33.3 + jitter(i)), 'assembly')
+    expect(still.capState).toBe('confirmed')
+    expect(still.capVerified).toBe(true)
+  })
+
+  it('a stale remembered cap does not hide a slow device: once dropped, the normal budget applies', () => {
+    const s = feed(initialGovernor(3, 33.3), Array.from({ length: 400 }, (_, i) => 45 + jitter(i)), 'assembly')
+    expect(s.capState).toBe('none')
+    expect(s.tier).toBeLessThan(3)
   })
 
   it('a cap confirmed earlier in the session is trusted from the start', () => {

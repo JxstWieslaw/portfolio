@@ -13,6 +13,15 @@
  * A browser that caps rAF (iOS Low Power Mode, Chrome Energy Saver) delivers a
  * steady 30 Hz whatever the GPU does. A stable cap is detected and becomes the
  * frame budget, so the governor does not punish a phone for the OS's choice.
+ *
+ * A steady 33 ms is also what a 60 Hz display shows for a GPU that needs 17 to
+ * 33 ms (vsync quantises it). The two cannot be told apart from one tier, so a
+ * cap-like stream is believed only after it survives ONE step down: a cap stays
+ * 33 ms, a slow GPU drops to 16.7 ms. The trade-off, accepted: a GPU that snaps
+ * to 33 ms at tiers 3 and 2 but reaches 16.7 ms at tier 1 is taken for a cap
+ * and runs tier 2 at a steady 30 fps instead of tier 1 at 60. A cap-like stream
+ * at tier 1 is never believed unless it was already seen at a higher tier: a
+ * stream never tested against a lower-cost tier is not stored.
  */
 
 import type { HeroTier } from './tiers'
@@ -33,6 +42,8 @@ export interface GovernorState {
   readonly capState: 'none' | 'unconfirmed' | 'confirmed'
   /** How many tiers the cap-like interval has persisted through. */
   readonly capHits: number
+  /** True once the cap was seen this session. A cap loaded from the previous page is re-checked against the first window. */
+  readonly capVerified: boolean
   /** Why the last step happened, for the HUD and `data-hero-reason`. Empty until a step. */
   readonly reason: string
 }
@@ -58,11 +69,11 @@ const CAP_SPREAD_MS = 3
 /** Slack on top of a detected cap before a sample counts as over budget. */
 const CAP_SLACK_MS = 6
 /** Tiers a cap-like interval must persist through before it is believed. */
-const CAP_CONFIRM_HITS = 3
+const CAP_CONFIRM_HITS = 2
 
 /** `knownCap`: a cap already confirmed earlier in this session. */
 export function initialGovernor(tier: HeroTier, knownCap = 0): GovernorState {
-  return { samples: [], seen: 0, cooldown: 0, tier, cap: knownCap, capState: knownCap > 0 ? 'confirmed' : 'none', capHits: 0, reason: '' }
+  return { samples: [], seen: 0, cooldown: 0, tier, cap: knownCap, capState: knownCap > 0 ? 'confirmed' : 'none', capHits: 0, capVerified: false, reason: '' }
 }
 
 /** Nearest-rank percentile of a non-empty list; `q` in 0..1. */
@@ -122,10 +133,16 @@ export function governorStep(state: GovernorState, intervalMs: number, phase: Go
     ...patch,
   })
   // A stream that stays cap-like after stepping down is a cap; one that changes is a slow GPU that is now fine.
+  // A remembered cap must not relax the budget forever: the first full window has to still look like a cap.
+  if (state.capState === 'confirmed' && !state.capVerified && tail(samples, ASSEMBLY_WINDOW).length >= ASSEMBLY_WINDOW) {
+    const median = percentile(tail(samples, ASSEMBLY_WINDOW), 0.5)
+    if (median < CAP_BAND[0] || median > CAP_BAND[1]) return { ...held, capState: 'none', cap: 0, capHits: 0, capVerified: true }
+    return { ...held, capVerified: true }
+  }
   const calm = state.capState === 'unconfirmed' && detected === 0 ? { ...held, capState: 'none' as const, capHits: 0 } : held
 
   if (state.tier === 1) {
-    if (state.capState !== 'confirmed' && detected > 0) return { ...held, capState: 'confirmed', cap: detected }
+    if (state.capState !== 'confirmed' && detected > 0 && state.capHits >= 1) return { ...held, capState: 'confirmed', cap: detected, capVerified: true }
     const limit = Math.max(FLOOR_LIMIT_MS, slack)
     const p75 = percentile(samples, 0.75)
     return samples.length >= FLOOR_WINDOW && p75 > limit ? down(0, `p75 ${p75.toFixed(1)} over ${limit.toFixed(0)} ms at tier 1`) : calm
@@ -143,6 +160,6 @@ export function governorStep(state: GovernorState, intervalMs: number, phase: Go
   // Cap-looking and over budget: a vsync-quantised slow GPU looks exactly like this. Step down and see whether the
   // interval changes; only after it stays put at two lower tiers is it a cap, and then the stepping stops.
   const hits = state.capHits + 1
-  if (hits >= CAP_CONFIRM_HITS) return { ...held, capState: 'confirmed', cap: detected, capHits: hits, reason: `${why}; stayed ${detected.toFixed(1)} ms at lower tiers: a refresh cap` }
+  if (hits >= CAP_CONFIRM_HITS) return { ...held, capState: 'confirmed', cap: detected, capHits: hits, capVerified: true, reason: `${why}; stayed ${detected.toFixed(1)} ms at lower tiers: a refresh cap` }
   return down((state.tier - 1) as HeroTier, why, { capState: 'unconfirmed', cap: detected, capHits: hits })
 }
