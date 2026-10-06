@@ -136,7 +136,7 @@ export function shellLookFor(keep: number): ShellLook {
 
 /** Thin-film parameters. The thickness range is nanometres; the ranges below are asserted in a test. */
 export const FILM = {
-  iridescence: 1,
+  iridescence: 0.6,
   ior: 1.3,
   /** Thickness map texel 0 maps to the first value, texel 1 to the second. */
   thickness: [120, 700] as readonly [number, number],
@@ -147,7 +147,7 @@ export const FILM = {
   /** On top of `scene.environmentIntensity`: the shell is the one object meant to out-shine the cubes. */
   envMapIntensity: 1.7,
   /** Diffuse/base tint: the brand's violet, lifted so facets away from the strips are not navy. */
-  tint: '#cfc4ff',
+  tint: '#b9a0ff',
   /** The cheap path's baked tint: the film's average, a little cooler than the base. */
   bakedTint: '#b7a8ff',
   /** Faint violet emissive so the shell never goes fully dark between reflections. */

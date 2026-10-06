@@ -53,7 +53,8 @@ describe('artefact shell look', () => {
   })
 
   it('keeps the thin-film parameters inside their documented ranges', () => {
-    expect(FILM.iridescence).toBe(1)
+    expect(FILM.iridescence).toBeGreaterThan(0.4)
+    expect(FILM.iridescence).toBeLessThanOrEqual(1)
     expect(FILM.ior).toBeGreaterThanOrEqual(1.2)
     expect(FILM.ior).toBeLessThanOrEqual(1.4)
     expect(FILM.thickness[0]).toBeGreaterThanOrEqual(100)
