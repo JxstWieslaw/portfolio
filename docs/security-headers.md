@@ -65,7 +65,12 @@ toolbar origins (listed from Vercel's documented set, not observed). This is why
 3. **Rename the header** to `Content-Security-Policy` and move `frame-ancestors` and `upgrade-insecure-requests`
    (ignored in report-only) into effect. `frame-ancestors 'none'` blocks any embedding of the site; confirm that is intended.
 4. **Preview parity.** The enforcing preview policy must keep the Vercel toolbar origins, or the toolbar breaks on previews.
-5. **The lab (Phase 2b)** needs `Permissions-Policy` to allow `xr-spatial-tracking` and `gyroscope` for `self`; change
-   those two entries to `(self)` in the same PR that adds them, as the roadmap exit criteria say.
-6. **Any new third-party origin** (analytics, fonts, embeds) must be added to the policy in the same change that
+5. **The lab (Phase 2b)** needs `Permissions-Policy` to allow `gyroscope`, `accelerometer`, `magnetometer` and
+   `xr-spatial-tracking` for `self`; change those four entries to `(self)` in the same PR that adds them, as the
+   roadmap exit criteria say.
+6. **Textured models and compressed-texture loaders.** No committed model carries textures today, so the policy is
+   right as it stands. A textured GLB makes GLTFLoader fetch its embedded textures from `blob:` URLs, which needs
+   `blob:` in `connect-src` (`img-src` already has it). KTX2 or Draco loaders would also need `worker-src blob:`
+   and an origin for the decoder files (or self-hosting them). Add these in the PR that introduces such a model.
+7. **Any new third-party origin** (analytics, fonts, embeds) must be added to the policy in the same change that
    introduces it, or it will be blocked once enforcing.

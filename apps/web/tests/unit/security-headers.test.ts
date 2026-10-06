@@ -60,6 +60,45 @@ describe('site-wide security headers', () => {
     expect(directive((await siteWide())[REPORT_ONLY] ?? '', 'connect-src')).toBe("connect-src 'self'")
   })
 
+  it('production with no VERCEL_ENV and no API url has none of the dev or preview allowances', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('VERCEL_ENV', '')
+    vi.stubEnv('NEXT_PUBLIC_API_URL', '')
+    const csp = (await siteWide())[REPORT_ONLY] ?? ''
+    for (const banned of ["'unsafe-eval'", 'ws:', 'http:', 'vercel.live']) expect(csp).not.toContain(banned)
+    expect(directive(csp, 'connect-src')).toBe("connect-src 'self'")
+    expect(directive(csp, 'base-uri')).toBe("base-uri 'self'")
+    expect(directive(csp, 'form-action')).toBe("form-action 'self' mailto:")
+    expect(directive(csp, 'frame-ancestors')).toBe("frame-ancestors 'none'")
+    expect(directive(csp, 'object-src')).toBe("object-src 'none'")
+  })
+
+  it('development adds eval and websockets for the dev server, and only then', async () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('VERCEL_ENV', '')
+    const csp = (await siteWide())[REPORT_ONLY] ?? ''
+    expect(directive(csp, 'script-src')).toContain("'unsafe-eval'")
+    expect(directive(csp, 'connect-src')).toContain('ws:')
+  })
+
+  it.each([
+    ['javascript:x', "connect-src 'self'"],
+    ['ftp://h', "connect-src 'self'"],
+    ['https://*.x.com', "connect-src 'self'"],
+    ['https://a;script-src.evil.com', "connect-src 'self'"],
+    ['https://a,b.com', "connect-src 'self'"],
+    ['https://api.example.test/v1/deep?q=1#f', "connect-src 'self' https://api.example.test"],
+    ['https://user:pass@api.example.test', "connect-src 'self' https://api.example.test"],
+    ['http://localhost:4000', "connect-src 'self' http://localhost:4000"],
+  ])('API url %s gives %s', async (raw, expected) => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('NEXT_PUBLIC_API_URL', raw)
+    const csp = (await siteWide())[REPORT_ONLY] ?? ''
+    expect(directive(csp, 'connect-src')).toBe(expected)
+    expect(csp).not.toMatch(/null|user:pass/)
+    expect(csp).not.toContain('*')
+  })
+
   it('adds the Vercel toolbar origins on previews only', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('VERCEL_ENV', 'preview')
