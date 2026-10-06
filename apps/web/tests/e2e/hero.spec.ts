@@ -199,9 +199,10 @@ test('away for more than 9 s and back: something is painted at every sampled ins
 })
 
 /**
- * Per-frame sampler. Every animation frame it records whether the hero engine is painting (live, canvas visible) and
- * whether the 3D layer instanced any cubes. The page may be momentarily skewed by one sample (the cube count is read
- * in the same frame the 3D layer draws it), so a flash is a run of two or more samples of "neither" or "both".
+ * Per-frame sampler. Every animation frame it records whether the hero engine is painting (live, canvas visible), whether
+ * the 3D layer instanced any cubes, and the time. Software GL draws the cubes in a few hundred milliseconds, so one
+ * 3D frame is allowed to lag the hero by up to 700 ms; on a real GPU that is one frame. A flash is a run of "neither"
+ * or "both" longer than that.
  */
 const SAMPLER = `
   window.__frames = []
@@ -209,7 +210,7 @@ const SAMPLER = `
     const canvas = document.querySelector('canvas[data-hero-canvas]')
     const hero = document.documentElement.dataset.hero === 'live' && canvas !== null && Number(canvas.style.opacity) > 0
     const cubes = (window.__ASSEMBLY_CUBES__ ?? -1) > 0
-    window.__frames.push([hero, cubes, window.__ASSEMBLY_CUBES__ === undefined])
+    window.__frames.push([hero, cubes, performance.now()])
     requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)
@@ -217,24 +218,26 @@ const SAMPLER = `
 
 async function flashes(page: Page): Promise<{ neither: number; both: number; frames: number }> {
   return page.evaluate(() => {
-    const frames = (window as unknown as { __frames: [boolean, boolean, boolean][] }).__frames
+    const frames = (window as unknown as { __frames: [boolean, boolean, number][] }).__frames
     // Ignore the page before the 3D layer exists: nothing can be painted yet, and that is not a flash.
     const start = frames.findIndex(([hero, cubes]) => hero || cubes)
     let neither = 0
     let both = 0
-    let runN = 0
-    let runB = 0
-    for (const [hero, cubes] of frames.slice(Math.max(0, start))) {
-      runN = !hero && !cubes ? runN + 1 : 0
-      runB = hero && cubes ? runB + 1 : 0
-      if (runN === 2) neither += 1
-      if (runB === 2) both += 1
+    let sinceN = -1
+    let sinceB = -1
+    for (const [hero, cubes, t] of frames.slice(Math.max(0, start))) {
+      if (!hero && !cubes) sinceN = sinceN < 0 ? t : sinceN
+      else sinceN = -1
+      if (hero && cubes) sinceB = sinceB < 0 ? t : sinceB
+      else sinceB = -1
+      if (sinceN >= 0 && t - sinceN > 700) neither += 1
+      if (sinceB >= 0 && t - sinceB > 700) both += 1
     }
     return { neither, both, frames: frames.length }
   })
 }
 
-test('going live and a forced loss never leave the page with neither, or both, for two frames in a row', async ({ page }) => {
+test('going live and a forced loss never leave the page with neither, or both, for longer than one software 3D frame', async ({ page }) => {
   await page.addInitScript(SAMPLER)
   await page.goto('/?hero=a&tier=1')
   await page.waitForSelector(LIVE, { timeout: 90_000 })

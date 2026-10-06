@@ -321,6 +321,12 @@ interface Motion {
 function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInvalidate }: SceneProps) {
   const { gl, scene, camera, size, invalidate } = useThree()
 
+  // The hero going live or stopping changes what this frame draws. The prop reaches this tree after the parent's own
+  // layout effects, so the redraw is asked for from in here, in the same commit, before the next paint.
+  useLayoutEffect(() => {
+    invalidate()
+  }, [heroOwns, invalidate])
+
   useEffect(() => {
     bindInvalidate(invalidate)
   }, [bindInvalidate, invalidate])
