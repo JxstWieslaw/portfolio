@@ -1,6 +1,6 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Reveal, resetRevealSystem } from '@/components/ui/Reveal'
+import { Reveal, batchStaggerMs, resetRevealSystem } from '@/components/ui/Reveal'
 
 /**
  * The two properties that matter are availability properties, not animation
@@ -45,7 +45,10 @@ type ObserverEntry = { isIntersecting: boolean; target: Element }
 type ObserverCallback = (entries: ObserverEntry[]) => void
 
 /** Installs a fake IntersectionObserver and returns a trigger for it. */
-function stubIntersectionObserver(): { fire: (target: Element) => void } {
+function stubIntersectionObserver(): {
+  fire: (target: Element) => void
+  fireBatch: (targets: Element[]) => void
+} {
   let callback: ObserverCallback | null = null
   const observed = new Set<Element>()
 
@@ -73,6 +76,11 @@ function stubIntersectionObserver(): { fire: (target: Element) => void } {
     fire(target: Element) {
       if (callback === null) throw new Error('observer was never constructed')
       callback([{ isIntersecting: true, target }])
+    },
+    /** One observer callback carrying several entries: they entered together. */
+    fireBatch(targets: Element[]) {
+      if (callback === null) throw new Error('observer was never constructed')
+      callback(targets.map((target) => ({ isIntersecting: true, target })))
     },
   }
 }
@@ -195,7 +203,7 @@ describe('Reveal — observer path and stagger', () => {
     expect(element.style.transform).toBe('none')
   })
 
-  it('staggers siblings by 70ms each and uses the 560ms curve', () => {
+  it('regression guard: a batch staggers 70ms per position on the 560ms curve (passes on old and new code)', () => {
     const observer = stubIntersectionObserver()
     stubRectTop(10_000)
 
@@ -212,9 +220,7 @@ describe('Reveal — observer path and stagger', () => {
     }
 
     act(() => {
-      observer.fire(first)
-      observer.fire(second)
-      observer.fire(third)
+      observer.fireBatch([first, second, third])
     })
 
     expect(first.getAttribute('style')).toContain(
@@ -226,12 +232,162 @@ describe('Reveal — observer path and stagger', () => {
     expect(third.getAttribute('style')).toContain('140ms')
   })
 
+  it('assigns stagger in DOM order even when the observer delivers bottom-up', () => {
+    const observer = stubIntersectionObserver()
+    stubRectTop(10_000)
+
+    const { container } = render(
+      <>
+        <Reveal>one</Reveal>
+        <Reveal>two</Reveal>
+        <Reveal>three</Reveal>
+      </>
+    )
+    const [first, second, third] = Array.from(container.children) as HTMLElement[]
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error('expected three siblings')
+    }
+
+    act(() => {
+      observer.fireBatch([third, first, second])
+    })
+
+    expect(first.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 0ms')
+    expect(second.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 70ms')
+    expect(third.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 140ms')
+  })
+
+  it('gives a late list item no delay when it scrolls in alone', () => {
+    const observer = stubIntersectionObserver()
+    stubRectTop(10_000)
+
+    const { container } = render(
+      <>
+        <Reveal>one</Reveal>
+        <Reveal>two</Reveal>
+        <Reveal>three</Reveal>
+        <Reveal>four</Reveal>
+        <Reveal>five</Reveal>
+      </>
+    )
+    const fifth = container.children[4] as HTMLElement
+
+    // The fifth sibling on the page, but the only one in its batch.
+    act(() => {
+      observer.fire(fifth)
+    })
+
+    expect(fifth.getAttribute('style')).toContain('opacity 560ms cubic-bezier(.2,.8,.2,1) 0ms')
+    expect(fifth.getAttribute('style')).toContain('transform 560ms cubic-bezier(.2,.8,.2,1) 0ms')
+  })
+
+  it('caps the stagger at 210ms for a big batch', () => {
+    const observer = stubIntersectionObserver()
+    stubRectTop(10_000)
+
+    const { container } = render(
+      <>
+        {Array.from({ length: 6 }, (_, index) => (
+          <Reveal key={index}>{index}</Reveal>
+        ))}
+      </>
+    )
+    const items = Array.from(container.children) as HTMLElement[]
+
+    act(() => {
+      observer.fireBatch(items)
+    })
+
+    expect(items[3]?.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 210ms')
+    expect(items[5]?.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 210ms')
+    expect(items[5]?.getAttribute('style')).not.toContain('350ms')
+  })
+
+  it('does not count an already revealed element toward the batch position', () => {
+    const observer = stubIntersectionObserver()
+    stubRectTop(10_000)
+
+    const { container } = render(
+      <>
+        <Reveal>one</Reveal>
+        <Reveal>two</Reveal>
+      </>
+    )
+    const [first, second] = Array.from(container.children) as HTMLElement[]
+    if (first === undefined || second === undefined) throw new Error('expected two')
+
+    act(() => {
+      observer.fire(first)
+    })
+    act(() => {
+      observer.fireBatch([first, second])
+    })
+
+    expect(second.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 0ms')
+  })
+
   it('marks every target with data-reveal so sibling indexing works', () => {
     stubRectTop(10_000)
     const { container } = render(<Reveal as="article">card</Reveal>)
     const element = container.firstElementChild as HTMLElement
     expect(element.tagName).toBe('ARTICLE')
     expect(element).toHaveAttribute('data-reveal')
+  })
+})
+
+describe('batchStaggerMs — the pure stagger function', () => {
+  it('is 0 for the first element of a batch', () => {
+    expect(batchStaggerMs(0)).toBe(0)
+  })
+
+  it('steps by 70ms per position', () => {
+    expect(batchStaggerMs(1)).toBe(70)
+    expect(batchStaggerMs(2)).toBe(140)
+    expect(batchStaggerMs(3)).toBe(210)
+  })
+
+  it('never exceeds 210ms, however large the batch', () => {
+    expect(batchStaggerMs(4)).toBe(210)
+    expect(batchStaggerMs(40)).toBe(210)
+    expect(batchStaggerMs(Number.MAX_SAFE_INTEGER)).toBe(210)
+  })
+
+  it('treats negative, fractional and non-finite positions safely', () => {
+    expect(batchStaggerMs(-3)).toBe(0)
+    expect(batchStaggerMs(Number.NaN)).toBe(0)
+    expect(batchStaggerMs(Number.POSITIVE_INFINITY)).toBe(0)
+    expect(batchStaggerMs(1.9)).toBe(70)
+  })
+
+  it('is monotonic non-decreasing', () => {
+    let previous = 0
+    for (let position = 0; position < 20; position += 1) {
+      const delay = batchStaggerMs(position)
+      expect(delay).toBeGreaterThanOrEqual(previous)
+      previous = delay
+    }
+  })
+})
+
+describe('Reveal — the poll batches too', () => {
+  it('staggers elements the poll reveals together by position, capped', () => {
+    stubRectTop(10_000)
+    const { container } = render(
+      <>
+        {Array.from({ length: 5 }, (_, index) => (
+          <Reveal key={index}>{index}</Reveal>
+        ))}
+      </>
+    )
+    const items = Array.from(container.children) as HTMLElement[]
+
+    stubRectTop(VIEWPORT_HEIGHT * 0.5)
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+
+    expect(items[0]?.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 0ms')
+    expect(items[4]?.getAttribute('style')).toContain('cubic-bezier(.2,.8,.2,1) 210ms')
   })
 })
 

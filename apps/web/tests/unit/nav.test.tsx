@@ -205,21 +205,59 @@ describe('Nav — scroll condense', () => {
   // The measurements from design-home.md § 2. Class assertions are the only way
   // to pin them without a layout engine, and a silent drift here is a
   // visual regression nobody would notice.
-  it('pins the two heights, the two backgrounds and the appearing hairline', () => {
-    render(<Nav />)
+  it('pins the two backgrounds and the appearing hairline on the chrome plate', () => {
+    const { container } = render(<Nav />)
     const header = screen.getByRole('banner').className
+    const chrome = (container.querySelector('[data-nav-chrome]') as HTMLElement).className
 
-    expect(header).toContain('h-[72px]')
-    expect(header).toContain('data-[condensed=true]:h-[56px]')
-    expect(header).toContain('bg-[rgba(13,17,23,0.35)]')
-    expect(header).toContain('data-[condensed=true]:bg-[rgba(13,17,23,0.88)]')
-    expect(header).toContain('border-transparent')
-    expect(header).toContain('data-[condensed=true]:border-[var(--line-1)]')
+    expect(chrome).toContain('h-[72px]')
+    expect(chrome).toContain('bg-[rgba(13,17,23,0.35)]')
+    expect(chrome).toContain('group-data-[condensed=true]:bg-[rgba(13,17,23,0.88)]')
+    expect(chrome).toContain('border-transparent')
+    expect(chrome).toContain('group-data-[condensed=true]:border-[var(--line-1)]')
     // blur(12px) in BOTH states, so it is unconditional.
-    expect(header).toContain('backdrop-blur-[12px]')
+    expect(chrome).toContain('backdrop-blur-[12px]')
     expect(header).toContain('sticky')
     expect(header).toContain('top-0')
     expect(header).toContain('z-50')
+  })
+
+  // The condense must not move layout: the header keeps one 72px box and the
+  // 72 to 56 move is a transform on inner elements. Class assertions are the
+  // only way to pin that without a layout engine.
+  it('keeps a constant 72px layout box and condenses with transforms only', () => {
+    const { container } = render(<Nav />)
+    const header = screen.getByRole('banner').className
+    const chrome = (container.querySelector('[data-nav-chrome]') as HTMLElement).className
+    const row = (container.querySelector('[data-nav-chrome] + *') as HTMLElement).className
+
+    expect(header).toContain('h-[72px]')
+    for (const classes of [header, chrome, row]) {
+      expect(classes).not.toContain('h-[56px]')
+      expect(classes).not.toMatch(/transition-\[[^\]]*height/)
+    }
+
+    // 72 - 16 = the 56px visible bar; the row re-centres by half of that.
+    expect(chrome).toContain('group-data-[condensed=true]:-translate-y-[16px]')
+    expect(row).toContain('group-data-[condensed=true]:-translate-y-[8px]')
+    expect(chrome).toContain('transition-[translate,background-color,border-color]')
+    expect(row).toContain('transition-[translate]')
+    expect(header).toContain('group')
+  })
+
+  it('leaves the transparent strip under the condensed bar click-through', () => {
+    const { container } = render(<Nav />)
+    expect(screen.getByRole('banner').className).toContain('pointer-events-none')
+    expect(screen.getByRole('link', { name: NAV_CTA.label }).closest('.pointer-events-auto')).not.toBeNull()
+    // The visible 56px bar must block pointer events (hit-testing follows the
+    // translate), so clicks on empty bar never reach cards scrolled beneath it.
+    const chromePlate = container.querySelector('[data-nav-chrome]') as HTMLElement
+    expect(chromePlate.className).toContain('pointer-events-auto')
+    const monogram = container.querySelector('header a')
+    expect(monogram?.closest('.pointer-events-auto')).not.toBeNull()
+    expect(screen.getByRole('navigation', { name: 'Primary' }).className).toContain(
+      'pointer-events-auto'
+    )
   })
 })
 

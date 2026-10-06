@@ -551,8 +551,20 @@ describe('globals.css — component contract (reconciliation § 6)', () => {
       btn,
       "&[data-variant='primary']:not(:disabled):not([aria-disabled='true']):hover"
     )
-    expect(hover).toContain('background: var(--gradient)')
+    // The gradient is declared once on the variant and shared by the hover rule
+    // (gated on `(hover: hover)`) and the focus-visible rule, which is why the
+    // "three sanctioned placements" count below stays at one.
+    expect(blockAfter(btn, "&[data-variant='primary']")).toContain(
+      '--btn-primary-active: var(--gradient)'
+    )
+    expect(hover).toContain('background: var(--btn-primary-active)')
     expect(hover).toContain('color: var(--fg-0)')
+    expect(
+      blockAfter(
+        btn,
+        "&[data-variant='primary']:not(:disabled):not([aria-disabled='true']):focus-visible"
+      )
+    ).toContain('background: var(--btn-primary-active)')
   })
 
   it('adds the cyan glow to the secondary hover (§ 6.1)', () => {

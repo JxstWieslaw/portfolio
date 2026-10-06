@@ -1,0 +1,75 @@
+[
+  {
+    "id": "crystal-cluster",
+    "title": "Crystal cluster",
+    "kind": "prop",
+    "enabled": true,
+    "origin": {
+      "type": "file",
+      "path": "assets-src/crystal-cluster/Models/GLTF format/rock_crystalsLargeB.glb",
+      "url": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+      "sha256": "3fe54711b8d0fbeaebcc055409f256bf414ad7493e7f97adba4b213e44f11117",
+      "archiveSha256": "d5d7cdf2635ed5a43a9187deaf409b6f47484e402321128341d3c3698e9ef4d9",
+      "archiveBytes": 6677531
+    },
+    "licenceId": "CC0-1.0",
+    "licenceEvidence": { "url": "https://kenney.nl/assets/space-kit", "retrievedAt": "2026-10-04" },
+    "credit": {
+      "author": "Kenney",
+      "sourceUrl": "https://kenney.nl/assets/space-kit",
+      "retrievedAt": "2026-10-04"
+    },
+    "look": {
+      "palette": { "rockTrack": "#4B5283", "rock": "#303560", "crystal": "#67E8F9" },
+      "metallic": 0.25,
+      "roughness": 0.4
+    },
+    "tiers": [1]
+  },
+  {
+    "id": "gate-complex",
+    "title": "Gate",
+    "kind": "prop",
+    "enabled": true,
+    "origin": {
+      "type": "file",
+      "path": "assets-src/gate-complex/Models/GLTF format/gate_complex.glb",
+      "url": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+      "sha256": "6c0914bd5886928760fab54fc602aafd1441314a7c08c9cd30fad2a3f9191b90",
+      "archiveSha256": "d5d7cdf2635ed5a43a9187deaf409b6f47484e402321128341d3c3698e9ef4d9",
+      "archiveBytes": 6677531
+    },
+    "licenceId": "CC0-1.0",
+    "licenceEvidence": { "url": "https://kenney.nl/assets/space-kit", "retrievedAt": "2026-10-04" },
+    "credit": {
+      "author": "Kenney",
+      "sourceUrl": "https://kenney.nl/assets/space-kit",
+      "retrievedAt": "2026-10-04"
+    },
+    "look": {
+      "palette": { "metalDark": "#6A72A3", "metal": "#D3D9F2", "dark": "#2E3350", "metalRed": "#A78BFA" },
+      "metallic": 0.4,
+      "roughness": 0.35,
+      "emissive": { "color": "#7C3AED", "amount": 0.12 }
+    },
+    "tiers": [1]
+  },
+  {
+    "id": "gyroscope",
+    "title": "Gyroscope",
+    "kind": "prop",
+    "enabled": true,
+    "origin": { "type": "generated", "generator": "gyroscope" },
+    "licenceId": "own",
+    "licenceEvidence": {
+      "url": "https://github.com/JxstWieslaw/portfolio/blob/cac18fb/apps/web/scripts/assets/generators/gyroscope.ts",
+      "retrievedAt": "2026-10-02"
+    },
+    "credit": {
+      "author": "Wieslaw Samushonga",
+      "sourceUrl": "https://github.com/JxstWieslaw/portfolio/blob/cac18fb/apps/web/scripts/assets/generators/gyroscope.ts",
+      "retrievedAt": "2026-10-02"
+    },
+    "tiers": [1, 2]
+  }
+]

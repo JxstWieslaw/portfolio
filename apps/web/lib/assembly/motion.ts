@@ -10,6 +10,18 @@
 import { FORMATIONS, type FormationId } from '@/lib/formations/config'
 import type { BundleKind } from '@/lib/assembly/targets'
 
+/**
+ * The idle ticker's rate, fps, on every device: breathing, flow, spins and
+ * clips advance at this rate while the tab is visible and the layer is shown.
+ *
+ * It was 30 on pointer devices and 20 on touch; the perf review moved desktop
+ * to 20 to match the 2D hero this layer replaces, trading smoothness for
+ * power (30 -> 20 fps is a third fewer frames while idle). The cost is that
+ * `setInterval(..., 50)` steps visibly on 120 and 144 Hz displays, where the
+ * scene advances every 6th or 7th refresh. Raise it here, not in the canvas.
+ */
+export const BREATH_FPS = 20
+
 /** `uBias` magnitude: violet-led sections shift the ramp down, cyan-led up (§ 5.1). */
 export const BIAS = 0.08
 
@@ -140,6 +152,130 @@ export function dropTrigger(state: DropState, from: BundleKind, to: BundleKind, 
   if (weight <= 0) return state.armed ? NO_DROP : state
   if (!state.armed && weight >= 0.5) return { dropAt: time, armed: true }
   return state
+}
+
+// --- Scroll speed (animation § 6, A2) --------------------------------------
+
+/** Scroll speed, in viewport heights per second, at which the cubes are fully stretched. */
+export const VELOCITY_FULL = 4
+/** Below this speed (reading, a trackpad's drift) the cubes do not react at all. */
+export const VELOCITY_DEADZONE = 0.15
+/** How much longer a cube gets along the scroll axis at full speed: `1 + VELOCITY_STRETCH`. */
+export const VELOCITY_STRETCH = 0.35
+/** The weight chases the speed at these rates, 1/s: it picks up quickly and lets go more slowly. */
+export const VELOCITY_RISE = 16
+export const VELOCITY_FALL = 6
+/** A decaying weight below this snaps to exactly 0, so the demand loop can stop. */
+export const VELOCITY_EPSILON = 0.002
+/** A gap between two frames longer than this (a hidden layer, a stalled tab) is not a scroll speed. */
+export const VELOCITY_MAX_GAP = 0.5
+/**
+ * A speed is measured over at least this long (a little under two 60 Hz frames),
+ * so on a faster display it spans a few frames and the reading does not depend
+ * on the refresh rate, and a whole-pixel step over one frame is not mistaken for speed.
+ */
+export const VELOCITY_WINDOW = 1 / 30 - 0.002
+
+/**
+ * 0 at rest, 1 at `VELOCITY_FULL`: the stretch weight of a scroll speed in
+ * viewport heights per second. Symmetric for up and down, monotonic in the
+ * speed, clamped. `NaN` reads as rest.
+ */
+export function velocityWeight(vel: number): number {
+  const speed = Math.abs(vel)
+  if (!(speed > VELOCITY_DEADZONE)) return 0
+  return Math.min(1, (speed - VELOCITY_DEADZONE) / (VELOCITY_FULL - VELOCITY_DEADZONE))
+}
+
+/**
+ * The damped stretch weight the shader reads as `uVelocity`. Feed it the
+ * scroll position and the clock once per drawn frame; it returns the weight.
+ * `active` is false exactly when the weight is 0, which is what lets the
+ * frame loop stop asking for frames once the scroll has stopped.
+ *
+ * The speed is the distance over the true elapsed time of a measuring window
+ * (`VELOCITY_WINDOW` or longer), and the damping absorbs the jitter between
+ * windows. A jump of a whole viewport or more inside one window (an anchor
+ * link) is a jump, not a speed. While reduced motion is on the weight is
+ * held at 0.
+ */
+export class ScrollVelocity {
+  weight = 0
+  private t = Number.NaN
+  /** The start of the current measuring window. */
+  private windowY = Number.NaN
+  private windowT = Number.NaN
+  private target = 0
+  private reduced = false
+
+  get active(): boolean {
+    return this.weight > 0
+  }
+
+  step(y: number, t: number, viewport: number): number {
+    if (this.reduced) return 0
+    const dt = t - this.t
+    // The first sample, or two draws in the same instant: nothing to measure yet.
+    if (!(dt > 0)) {
+      if (Number.isNaN(this.t)) {
+        this.windowY = y
+        this.t = this.windowT = t
+      }
+      return this.weight
+    }
+    if (dt > VELOCITY_MAX_GAP || !(viewport > 0)) {
+      // A stalled or hidden layer: no speed, and a fresh window from here.
+      this.target = 0
+      this.windowY = y
+      this.windowT = t
+    } else {
+      const span = t - this.windowT
+      if (span >= VELOCITY_WINDOW) {
+        const dy = y - this.windowY
+        this.target = Math.abs(dy) >= viewport ? 0 : velocityWeight(dy / viewport / span)
+        this.windowY = y
+        this.windowT = t
+      }
+    }
+    this.t = t
+    const target = this.target
+    // Exponential approach: the ease stays inside (0, 1), so the weight never overshoots its target or changes sign.
+    const ease = 1 - Math.exp(-(target > this.weight ? VELOCITY_RISE : VELOCITY_FALL) * Math.min(dt, 0.1))
+    this.weight += (target - this.weight) * ease
+    if (target === 0 && this.weight < VELOCITY_EPSILON) this.weight = 0
+    return this.weight
+  }
+
+  /** Reduced motion on: the weight drops to 0 now and stays there. Off: measuring starts afresh. */
+  setReduced(reduced: boolean): void {
+    this.reduced = reduced
+    this.reset()
+  }
+
+  reset(): void {
+    this.weight = 0
+    this.target = 0
+    this.t = this.windowY = this.windowT = Number.NaN
+  }
+}
+
+/**
+ * Keeps `velocity` in step with a live `prefers-reduced-motion` query: applies
+ * the current answer now, follows changes, and returns the cleanup. `onChange`
+ * runs after each change so the caller can redraw (and the stretch go).
+ */
+export function bindReducedMotion(
+  velocity: ScrollVelocity,
+  query: Pick<MediaQueryList, 'matches' | 'addEventListener' | 'removeEventListener'>,
+  onChange?: () => void,
+): () => void {
+  velocity.setReduced(query.matches)
+  const listener = (event: { matches: boolean }): void => {
+    velocity.setReduced(event.matches)
+    onChange?.()
+  }
+  query.addEventListener('change', listener)
+  return () => query.removeEventListener('change', listener)
 }
 
 // --- The contact ring's calm (§ 3.7) --------------------------------------

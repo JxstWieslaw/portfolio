@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { Credit } from '@repo/contracts'
 import { Container } from '@/components/layout/Container'
 import { Badge } from '@/components/ui/Badge'
 import { Monogram } from '@/components/ui/Monogram'
@@ -22,14 +23,12 @@ import { FOOTER_COLUMNS, type FooterColumn, type FooterLink } from '@/lib/nav-it
  */
 
 /**
- * design-home.md § 12 describes the finished site's stack — React Three
- * Fiber, Rapier, one draw call — and that milestone (M2) has not shipped.
- * This M0 build has no renderer and no draw call: the backdrop is a 2D
- * canvas (`FieldCanvas`). The colophon says what is actually running today
- * and gets rewritten again when the WebGL milestone lands.
+ * What is actually running: the backdrop is a WebGL scene drawn with three.js through React Three Fiber, and
+ * the 2D canvases (`FieldCanvas`) are its fallback where WebGL does not mount. One sentence, kept true:
+ * the owner may reword it, but it must keep matching what ships.
  */
 export const COLOPHON =
-  'Built with Next.js. The backdrop is a 2D canvas, not a renderer — React Three Fiber and Rapier ship with the WebGL milestone.'
+  'Built with Next.js. The backdrop is a three.js scene (React Three Fiber) over a 2D canvas fallback.'
 
 /**
  * Fixed rather than `new Date().getFullYear()`. The export reads `© 2026`, a
@@ -88,6 +87,38 @@ function FooterNavLink({ link }: { link: FooterLink }) {
   )
 }
 
+/** How the licence reads in a credit line. A licence the site cannot represent is not credited here. */
+export const LICENCE_LABEL: Readonly<Record<Credit['licence'], string>> = {
+  'CC0-1.0': 'CC0 1.0',
+  'CC-BY-4.0': 'CC BY 4.0',
+  own: 'own work',
+}
+
+const CREDIT_LINK = 'underline decoration-[var(--line-1)] underline-offset-4 transition-colors duration-[var(--d-1)] ease-[var(--ease)] hover:text-[var(--fg-0)] hover:decoration-[var(--fg-2)] focus-visible:text-[var(--fg-0)]'
+
+/**
+ * One line per enabled model, from content/credits.json: `Model "Title" by Author, licence`. Plain text and
+ * real anchors only: every value is rendered as text by React, never as markup. CC0 and own work are
+ * credited too, as good practice; CC BY (when one ships) also links its licence, which it requires.
+ */
+function CreditLine({ credit }: { credit: Credit }) {
+  return (
+    <li data-credit={credit.assetId}>
+      Model “
+      <a href={credit.sourceUrl} target="_blank" rel="noopener noreferrer" className={CREDIT_LINK}>
+        {credit.title}
+      </a>
+      ” by {credit.author}, {credit.licenceUrl ? (
+        <a href={credit.licenceUrl} target="_blank" rel="noopener noreferrer" className={CREDIT_LINK}>
+          {LICENCE_LABEL[credit.licence]}
+        </a>
+      ) : (
+        LICENCE_LABEL[credit.licence]
+      )}
+    </li>
+  )
+}
+
 export type FooterProps = {
   /** Printed next to the mark and in the copyright line. */
   name: string
@@ -98,6 +129,8 @@ export type FooterProps = {
    * affordance as the § 9 routes rather than the export's dead `href="#"`.
    */
   perfHref?: string
+  /** The enabled models' credits (content/credits.json). The page passes them in; none renders no list. */
+  credits?: readonly Credit[]
   year?: number
   className?: string
 }
@@ -107,6 +140,7 @@ export function Footer({
   columns = FOOTER_COLUMNS,
   colophon = COLOPHON,
   perfHref,
+  credits = [],
   year = COPYRIGHT_YEAR,
   className,
 }: FooterProps) {
@@ -135,6 +169,14 @@ export function Footer({
           <p className="mt-0 mb-3 max-w-[60ch] text-[0.875rem] leading-[1.6] text-[var(--fg-2)]">
             {colophon}
           </p>
+
+          {credits.length > 0 && (
+            <ul aria-label="Credits" className="mt-0 mb-4 grid max-w-[60ch] list-none gap-1 p-0 text-[0.8125rem] leading-[1.6] text-[var(--fg-2)]">
+              {credits.map((credit) => (
+                <CreditLine key={credit.assetId} credit={credit} />
+              ))}
+            </ul>
+          )}
 
           {perfHref === undefined ? (
             <ComingSoonLink className={cx(PERF_BASE, LINK_DEAD)}>

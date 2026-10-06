@@ -113,8 +113,12 @@ export type BottomSheetProps = {
 /** The dialog is a transparent, bottom-anchored shell; the panel is the chrome. */
 const SHEET_SHELL = [
   'fixed inset-x-0 bottom-0 top-auto z-50 m-0 w-full max-w-none border-0 bg-transparent p-0',
+  // The Nav header is `pointer-events-none` (its condensed bar leaves a
+  // transparent strip); the sheet lives inside it and must take events back.
+  'pointer-events-auto',
   'text-[var(--fg-1)] opacity-0 data-[open=true]:opacity-100',
-  'transition-[opacity,transform] duration-[var(--d-4)] ease-[var(--ease)]',
+  // Enter is --d-3 (320ms): a menu opened on demand should arrive, not drift.
+  'transition-[opacity,transform] duration-[var(--d-3)] ease-[var(--ease)]',
   // Reduced motion keeps the fade and drops the slide. Both translate
   // utilities are gated; neither may ever appear ungated.
   'motion-safe:translate-y-full motion-safe:data-[open=true]:translate-y-0',
