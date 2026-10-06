@@ -29,9 +29,10 @@ vec3 hash33(vec3 p3){p3=fract(p3*vec3(.1031,.103,.0973));p3+=dot(p3,p3.yxz+33.33
 vec2 getP(vec2 fc){return (fc/uRes-uCenter)*vec2(uAspect,1.)*uZoom;}
 vec3 pal(float h){h=fract(h)*3.;float i=floor(h);float f=smoothstep(0.,1.,fract(h));
 if(i<1.)return mix(VIOLL,CYANL,f);if(i<2.)return mix(CYANL,MAG,f);return mix(MAG,VIOLL,f);}
-float panel(float az,float y,float ca,float wa,float cy,float hy,float soft){
+float gR=0.;
+float panel(float az,float y,float ca,float wa,float cy,float hy,float s0){float soft=s0+gR*.45;
 float da=abs(atan(sin(az-ca),cos(az-ca)));
-return (1.-smoothstep(wa,wa+soft,da))*(1.-smoothstep(hy,hy+soft*3.,abs(y-cy)));}
+return (1.-smoothstep(wa,wa+soft,da))*(1.-smoothstep(hy,hy+soft*3.,abs(y-cy)))*(wa+s0)/(wa+soft);}
 vec4 clipPos(vec3 P){vec3 r=P-uRo;float d=dot(r,uWw);float N=.1,F=60.;
 return vec4(uP.x*dot(r,uUu)+uP.z*d,uP.y*dot(r,uVv)+uP.w*d,((F+N)*d-2.*F*N)/(F-N),d);}
 vec3 mirrorP(vec3 p){return vec3(p.x,-3.-p.y,p.z);}`
@@ -55,10 +56,10 @@ float fac=hash21(floor(n.xz*3.+n.y*5.+vec2(7.)));
 float th=.95*(1.-ndv)+.42*p.y+.55*fac+.35*p.x+.07*sin(p.x*3.+uTime*.15)+.35;
 vec3 film=pal(th*1.1);
 float fres=pow(1.-ndv,3.2);
-vec3 refl=e*mix(vec3(.85,.88,1.),film*1.5,clamp(.3+.6*fres,0.,1.));
+vec3 refl=e*mix(vec3(.85,.88,1.),film*2.,clamp(.3+.6*fres,0.,1.));
 vec3 L=normalize(vec3(-.5,.8,.55));float dif=max(dot(n,L),0.);
 vec3 body=vec3(.006,.007,.018)+film*.05*dif+film*.012;
-vec3 rim=mix(CYANL,VIOLL,.5+.5*n.x)*fres*1.1;
+vec3 rim=mix(CYANL,VIOLL,.5+.5*n.x)*fres*1.5;
 float ao=.45+.55*smoothstep(-1.5,.3,p.y);
 return (body+refl+rim)*ao;}
 vec3 bgA(vec2 p,vec3 rd){
@@ -137,7 +138,7 @@ ${ENV}
 in vec3 vW;out vec4 outColor;
 float sdRectXZ(vec2 q,vec2 hs){return length(max(abs(q)-hs,0.));}
 void main(){
-vec3 pf=vW;vec3 rd=normalize(pf-uRo);vec2 p=getP(gl_FragCoord.xy);
+gR=1.;vec3 pf=vW;vec3 rd=normalize(pf-uRo);vec2 p=getP(gl_FragCoord.xy);
 vec3 n=vec3(0.,1.,0.);
 float cd=sdRectXZ(pf.xz,vec2(.46,.3));
 vec3 Ld=normalize(vec3(-.5,.8,.55));

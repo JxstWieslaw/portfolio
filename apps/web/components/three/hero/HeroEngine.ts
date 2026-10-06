@@ -404,7 +404,7 @@ export class HeroEngine {
       gl.bindVertexArray(this.vaos.ring)
       RINGS.forEach((ring, i) => {
         const radius = ring.major[0] + (ring.major[1] - ring.major[0]) * k
-        gl.uniform3f(u.use('uRing'), radius, ring.tube * k * 1.6 * spec.ringThicken + 0.0008, i)
+        gl.uniform3f(u.use('uRing'), radius, ring.tube * k * 2.6 * spec.ringThicken + 0.0008, i)
         gl.drawArrays(gl.TRIANGLES, 0, this.torusVertices)
       })
     }
