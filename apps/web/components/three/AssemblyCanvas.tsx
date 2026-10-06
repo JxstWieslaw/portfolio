@@ -205,7 +205,7 @@ interface Rig {
   dispose(): void
 }
 
-function createRig(capacity: number, keep: number): Rig {
+function createRig(capacity: number): Rig {
   // A plain Mesh over an InstancedBufferGeometry: position, scale and rotation
   // live in the vertex program, so there is no instance matrix to upload
   // (an InstancedMesh would carry 192 kB of identity matrices for nothing).
@@ -220,7 +220,7 @@ function createRig(capacity: number, keep: number): Rig {
   const mesh = new Mesh(geometry, material)
   mesh.frustumCulled = false
 
-  const artefact = createArtefact(keep)
+  const artefact = createArtefact()
   artefact.group.scale.setScalar(0)
 
   const group = new Group()
@@ -339,7 +339,7 @@ function Scene({ store, keep, onLive, onGiveUp, bindInvalidate }: SceneProps) {
   }, [capacity, keep])
 
   const rung = keep < 1 ? 'reduced-instances' : 'live'
-  const rig = useMemo(() => createRig(capacity, keep), [capacity, keep])
+  const rig = useMemo(() => createRig(capacity), [capacity])
   // Created and disposed with the scene (not with the memoised rig) so StrictMode's mount, cleanup, mount
   // leaves a live slot and its markers. `null` once a throw has killed it: the procedural artefact carries on.
   const models = useRef<ModelSlot | null>(null)

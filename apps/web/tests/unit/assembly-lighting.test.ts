@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { FILM, filmTexels, shellLookFor } from '@/lib/assembly/artefact'
 import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 
 const luminance = (hex: string): number => {
@@ -41,69 +40,5 @@ describe('environment layout', () => {
     expect(ENVIRONMENT_FACE_PX).toBeLessThanOrEqual(64)
     expect(ENVIRONMENT_INTENSITY).toBeGreaterThan(0)
     expect(ENVIRONMENT_INTENSITY).toBeLessThanOrEqual(1.2)
-  })
-})
-
-describe('artefact shell look', () => {
-  it('uses the cheap MeshStandardMaterial path at tier 1 (reduced-instances) and the film otherwise', () => {
-    expect(shellLookFor(1)).toBe('film')
-    expect(shellLookFor(0.99)).toBe('standard')
-    expect(shellLookFor(0.5)).toBe('standard')
-    expect(shellLookFor(0)).toBe('standard')
-  })
-
-  it('keeps the thin-film parameters inside their documented ranges', () => {
-    expect(FILM.iridescence).toBeGreaterThan(0.4)
-    expect(FILM.iridescence).toBeLessThanOrEqual(1)
-    expect(FILM.ior).toBeGreaterThanOrEqual(1.2)
-    expect(FILM.ior).toBeLessThanOrEqual(1.4)
-    expect(FILM.thickness[0]).toBeGreaterThanOrEqual(100)
-    expect(FILM.thickness[1]).toBeLessThanOrEqual(800)
-    expect(FILM.thickness[0]).toBeLessThan(FILM.thickness[1])
-    expect(FILM.clearcoat).toBeGreaterThan(0)
-    expect(FILM.clearcoat).toBeLessThanOrEqual(1)
-    expect(FILM.roughness).toBeLessThanOrEqual(0.3)
-    expect(FILM.metalness).toBeGreaterThanOrEqual(0)
-    expect(FILM.metalness).toBeLessThanOrEqual(1)
-    expect(FILM.emissiveIntensity).toBeLessThanOrEqual(0.4)
-    expect(FILM.noisePx).toBeLessThanOrEqual(64)
-  })
-
-  it('drifts slowly: under 1% of the map per second on each axis', () => {
-    for (const d of FILM.drift) expect(Math.abs(d)).toBeLessThan(0.01)
-  })
-})
-
-describe('film noise', () => {
-  const px = FILM.noisePx
-  const green = (texels: Uint8Array): number[] => Array.from({ length: px * px }, (_, i) => texels[i * 4 + 1] as number)
-
-  it('is deterministic RGBA with opaque alpha, equal colour channels and a wide byte range', () => {
-    const a = filmTexels()
-    expect(a).toHaveLength(px * px * 4)
-    expect(Array.from(filmTexels())).toEqual(Array.from(a))
-    for (let i = 0; i < px * px; i += 1) {
-      expect(a[i * 4]).toBe(a[i * 4 + 1])
-      expect(a[i * 4 + 2]).toBe(a[i * 4 + 1])
-      expect(a[i * 4 + 3]).toBe(255)
-    }
-    const g = green(a)
-    expect(Math.max(...g) - Math.min(...g)).toBeGreaterThan(150)
-  })
-
-  it('tiles: the wrap seam is no rougher than the average step between neighbouring columns', () => {
-    const g = green(filmTexels())
-    const step = (x0: number, x1: number): number => {
-      let sum = 0
-      for (let y = 0; y < px; y += 1) sum += Math.abs((g[y * px + x0] as number) - (g[y * px + x1] as number))
-      return sum
-    }
-    let interior = 0
-    for (let x = 0; x < px - 1; x += 1) interior += step(x, x + 1)
-    expect(step(px - 1, 0)).toBeLessThanOrEqual((interior / (px - 1)) * 2)
-    const rows = (y0: number, y1: number): number => g.slice(y0 * px, y0 * px + px).reduce((sum, v, x) => sum + Math.abs(v - (g[y1 * px + x] as number)), 0)
-    let rowInterior = 0
-    for (let y = 0; y < px - 1; y += 1) rowInterior += rows(y, y + 1)
-    expect(rows(px - 1, 0)).toBeLessThanOrEqual((rowInterior / (px - 1)) * 2)
   })
 })

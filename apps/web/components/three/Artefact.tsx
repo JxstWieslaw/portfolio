@@ -2,18 +2,14 @@ import {
   AdditiveBlending,
   BufferAttribute,
   Color,
-  DataTexture,
   Group,
   IcosahedronGeometry,
   Mesh,
   MeshBasicMaterial,
-  MeshPhysicalMaterial,
   MeshStandardMaterial,
   PointLight,
-  RepeatWrapping,
   TorusGeometry,
   Vector3,
-  LinearFilter,
 } from 'three'
 import {
   ARTEFACT_CENTRE,
@@ -21,11 +17,8 @@ import {
   GLOW_OPACITY,
   GLOW_SCALE,
   ARTEFACT_LIGHT_INTENSITY,
-  FILM,
   RINGS,
   displaceShell,
-  filmTexels,
-  shellLookFor,
 } from '@/lib/assembly/artefact'
 
 /**
@@ -53,23 +46,7 @@ export interface Artefact {
 const VIOLET = new Color('#7C3AED')
 const CYAN = new Color('#22D3EE')
 
-/**
- * The film's thickness map: tileable noise in every channel (the shader reads
- * G), repeating, with no mipmaps (64 px is already smoother than the facets).
- */
-function createFilmMap(): DataTexture {
-  const map = new DataTexture(filmTexels(), FILM.noisePx, FILM.noisePx)
-  map.wrapS = map.wrapT = RepeatWrapping
-  map.magFilter = map.minFilter = LinearFilter
-  map.needsUpdate = true
-  return map
-}
-
-/**
- * `keep` is the assembly's tier fraction: below 1 (`reduced-instances`) the
- * shell is a plain `MeshStandardMaterial` with a baked tint and no texture.
- */
-export function createArtefact(keep = 1): Artefact {
+export function createArtefact(): Artefact {
   const group = new Group()
   group.position.set(ARTEFACT_CENTRE[0], ARTEFACT_CENTRE[1], ARTEFACT_CENTRE[2])
 
@@ -78,26 +55,7 @@ export function createArtefact(keep = 1): Artefact {
   const displaced = displaceShell(unit.getAttribute('position').array)
   unit.setAttribute('position', new BufferAttribute(displaced, 3))
   unit.computeVertexNormals()
-  const look = shellLookFor(keep)
-  const filmMap = look === 'film' ? createFilmMap() : null
-  const shellMaterial =
-    filmMap === null
-      ? new MeshStandardMaterial({ color: FILM.bakedTint, metalness: 0.7, roughness: 0.28, flatShading: true })
-      : new MeshPhysicalMaterial({
-          color: FILM.tint,
-          metalness: FILM.metalness,
-          roughness: FILM.roughness,
-          clearcoat: FILM.clearcoat,
-          clearcoatRoughness: FILM.clearcoatRoughness,
-          envMapIntensity: FILM.envMapIntensity,
-          iridescence: FILM.iridescence,
-          iridescenceIOR: FILM.ior,
-          iridescenceThicknessRange: [FILM.thickness[0], FILM.thickness[1]],
-          iridescenceThicknessMap: filmMap,
-          emissive: FILM.emissive,
-          emissiveIntensity: FILM.emissiveIntensity,
-          flatShading: true,
-        })
+  const shellMaterial = new MeshStandardMaterial({ color: '#c9b8ff', metalness: 0.7, roughness: 0.28, flatShading: true })
   const shell = new Mesh(unit, shellMaterial)
   group.add(shell)
 
@@ -148,14 +106,11 @@ export function createArtefact(keep = 1): Artefact {
     },
     tick(time) {
       for (const { ring, rate } of rings) ring.rotation.y = time * rate
-      // The film drifts: the map's offset wraps (RepeatWrapping), so the colour slides over the facets.
-      if (filmMap) filmMap.offset.set((time * FILM.drift[0]) % 1, (time * FILM.drift[1]) % 1)
       glowMaterial.opacity = GLOW_OPACITY[0] + (GLOW_OPACITY[1] - GLOW_OPACITY[0]) * (0.5 + 0.5 * Math.sin(time * 0.8))
     },
     dispose() {
       unit.dispose()
       shellMaterial.dispose()
-      filmMap?.dispose()
       glowGeometry.dispose()
       glowMaterial.dispose()
       ringMaterial.dispose()
