@@ -4,11 +4,14 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
 import {
   ACESFilmicToneMapping,
+  BackSide,
+  BufferAttribute,
   BoxGeometry,
   Color,
   DirectionalLight,
   DoubleSide,
   Group,
+  IcosahedronGeometry,
   HemisphereLight,
   InstancedBufferGeometry,
   Matrix4,
@@ -28,7 +31,7 @@ import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
-import { ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
+import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { BREATH_FPS, NO_DROP, ScrollVelocity, bindReducedMotion, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
 import { rayAtPlane, type Ray } from '@/lib/assembly/pointer-ray'
 import { isFormationId, resolveScroll, type ScrollState, type SectionBox } from '@/lib/assembly/scroll'
@@ -263,11 +266,27 @@ function bakeEnvironment(gl: WebGLRenderer): WebGLRenderTarget {
     plane.lookAt(0, 0, 0)
     scene.add(plane)
   }
+  // The dim gradient dome: violet at the bottom pole to cyan at the top, so no reflection is plain black.
+  const dome = new IcosahedronGeometry(ENVIRONMENT_DOME.radius, 3)
+  const domePositions = dome.getAttribute('position')
+  const domeColours = new Float32Array(domePositions.count * 3)
+  const bottom = new Color(ENVIRONMENT_DOME.bottom)
+  const top = new Color(ENVIRONMENT_DOME.top)
+  const mixed = new Color()
+  for (let i = 0; i < domePositions.count; i += 1) {
+    mixed.copy(bottom).lerp(top, (domePositions.getY(i) / ENVIRONMENT_DOME.radius + 1) / 2).multiplyScalar(ENVIRONMENT_DOME.intensity)
+    mixed.toArray(domeColours, i * 3)
+  }
+  dome.setAttribute('color', new BufferAttribute(domeColours, 3))
+  const domeMaterial = new MeshBasicMaterial({ vertexColors: true, side: BackSide })
+  scene.add(new Mesh(dome, domeMaterial))
   const generator = new PMREMGenerator(gl)
-  // 64 px faces: five soft planes need no detail, and 256 would allocate a 6.3 MB target.
-  const target = generator.fromScene(scene, 0.04, 0.1, 100, { size: 64 })
+  // Small faces: soft strips need no detail, and 256 px would allocate a 6.3 MB target.
+  const target = generator.fromScene(scene, 0.04, 0.1, 100, { size: ENVIRONMENT_FACE_PX })
   generator.dispose()
   geometry.dispose()
+  dome.dispose()
+  domeMaterial.dispose()
   for (const material of materials) material.dispose()
   return target
 }
