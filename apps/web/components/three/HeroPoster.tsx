@@ -57,7 +57,7 @@ function Picture({
  * default the image is eager and the `<noscript>` copy exists; otherwise it is lazy inside a `display: none` box, which
  * the browser does not fetch, so the default page pays nothing for it.
  *
- * Out of flow (`position: absolute; inset: 0` inside the sticky backdrop), so it cannot move a pixel of content:
+ * Out of flow (`position: fixed; inset: 0`, clipped to the hero section), so it cannot move a pixel of content:
  * the `<img>` has intrinsic `width` and `height`, and the box it fills is the section's, not its own.
  *
  * The `mid` and `dust` stills are the scroll floor: shown, and cross-faded by scroll, only when the poster is what the
@@ -72,6 +72,7 @@ export function HeroPoster({ mode = buildHeroMode(), manifest = posterManifest }
       {eager ? (
         // Picture-less browsers and readers that ignore <source> still get the still; it sits under the <picture> so it is never doubled.
         <noscript>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a decorative still behind <noscript>; next/image needs JavaScript */}
           <img className="hero-poster-img" src={posterUrl(fallback.webp.file)} width={fallback.width} height={fallback.height} alt="" />
         </noscript>
       ) : null}

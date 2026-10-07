@@ -1218,11 +1218,11 @@ html[data-gl='live'] canvas[data-f] {
 /* The hero poster (hero monolith spec § 7): a render of the live engine, the L0 tier.
    Always in the markup, shown only while the monolith is the hero: `html[data-hero-mode='on']` is the build's answer,
    corrected before first paint by `?hero=a` or `?hero=off`. `display: none` also keeps the lazy images from being
-   fetched on a default page. Out of flow (absolute inside the sticky backdrop), so no layout shift in any state.
+   fetched on a default page. Out of flow (fixed), so no layout shift in any state.
    Once the engine paints (`data-hero='live'`) the poster and the painted wash cross-fade out together over
    --d-crossfade; every L0 path never sets that attribute, so the poster simply stays. */
 .hero-poster {
-  position: absolute;
+  position: fixed;
   inset: 0;
   display: none;
   transition: opacity var(--d-crossfade) var(--ease);
@@ -1230,6 +1230,13 @@ html[data-gl='live'] canvas[data-f] {
 
 html[data-hero-mode='on'] .hero-poster {
   display: block;
+}
+
+/* The poster is fixed to the viewport, exactly like the engine's canvas, so the two are the same picture in the same
+   place at every scroll (the page's nav sits in flow above the hero, which would offset a poster that scrolled with the
+   section). The hero section clips it, so it still scrolls away with the section and never paints over the next. */
+section[data-section='hero'] {
+  clip-path: inset(0);
 }
 
 .hero-poster-img {

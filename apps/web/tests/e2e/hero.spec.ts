@@ -125,7 +125,8 @@ test('Save-Data never fetches the hero chunk, and never mounts the Assembly eith
   // Past the LCP gate's own ceiling, so "not yet" cannot pass for "never".
   await page.waitForTimeout(9000)
   expect(chunks).toEqual([])
-  await expect(page.locator('html')).not.toHaveAttribute('data-hero', /.+/)
+  // The monolith is the hero but the engine will not run: the poster is the visual (S2), never 'live'.
+  await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster')
   await expect(page.locator('html')).not.toHaveAttribute('data-gl', 'live')
 })
 

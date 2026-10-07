@@ -29,7 +29,8 @@ describe('/models delivery headers', () => {
   it('has no catch-all rule that could make the manifest immutable', async () => {
     for (const rule of await rules()) {
       expect(rule.source).not.toMatch(/:path\*/)
-      if (value(rule, 'Cache-Control')?.includes('immutable')) expect(rule.source).toContain('.glb')
+      // Immutable only for a content-hashed file pattern: models (.glb), and the hero posters and OG image (S2).
+      if (value(rule, 'Cache-Control')?.includes('immutable')) expect(rule.source).toMatch(/\.glb|\[0-9a-f\]\{8\}/)
     }
   })
 

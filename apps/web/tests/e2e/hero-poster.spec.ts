@@ -85,7 +85,7 @@ test.describe('the poster as the hero (?hero=a without the engine)', () => {
     await page.goto('/?hero=a&nogl=1')
     const poster = page.locator(POSTER)
     await expect(poster).toBeVisible()
-    expect(await poster.evaluate((el) => getComputedStyle(el).position)).toBe('absolute')
+    expect(await poster.evaluate((el) => getComputedStyle(el).position)).toBe('fixed')
 
     // The <img> carries its intrinsic size, so even before decode the browser knows the ratio.
     const dims = await page.locator('.hero-poster-full').evaluate((el: HTMLImageElement) => ({ w: el.getAttribute('width'), h: el.getAttribute('height'), position: getComputedStyle(el).position, decoding: el.decoding }))
@@ -94,11 +94,13 @@ test.describe('the poster as the hero (?hero=a without the engine)', () => {
     expect(dims.position).toBe('absolute')
     expect(dims.decoding).toBe('async')
 
-    // The poster's box is the backdrop's: the viewport, from the top of the hero.
+    // The poster's box is the viewport, from its top edge: the same place as the engine's fixed canvas, whatever sits above the hero.
     const viewport = page.viewportSize()
     const box = await poster.boundingBox()
     expect(box?.width).toBeCloseTo(viewport?.width ?? 0, 0)
     expect(box?.height).toBeCloseTo(viewport?.height ?? 0, 0)
+    expect(box?.y).toBeCloseTo(0, 0)
+    expect(box?.x).toBeCloseTo(0, 0)
 
     expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(heightOff)
     const heroOn = await page.locator('#hero').boundingBox()
