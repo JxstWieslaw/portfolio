@@ -255,3 +255,27 @@ test('going live and a forced loss never leave the page with neither, or both, f
   expect(result.frames).toBeGreaterThan(30)
   expect(result).toMatchObject({ neither: 0, both: 0 })
 })
+
+/** The poster gives way when the engine paints and comes back when it gives up (hero monolith spec § 7: the cross-fade rule). */
+const posterOpacity = (page: Page): Promise<number> => page.locator('.hero-poster').evaluate((el) => Number(getComputedStyle(el).opacity))
+
+test('the poster fades out once the engine paints, and is back when the engine gives up', async ({ page }) => {
+  await page.goto('/?hero=a&tier=1')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  // Poster and painted wash cross-fade out together over --d-crossfade.
+  await expect.poll(() => posterOpacity(page), { timeout: 10_000 }).toBe(0)
+  await expect.poll(() => page.locator('[data-wash="monolith"]').evaluate((el) => Number(getComputedStyle(el).opacity)), { timeout: 10_000 }).toBe(0)
+
+  const fire = (type: 'webglcontextlost' | 'webglcontextrestored'): Promise<void> =>
+    page.evaluate((name) => {
+      document.querySelector('canvas[data-hero-canvas]')?.dispatchEvent(new Event(name, { cancelable: true }))
+    }, type)
+  await fire('webglcontextlost')
+  await expect.poll(() => posterOpacity(page), { timeout: 10_000 }).toBe(1)
+  await fire('webglcontextrestored')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  await expect.poll(() => posterOpacity(page), { timeout: 10_000 }).toBe(0)
+  await fire('webglcontextlost')
+  await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster')
+  await expect.poll(() => posterOpacity(page), { timeout: 10_000 }).toBe(1)
+})

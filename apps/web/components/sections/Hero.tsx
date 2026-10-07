@@ -1,4 +1,5 @@
 import { Section } from '@/components/layout/Section'
+import { HeroPoster } from '@/components/three/HeroPoster'
 import { SectionBackdrop } from '@/components/three/SectionBackdrop'
 import { Button } from '@/components/ui/Button'
 import { Eyebrow } from '@/components/ui/Eyebrow'
@@ -260,7 +261,7 @@ export function Hero({
       id="hero"
       formation="monolith"
       labelledBy="hero-h"
-      backdrop={<SectionBackdrop formation="monolith" />}
+      backdrop={<SectionBackdrop formation="monolith" poster={<HeroPoster />} />}
       padding="none"
       divider={false}
       className="hero-shell"

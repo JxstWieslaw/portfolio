@@ -112,6 +112,7 @@ export function AssemblyLayer() {
   const heroCaught = useCallback((error?: unknown) => {
     document.documentElement.setAttribute('data-hero-reason', 'throw')
     console.warn('[hero] gave up', 'throw', error)
+    document.documentElement.setAttribute('data-hero', 'poster')
     setHero(false)
     setHeroLive(false)
   }, [])
@@ -135,7 +136,10 @@ export function AssemblyLayer() {
         saveData: readSaveData(),
       }
       if (shouldMountWebGL(inputs)) setKeep(instanceKeep(caps))
-      if (shouldMountHero({ ...inputs, flag: heroFlagOn(window.location.search) })) setHero(true)
+      const wantHero = heroFlagOn(window.location.search)
+      if (shouldMountHero({ ...inputs, flag: wantHero })) setHero(true)
+      // The monolith is the hero but the engine will not run (reduced motion, Save-Data, no WebGL2, ?nogl=1): the poster is the visual.
+      else if (wantHero) document.documentElement.setAttribute('data-hero', 'poster')
     })
     return () => {
       cancel()
