@@ -154,7 +154,7 @@ test.describe('the poster as the hero (?hero=a without the engine)', () => {
   test('is hidden from assistive technology and has no text alternative to read out', async ({ page }) => {
     await page.goto('/?hero=a&nogl=1')
     const poster = page.locator(POSTER)
-    await expect(poster).toHaveAttribute('aria-hidden', 'true')
+    await expect(page.locator('[data-hero-poster-clip]')).toHaveAttribute('aria-hidden', 'true')
     for (const alt of await poster.locator('img').evaluateAll((imgs) => imgs.map((i) => i.getAttribute('alt')))) expect(alt).toBe('')
   })
 

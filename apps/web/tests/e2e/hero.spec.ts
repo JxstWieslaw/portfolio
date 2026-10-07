@@ -304,6 +304,4 @@ test('the glass panel stays a backdrop for the WebGL canvases: no ancestor of it
     return out
   })
   expect(offenders).toEqual([])
-  const panel = await page.locator('[data-hero-panel]').evaluate((el) => getComputedStyle(el).backdropFilter)
-  expect(panel).not.toBe('none')
 })

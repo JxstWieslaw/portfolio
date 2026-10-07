@@ -1272,7 +1272,13 @@ html[data-hero='live'] [data-wash='monolith'] {
   display: none;
 }
 
-@media (prefers-reduced-motion: no-preference) and (not (prefers-reduced-data: reduce)) {
+@media (prefers-reduced-data: reduce) {
+  .hero-poster-floor {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: scroll()) {
     html[data-hero-mode='on'][data-hero='poster']:not([data-hero-saver]) .hero-poster-floor {
       display: block;
