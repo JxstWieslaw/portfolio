@@ -28,7 +28,8 @@ describe('/models delivery headers', () => {
 
   it('has no catch-all rule that could make the manifest immutable', async () => {
     for (const rule of await rules()) {
-      expect(rule.source).not.toMatch(/:path\*/)
+      // The site-wide security rule is the one catch-all, and it must never carry caching.
+      if (/:path\*/.test(rule.source)) expect(value(rule, 'Cache-Control')).toBeUndefined()
       if (value(rule, 'Cache-Control')?.includes('immutable')) expect(rule.source).toContain('.glb')
     }
   })

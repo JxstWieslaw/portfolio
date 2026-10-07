@@ -12,6 +12,81 @@ const MODELS_CHUNK =
 const HERO_CHUNK =
   /[\\/](?:components[\\/]three[\\/]hero[\\/](?:HeroLayer\.tsx|HeroEngine\.ts|hero\.glsl\.ts)|lib[\\/]hero[\\/](?:geometry|progress|frame|governor|tiers)\.ts)$/
 
+/**
+ * The API origin for `connect-src`, or '' when the value is unusable. Only http(s) with a plain host is accepted, so a
+ * value like `javascript:x` (origin "null"), `https://*.x.com` or one carrying `;` or `,` can never reach the header.
+ * `URL.origin` drops userinfo, path, query and fragment.
+ */
+function apiOrigin(raw: string | undefined): string {
+  try {
+    const url = new URL((raw ?? '').trim())
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+    return /^[a-z0-9.:-]+$/i.test(url.host) ? url.origin : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * The Content-Security-Policy, report-only for now (docs/security-headers.md). Built per call so the environment it
+ * reads (preview or live, dev or production, the API origin) is the one the build or server runs with.
+ *
+ * Why each exception exists:
+ * - `script-src 'unsafe-inline'`: the App Router streams inline bootstrap scripts, and these pages are static, so
+ *   there is no per-request nonce to put on them. Enforcing without 'unsafe-inline' needs a nonce middleware, which
+ *   makes every page dynamic; that trade is deliberately not made here.
+ * - `'wasm-unsafe-eval'`: the Meshopt decoder instantiates WebAssembly. It permits wasm only, not eval().
+ * - `style-src 'unsafe-inline'`: React inline `style` attributes and the `next/font` @font-face block.
+ * - `img-src data: blob:` and `connect-src`: fetches are same-origin (models, content) plus the API origin, read
+ *   from NEXT_PUBLIC_API_URL.
+ * - Vercel's toolbar and comments widget load only on preview deployments (`VERCEL_ENV=preview`), never live.
+ */
+function contentSecurityPolicy(): string {
+  const dev = process.env.NODE_ENV !== 'production'
+  const preview = process.env.VERCEL_ENV === 'preview'
+  const api = apiOrigin(process.env.NEXT_PUBLIC_API_URL)
+  const live = preview ? ['https://vercel.live', 'https://vercel.com'] : []
+  const directives: Record<string, string[]> = {
+    'default-src': ["'self'"],
+    'script-src': ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", ...(dev ? ["'unsafe-eval'"] : []), ...live],
+    'style-src': ["'self'", "'unsafe-inline'", ...live],
+    'img-src': ["'self'", 'data:', 'blob:', ...live],
+    'font-src': ["'self'", 'data:', ...live],
+    'connect-src': ["'self'", ...(api ? [api] : []), ...(dev ? ['ws:', 'http:'] : []), ...(preview ? [...live, 'wss://ws-us3.pusher.com'] : [])],
+    'frame-src': preview ? ["'self'", ...live] : ["'none'"],
+    'worker-src': ["'self'"],
+    'manifest-src': ["'self'"],
+    'media-src': ["'self'"],
+    'object-src': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'", 'mailto:'],
+    'frame-ancestors': ["'none'"],
+  }
+  return Object.entries(directives)
+    .map(([name, values]) => `${name} ${values.join(' ')}`)
+    .join('; ')
+}
+
+const PERMISSIONS_POLICY = [
+  'accelerometer',
+  'autoplay',
+  'bluetooth',
+  'camera',
+  'display-capture',
+  'geolocation',
+  'gyroscope',
+  'hid',
+  'magnetometer',
+  'microphone',
+  'midi',
+  'payment',
+  'serial',
+  'usb',
+  'xr-spatial-tracking',
+]
+  .map((feature) => `${feature}=()`)
+  .join(', ')
+
 const config: NextConfig = {
   reactStrictMode: true,
   // Always defined, so the bundler inlines it either way and the model test seam
@@ -85,6 +160,17 @@ const config: NextConfig = {
       { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
     ]
     return [
+      {
+        // Site-wide, and the CSP is report-only: it watches for violations and blocks nothing. The model rules
+        // below set only their own keys (Cache-Control, CORP) plus the same nosniff value, so they do not clash.
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: PERMISSIONS_POLICY },
+          { key: 'Content-Security-Policy-Report-Only', value: contentSecurityPolicy() },
+        ],
+      },
       {
         // Hashed file names (`<id>.t<tier>.<hash8>.glb`): a changed asset is a new file, so a year is safe.
         source: String.raw`/models/:file([a-z0-9-]+\.t[123]\.[0-9a-f]{8}\.glb)`,
