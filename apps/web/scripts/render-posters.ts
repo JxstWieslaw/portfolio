@@ -129,10 +129,10 @@ async function assertSaneFrame(png: Buffer, label: string, orientation: string):
 
 async function render(page: Page, base: string, s: number, label: string, orientation: string): Promise<Buffer> {
   await page.goto(`${base}/?hero=a&tier=3&freeze=${FREEZE_T},${s}&grain=0`, { waitUntil: 'load' })
-  const seam = await page.evaluate(() => typeof (window as unknown as { __ASSEMBLY_HERO__?: unknown }).__ASSEMBLY_HERO__ !== 'undefined')
-  if (!seam) throw new Error('the hero test seam (__ASSEMBLY_HERO__) is absent: this is not a NEXT_PUBLIC_MODEL_TEST=1 build, so ?freeze and ?grain do nothing')
-  await page.waitForSelector('html[data-hero="live"]', { timeout: 120_000 }).catch(() => {
-    throw new Error('the hero never went live: does WebGL2 work in this Chromium?')
+  // The seam is created when the hero mounts (after the LCP gate), so its absence is only knowable once the wait has failed.
+  await page.waitForSelector('html[data-hero="live"]', { timeout: 120_000 }).catch(async () => {
+    const seam = await page.evaluate(() => typeof (window as unknown as { __ASSEMBLY_HERO__?: unknown }).__ASSEMBLY_HERO__ !== 'undefined')
+    throw new Error(seam ? 'the hero never went live: does WebGL2 work in this Chromium?' : 'the hero test seam (__ASSEMBLY_HERO__) is absent: this is not a NEXT_PUBLIC_MODEL_TEST=1 build, so ?freeze and ?grain do nothing')
   })
   await page.addStyleTag({ content: ISOLATE })
   // The loop keeps redrawing the same frozen still; wait until a few frames have been presented since the isolation.

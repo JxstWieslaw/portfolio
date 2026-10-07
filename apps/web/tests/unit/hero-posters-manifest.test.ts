@@ -83,6 +83,24 @@ describe('the check notices what it must', { timeout: 30_000 }, () => {
     expect((await checkPosters(root)).join('\n')).toContain('is not in the manifest')
   })
 
+  it('a corrupt file is one problem among all of them, not the end of the report', async () => {
+    const root = copyRoot('corrupt')
+    const manifest = readManifest(root)
+    writeFileSync(path.join(root, 'public/posters', manifest?.posters[0]?.avif.file ?? ''), 'not an image')
+    appendFileSync(path.join(root, 'public/posters', manifest?.posters[1]?.webp.file ?? ''), 'x')
+    const problems = await checkPosters(root)
+    expect(problems.some((p) => p.includes(manifest?.posters[0]?.avif.file ?? '?'))).toBe(true)
+    expect(problems.some((p) => p.includes(manifest?.posters[1]?.webp.file ?? '?'))).toBe(true)
+  })
+
+  it('a near-empty file is called a blank frame', async () => {
+    const root = copyRoot('blank')
+    const manifest = readManifest(root)
+    const target = path.join(root, 'public/og', manifest?.og.file ?? '')
+    writeFileSync(target, readFileSync(target).subarray(0, 100))
+    expect((await checkPosters(root)).join(' ')).toMatch(/floor|blank/)
+  })
+
   it('a missing manifest says how to make one', async () => {
     const root = path.join(tmp, 'empty')
     mkdirSync(root, { recursive: true })

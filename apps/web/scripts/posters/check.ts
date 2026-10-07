@@ -34,7 +34,13 @@ async function checkFileUnsafe(webRoot: string, dir: string, f: PosterFile, labe
   const floor = format === 'png' ? MIN_BYTES.og : MIN_BYTES.poster
   if (bytes.length < floor) problems.push(`${label}: ${f.file} is only ${bytes.length} bytes, under the ${floor} byte floor: a blank frame?`)
   if (bytes.length > budget) problems.push(`${label}: ${f.file} is ${bytes.length} bytes, over its ${budget} byte budget`)
-  const meta = await sharp(bytes).metadata()
+  let meta: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>
+  try {
+    meta = await sharp(bytes).metadata()
+  } catch (error) {
+    problems.push(`${label}: ${f.file} could not be read as an image (${error instanceof Error ? error.message : String(error)})`)
+    return problems
+  }
   const wantFormat = format === 'avif' ? 'heif' : format
   if (meta.format !== wantFormat) problems.push(`${label}: ${f.file} decodes as ${meta.format ?? 'nothing'}, expected ${wantFormat}`)
   if (meta.width !== size.width || meta.height !== size.height) problems.push(`${label}: ${f.file} is ${meta.width}x${meta.height}, expected ${size.width}x${size.height}`)
