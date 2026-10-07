@@ -18,7 +18,9 @@
     "assets:fetch": "tsx scripts/assets/fetch.cli.ts",
     "check:bundle": "tsx scripts/assets/bundle.cli.ts",
     "size": "size-limit",
-    "lighthouse": "lhci autorun"
+    "lighthouse": "lhci autorun",
+    "posters:render": "tsx scripts/render-posters.ts",
+    "posters:check": "tsx scripts/posters/check.cli.ts"
   },
   "dependencies": {
     "@react-three/fiber": "^9.8.1",

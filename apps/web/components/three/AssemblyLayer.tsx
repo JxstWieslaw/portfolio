@@ -49,10 +49,12 @@ const AssemblyCanvas = dynamic(
  */
 const HeroLayer = dynamic(
   () =>
-    import(/* webpackChunkName: "hero" */ './hero/HeroLayer').catch(() => ({
+    import(/* webpackChunkName: "hero" */ './hero/HeroLayer').catch((error: unknown) => ({
       default: ({ onGiveUp }: { onGiveUp: () => void }) => {
         useEffect(() => {
+          console.warn('[hero] gave up', 'import', error)
           document.documentElement.setAttribute('data-hero-reason', 'import')
+          document.documentElement.setAttribute('data-hero', 'poster')
           onGiveUp()
         }, [onGiveUp])
         return null
@@ -112,6 +114,8 @@ export function AssemblyLayer() {
   const heroCaught = useCallback((error?: unknown) => {
     document.documentElement.setAttribute('data-hero-reason', 'throw')
     console.warn('[hero] gave up', 'throw', error)
+    // After the unmount: the controller's own cleanup clears `data-hero` unless it gave up, and it runs in this commit.
+    window.setTimeout(() => document.documentElement.setAttribute('data-hero', 'poster'), 0)
     setHero(false)
     setHeroLive(false)
   }, [])
@@ -121,6 +125,10 @@ export function AssemblyLayer() {
   }, [])
 
   useEffect(() => {
+    // The pre-paint script already wrote this; writing it again means a blocked or failed script cannot leave the CSS
+    // and the engine gate disagreeing (they read the same answer).
+    const heroWanted = heroFlagOn(window.location.search)
+    document.documentElement.setAttribute('data-hero-mode', heroWanted ? 'on' : 'off')
     if (gaveUp) return undefined
 
     const cancel = afterLcp(() => {
@@ -135,7 +143,13 @@ export function AssemblyLayer() {
         saveData: readSaveData(),
       }
       if (shouldMountWebGL(inputs)) setKeep(instanceKeep(caps))
-      if (shouldMountHero({ ...inputs, flag: heroFlagOn(window.location.search) })) setHero(true)
+      if (shouldMountHero({ ...inputs, flag: heroWanted })) setHero(true)
+      // The monolith is the hero but the engine will not run (reduced motion, Save-Data, no WebGL2, ?nogl=1): the poster is the visual.
+      // Save-Data also keeps the scroll-floor stills from downloading (`data-hero-saver`, read by the CSS).
+      else if (heroWanted) {
+        if (inputs.saveData) document.documentElement.setAttribute('data-hero-saver', '')
+        document.documentElement.setAttribute('data-hero', 'poster')
+      }
     })
     return () => {
       cancel()

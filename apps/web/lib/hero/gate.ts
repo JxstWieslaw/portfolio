@@ -8,6 +8,7 @@
  */
 
 import { shouldMountWebGL, type MountInputs } from '@/lib/assembly/capabilities'
+import { heroModeFor } from '@/lib/hero/mode'
 
 export interface HeroGateInputs extends MountInputs {
   /** `?hero=a` or `NEXT_PUBLIC_HERO=monolith`. */
@@ -18,7 +19,10 @@ export function shouldMountHero({ flag, ...rest }: HeroGateInputs): boolean {
   return flag && shouldMountWebGL(rest)
 }
 
-/** The S1 flag. Off by default: nothing changes unless a preview opts in. */
+/**
+ * Whether this visit is a hero-monolith visit: `?hero=a`, `NEXT_PUBLIC_HERO=monolith`, or the default
+ * (`HERO_DEFAULT_ON`, off until S3). `?hero=off` and `NEXT_PUBLIC_HERO=off` win over the default.
+ */
 export function heroFlagOn(search: string): boolean {
-  return process.env.NEXT_PUBLIC_HERO === 'monolith' || new URLSearchParams(search).get('hero') === 'a'
+  return heroModeFor(search) === 'on'
 }

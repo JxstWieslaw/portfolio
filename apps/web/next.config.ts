@@ -87,6 +87,11 @@ const PERMISSIONS_POLICY = [
   .map((feature) => `${feature}=()`)
   .join(', ')
 
+// A typo here would silently mean "the default", which is the one thing the switch exists to avoid.
+if (process.env.NEXT_PUBLIC_HERO && process.env.NEXT_PUBLIC_HERO !== 'monolith' && process.env.NEXT_PUBLIC_HERO !== 'off') {
+  console.warn(`[hero] NEXT_PUBLIC_HERO=${process.env.NEXT_PUBLIC_HERO} is not recognised (use monolith or off): the default applies`)
+}
+
 const config: NextConfig = {
   reactStrictMode: true,
   // Always defined, so the bundler inlines it either way and the model test seam
@@ -95,8 +100,9 @@ const config: NextConfig = {
   // whatever the dashboard's environment variables say.
   env: {
     NEXT_PUBLIC_MODEL_TEST: process.env.NEXT_PUBLIC_MODEL_TEST === '1' && !process.env.VERCEL ? '1' : '0',
-    // The hero flag folds at build time: unset means the `process.env` read in lib/hero/gate.ts is a constant.
-    NEXT_PUBLIC_HERO: process.env.NEXT_PUBLIC_HERO === 'monolith' ? 'monolith' : '',
+    // The hero switch folds at build time (`monolith` or `off`; anything else is unset), so the `process.env` read in
+    // lib/hero/mode.ts is a constant. Unset means the default, `HERO_DEFAULT_ON`.
+    NEXT_PUBLIC_HERO: process.env.NEXT_PUBLIC_HERO === 'monolith' || process.env.NEXT_PUBLIC_HERO === 'off' ? process.env.NEXT_PUBLIC_HERO : '',
   },
   // `@repo/contracts` ships TypeScript source rather than a build artefact
   // (`"main": "./src/index.ts"`), which is what lets a contract change fail this
@@ -177,8 +183,21 @@ const config: NextConfig = {
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }, ...safe],
       },
       {
+        // Content-hashed names (`hero-<orientation>-<state>.<sha8>.<ext>`): a new render is a new file.
+        source: String.raw`/posters/:file(hero-[a-z]+-[a-z]+\.[0-9a-f]{8}\.(?:avif|webp))`,
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }, ...safe],
+      },
+      {
+        source: String.raw`/og/:file(hero\.[0-9a-f]{8}\.png)`,
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }, { key: 'X-Content-Type-Options', value: 'nosniff' }],
+      },
+      {
         // The manifest keeps its name across ingests, so it must always revalidate.
         source: '/models/manifest.json',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }, ...safe],
+      },
+      {
+        source: '/posters/manifest.json',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }, ...safe],
       },
     ]

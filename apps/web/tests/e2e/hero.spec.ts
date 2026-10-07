@@ -125,7 +125,8 @@ test('Save-Data never fetches the hero chunk, and never mounts the Assembly eith
   // Past the LCP gate's own ceiling, so "not yet" cannot pass for "never".
   await page.waitForTimeout(9000)
   expect(chunks).toEqual([])
-  await expect(page.locator('html')).not.toHaveAttribute('data-hero', /.+/)
+  // The monolith is the hero but the engine will not run: the poster is the visual (S2), never 'live'.
+  await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster')
   await expect(page.locator('html')).not.toHaveAttribute('data-gl', 'live')
 })
 
@@ -254,4 +255,53 @@ test('going live and a forced loss never leave the page with neither, or both, f
   const result = await flashes(page)
   expect(result.frames).toBeGreaterThan(30)
   expect(result).toMatchObject({ neither: 0, both: 0 })
+})
+
+/** The poster gives way when the engine paints and comes back when it gives up (hero monolith spec § 7: the cross-fade rule). */
+const posterOpacity = (page: Page): Promise<number> => page.locator('.hero-poster').evaluate((el) => Number(getComputedStyle(el).opacity))
+
+test('the poster fades out once the engine paints, and is back when the engine gives up', async ({ page }) => {
+  await page.goto('/?hero=a&tier=1')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  // Poster and painted wash cross-fade out together over --d-crossfade.
+  await expect.poll(() => posterOpacity(page), { timeout: 30_000 }).toBe(0)
+  await expect.poll(() => page.locator('[data-wash="monolith"]').evaluate((el) => Number(getComputedStyle(el).opacity)), { timeout: 30_000 }).toBe(0)
+
+  const fire = (type: 'webglcontextlost' | 'webglcontextrestored'): Promise<void> =>
+    page.evaluate((name) => {
+      document.querySelector('canvas[data-hero-canvas]')?.dispatchEvent(new Event(name, { cancelable: true }))
+    }, type)
+  await fire('webglcontextlost')
+  await expect.poll(() => posterOpacity(page), { timeout: 30_000 }).toBe(1)
+  await fire('webglcontextrestored')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  await expect.poll(() => posterOpacity(page), { timeout: 30_000 }).toBe(0)
+  await fire('webglcontextlost')
+  await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster')
+  await expect.poll(() => posterOpacity(page), { timeout: 30_000 }).toBe(1)
+})
+
+/**
+ * The hero's glass panel blurs what is behind it (`backdrop-filter`), and that includes the fixed WebGL canvases. A clip-path,
+ * filter, mask or blend mode on any ancestor of the panel makes that ancestor the panel's backdrop root, and the blur then
+ * stops seeing the canvases. The poster's clip therefore lives on its own wrapper, never on an ancestor of the panel.
+ * This is the default build with WebGL live, which is the page every visitor gets today.
+ */
+test('the glass panel stays a backdrop for the WebGL canvases: no ancestor of it clips, filters or masks', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForSelector('html[data-gl="live"]', { timeout: 90_000 })
+  const offenders = await page.evaluate(() => {
+    const out: string[] = []
+    for (let el: Element | null = document.querySelector('[data-hero-panel]')?.parentElement ?? null; el; el = el.parentElement) {
+      const cs = getComputedStyle(el)
+      const tag = `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : ''}`
+      if (cs.clipPath !== 'none') out.push(`${tag} clip-path ${cs.clipPath}`)
+      if (cs.filter !== 'none') out.push(`${tag} filter ${cs.filter}`)
+      if (cs.maskImage !== 'none') out.push(`${tag} mask ${cs.maskImage}`)
+      if (cs.mixBlendMode !== 'normal') out.push(`${tag} mix-blend-mode ${cs.mixBlendMode}`)
+      if (cs.backdropFilter !== 'none' && el.tagName !== 'BODY') out.push(`${tag} backdrop-filter ${cs.backdropFilter}`)
+    }
+    return out
+  })
+  expect(offenders).toEqual([])
 })
