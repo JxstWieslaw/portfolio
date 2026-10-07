@@ -31,7 +31,7 @@ describe('/models delivery headers', () => {
       // The site-wide security rule is the one catch-all, and it must never carry caching.
       if (/:path\*/.test(rule.source)) expect(value(rule, 'Cache-Control')).toBeUndefined()
       // Immutable only for a content-hashed file pattern: models (.glb), and the hero posters and OG image (S2).
-      if (value(rule, 'Cache-Control')?.includes('immutable')) expect(rule.source).toMatch(/.glb|[0-9a-f]{8}/)
+      if (value(rule, 'Cache-Control')?.includes('immutable')) expect(rule.source).toMatch(/\.glb|\[0-9a-f\]\{8\}/)
     }
   })
 
