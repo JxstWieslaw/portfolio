@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { FieldCanvas } from './FieldCanvas'
 import { SCRIMS, washCss, type FormationId } from '@/lib/formations/config'
 
@@ -11,6 +12,11 @@ export interface SectionBackdropProps {
   readonly scrim?: FormationId
   /** Run the animation loop. Only the hero does. */
   readonly animate?: boolean
+  /**
+   * A pre-rendered still that sits between the canvas and the scrim: the hero's L0 tier (`HeroPoster`). Out of flow,
+   * like everything else in here.
+   */
+  readonly poster?: ReactNode
 }
 
 /**
@@ -21,6 +27,7 @@ export interface SectionBackdropProps {
  *   <div sticky top-0 h-screen>           <- holds the field still as the section scrolls
  *     <div wash />                        <- rung 5, always present
  *     <canvas data-f="…" />               <- rungs 1-4
+ *     {poster}                            <- the hero's still (L0), when it has one
  *     <div scrim />                       <- keeps the panel copy readable
  * ```
  *
@@ -35,13 +42,14 @@ export interface SectionBackdropProps {
  * The parent section must be `position: relative`. Nothing here participates in
  * layout, so no rung can move a pixel of content.
  */
-export function SectionBackdrop({ formation, scrim = formation, animate = formation === 'monolith' }: SectionBackdropProps) {
+export function SectionBackdrop({ formation, scrim = formation, animate = formation === 'monolith', poster }: SectionBackdropProps) {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="sticky top-0 h-screen max-h-full w-full overflow-hidden">
         {/* Rung 5 — the section's radial accent wash, pure CSS, always painted. */}
         <div data-wash={formation} className="absolute inset-0" style={{ background: washCss(formation) }} />
         <FieldCanvas formation={formation} animate={animate} />
+        {poster}
         <div className="absolute inset-0" style={{ background: SCRIMS[scrim] }} />
       </div>
     </div>

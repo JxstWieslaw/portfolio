@@ -62,6 +62,9 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
     const canvas = canvasRef.current
     if (!canvas) return
 
+    // The hero's painted cubes are replaced by the poster while the monolith is the hero (spec § 7): paint nothing.
+    if (formation === 'monolith' && document.documentElement.dataset.heroMode === 'on') return
+
     const caps = readCapabilities(canvas)
     const activeRung = resolveRung(caps)
     setRung(activeRung)
