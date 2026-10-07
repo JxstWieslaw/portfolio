@@ -19,7 +19,8 @@
       ".next/static/chunks/*.*.js",
       "!.next/static/chunks/655.*.js",
       "!.next/static/chunks/826.*.js",
-      "!.next/static/chunks/models.*.js"
+      "!.next/static/chunks/models.*.js",
+      "!.next/static/chunks/hero.*.js"
     ],
     "limit": "275 kB",
     "gzip": true
@@ -30,6 +31,14 @@
       ".next/static/chunks/models.*.js"
     ],
     "limit": "26 kB",
+    "gzip": true
+  },
+  {
+    "name": "hero engine (raw WebGL2 monolith, lazy)",
+    "path": [
+      ".next/static/chunks/hero.*.js"
+    ],
+    "limit": "14 kB",
     "gzip": true
   }
 ]

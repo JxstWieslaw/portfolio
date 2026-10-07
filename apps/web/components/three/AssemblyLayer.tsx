@@ -2,9 +2,10 @@
 
 import dynamic from 'next/dynamic'
 import { Component, useCallback, useEffect, useState, type ReactNode } from 'react'
-import { hasNoGlFlag, probeWebGL2, shouldMountWebGL } from '@/lib/assembly/capabilities'
+import { hasNoGlFlag, probeWebGL2, readSaveData, shouldMountWebGL } from '@/lib/assembly/capabilities'
 import { afterLcp } from '@/lib/assembly/lcp'
 import { instanceKeep, readCapabilities, resolveRung } from '@/lib/formations/fallback'
+import { heroFlagOn, shouldMountHero } from '@/lib/hero/gate'
 
 const LIVE_ATTRIBUTE = 'data-gl'
 
@@ -41,8 +42,29 @@ const AssemblyCanvas = dynamic(
   { ssr: false },
 )
 
+/**
+ * The hero monolith (flagged, spec S1): its own lazy chunk, `hero`, raw WebGL2
+ * with no three, so it never waits for the 267 kB core and fails on its own.
+ * A rejected import hands control back instead of leaving the cubes hidden.
+ */
+const HeroLayer = dynamic(
+  () =>
+    import(/* webpackChunkName: "hero" */ './hero/HeroLayer').catch((error: unknown) => ({
+      default: ({ onGiveUp }: { onGiveUp: () => void }) => {
+        useEffect(() => {
+          console.warn('[hero] gave up', 'import', error)
+          document.documentElement.setAttribute('data-hero-reason', 'import')
+          document.documentElement.setAttribute('data-hero', 'poster')
+          onGiveUp()
+        }, [onGiveUp])
+        return null
+      },
+    })),
+  { ssr: false },
+)
+
 interface BoundaryProps {
-  readonly onError: GiveUpHandler
+  readonly onError: (error?: unknown) => void
   readonly children: ReactNode
 }
 
@@ -57,8 +79,8 @@ class AssemblyBoundary extends Component<BoundaryProps, { failed: boolean }> {
     return { failed: true }
   }
 
-  override componentDidCatch(): void {
-    this.props.onError()
+  override componentDidCatch(error: unknown): void {
+    this.props.onError(error)
   }
 
   override render(): ReactNode {
@@ -87,8 +109,26 @@ class AssemblyBoundary extends Component<BoundaryProps, { failed: boolean }> {
  */
 export function AssemblyLayer() {
   const [keep, setKeep] = useState<number | null>(null)
+  const [hero, setHero] = useState(false)
+  const [heroLive, setHeroLive] = useState(false)
+  const heroCaught = useCallback((error?: unknown) => {
+    document.documentElement.setAttribute('data-hero-reason', 'throw')
+    console.warn('[hero] gave up', 'throw', error)
+    // After the unmount: the controller's own cleanup clears `data-hero` unless it gave up, and it runs in this commit.
+    window.setTimeout(() => document.documentElement.setAttribute('data-hero', 'poster'), 0)
+    setHero(false)
+    setHeroLive(false)
+  }, [])
+  const heroOff = useCallback(() => {
+    setHero(false)
+    setHeroLive(false)
+  }, [])
 
   useEffect(() => {
+    // The pre-paint script already wrote this; writing it again means a blocked or failed script cannot leave the CSS
+    // and the engine gate disagreeing (they read the same answer).
+    const heroWanted = heroFlagOn(window.location.search)
+    document.documentElement.setAttribute('data-hero-mode', heroWanted ? 'on' : 'off')
     if (gaveUp) return undefined
 
     const cancel = afterLcp(() => {
@@ -96,12 +136,20 @@ export function AssemblyLayer() {
       // inside readCapabilities would make a WebGL2 probe on the same element
       // return null by spec.
       const caps = readCapabilities(document.createElement('canvas'))
-      const mount = shouldMountWebGL({
+      const inputs = {
         rung: resolveRung(caps),
         webgl2: probeWebGL2(document.createElement('canvas')),
         noGl: hasNoGlFlag(window.location.search),
-      })
-      if (mount) setKeep(instanceKeep(caps))
+        saveData: readSaveData(),
+      }
+      if (shouldMountWebGL(inputs)) setKeep(instanceKeep(caps))
+      if (shouldMountHero({ ...inputs, flag: heroWanted })) setHero(true)
+      // The monolith is the hero but the engine will not run (reduced motion, Save-Data, no WebGL2, ?nogl=1): the poster is the visual.
+      // Save-Data also keeps the scroll-floor stills from downloading (`data-hero-saver`, read by the CSS).
+      else if (heroWanted) {
+        if (inputs.saveData) document.documentElement.setAttribute('data-hero-saver', '')
+        document.documentElement.setAttribute('data-hero', 'poster')
+      }
     })
     return () => {
       cancel()
@@ -128,9 +176,14 @@ export function AssemblyLayer() {
       data-assembly={keep === null ? 'idle' : 'live'}
       className="pointer-events-none fixed inset-0 z-0"
     >
+      {hero ? (
+        <AssemblyBoundary onError={heroCaught}>
+          <HeroLayer onGiveUp={heroOff} onLive={setHeroLive} />
+        </AssemblyBoundary>
+      ) : null}
       {keep === null ? null : (
         <AssemblyBoundary onError={giveUp}>
-          <AssemblyCanvas keep={keep} onLive={setLive} onGiveUp={giveUp} />
+          <AssemblyCanvas keep={keep} hero={heroLive} onLive={setLive} onGiveUp={giveUp} />
         </AssemblyBoundary>
       )}
     </div>

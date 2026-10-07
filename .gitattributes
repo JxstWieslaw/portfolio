@@ -3,6 +3,7 @@
 *.ktx2 binary
 *.hdr binary
 *.webp binary
+*.avif binary
 *.png binary
 *.jpg binary
 *.bin binary
@@ -11,5 +12,6 @@
 
 # Generated JSON is canonical LF so hashes and diffs do not depend on core.autocrlf.
 apps/web/public/models/manifest.json text eol=lf
+apps/web/public/posters/manifest.json text eol=lf
 content/credits.json text eol=lf
 content/models/sources.json text eol=lf

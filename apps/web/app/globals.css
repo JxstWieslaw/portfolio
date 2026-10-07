@@ -1214,3 +1214,101 @@ html[data-gl='live'] canvas[data-f] {
   opacity: 0 !important;
   transition: opacity var(--d-crossfade) var(--ease) !important;
 }
+
+/* The hero poster (hero monolith spec § 7): a render of the live engine, the L0 tier.
+   Always in the markup, shown only while the monolith is the hero: `html[data-hero-mode='on']` is the build's answer,
+   corrected before first paint by `?hero=a` or `?hero=off`. `display: none` also keeps the lazy images from being
+   fetched on a default page. Out of flow (fixed), so no layout shift in any state.
+   Once the engine paints (`data-hero='live'`) the poster and the painted wash cross-fade out together over
+   --d-crossfade; every L0 path never sets that attribute, so the poster simply stays. */
+.hero-poster {
+  position: fixed;
+  inset: 0;
+  display: none;
+  transition: opacity var(--d-crossfade) var(--ease);
+}
+
+html[data-hero-mode='on'] .hero-poster {
+  display: block;
+}
+
+/* The poster is fixed to the viewport, exactly like the engine's canvas, so the two are the same picture in the same
+   place at every scroll (the page's nav sits in flow above the hero, which would offset a poster that scrolled with the
+   section). It lives in a clip wrapper that is a sibling of the glass panel, never an ancestor of it: a clip-path, filter
+   or mask on an ancestor of the panel makes that ancestor the panel's backdrop root, and the panel's backdrop-filter
+   would then stop blurring the fixed WebGL canvases behind it. The wrapper is the sticky backdrop's size, so the poster
+   still scrolls away with the hero and never paints over the next section. */
+.hero-poster-clip {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0);
+}
+
+.hero-poster-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 0;
+}
+
+html[data-hero='live'] .hero-poster {
+  opacity: 0;
+}
+
+html[data-hero='live'] [data-wash='monolith'] {
+  opacity: 0 !important;
+  transition: opacity var(--d-crossfade) var(--ease) !important;
+}
+
+/* The scroll floor: the poster triptych. Where the poster is what the page has (`data-hero='poster'`: no WebGL2,
+   Save-Data, `?nogl=1`, a lost context, the governor's floor), scrolling the hero lays the mid and then the dust
+   still over the assembled one, mirroring the engine's own disassembly. Scroll-driven animation only, so no
+   JavaScript; a browser without it keeps the assembled still. Reduced motion never gets the extra stills, and neither does
+   Save-Data (`data-hero-saver`, set by the gate) or `prefers-reduced-data`: they are extra downloads for a scroll effect. */
+.hero-poster-floor {
+  display: none;
+}
+
+@media (prefers-reduced-data: reduce) {
+  .hero-poster-floor {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: scroll()) {
+    html[data-hero-mode='on'][data-hero='poster']:not([data-hero-saver]) .hero-poster-floor {
+      display: block;
+    }
+
+    .hero-poster-mid,
+    .hero-poster-dust {
+      opacity: 0;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-timeline: scroll(root);
+      animation-range: 0 90vh;
+    }
+
+    .hero-poster-mid {
+      animation-name: hero-poster-mid;
+    }
+
+    .hero-poster-dust {
+      animation-name: hero-poster-dust;
+    }
+
+    @keyframes hero-poster-mid {
+      0%, 8% { opacity: 0; }
+      45%, 100% { opacity: 1; }
+    }
+
+    @keyframes hero-poster-dust {
+      0%, 45% { opacity: 0; }
+      85%, 100% { opacity: 1; }
+    }
+  }
+}

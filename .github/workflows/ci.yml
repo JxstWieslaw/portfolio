@@ -53,6 +53,10 @@ jobs:
         run: |
           npm run assets:check
           npm run assets:ingest -- --only generated --verify
+      # The hero posters are renders of the hero engine: fail when the shader, engine, framing or encoder settings
+      # changed without a re-render, or a file no longer matches its hash, size or budget. No rendering here.
+      - name: Hero posters match their sources
+        run: npm run posters:check -w @repo/web
       - name: Report placeholder content (never fails the build)
         run: npm run lint:content
       # Reports production advisories and never gates: main carries moderate/high advisories through
@@ -105,6 +109,13 @@ jobs:
       - run: npm run test:e2e -w @repo/web
         env:
           NEXT_PUBLIC_MODEL_TEST: '1'
+      # The same app built the way S3 will ship it (the monolith as the default): the poster in the first HTML, eager,
+      # the noscript still, the OG image, and `?hero=off` as the way back. Only the spec that is about that build.
+      - name: E2E, hero monolith as the default build
+        run: npm run test:e2e -w @repo/web -- tests/e2e/hero-poster-on.spec.ts --project=desktop --project=mobile
+        env:
+          NEXT_PUBLIC_MODEL_TEST: '1'
+          NEXT_PUBLIC_HERO: monolith
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:

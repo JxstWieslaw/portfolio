@@ -1,0 +1,114 @@
+{
+  "pipeline": 1,
+  "inputsHash": "a2ac14d566ef0d05",
+  "renderedWith": {
+    "chromium": "153.0.8010.12",
+    "sharp": "0.35.5",
+    "playwright": "1.63.0"
+  },
+  "posters": [
+    {
+      "state": "full",
+      "orientation": "portrait",
+      "width": 780,
+      "height": 1688,
+      "avif": {
+        "file": "hero-portrait-full.d361a341.avif",
+        "bytes": 10005,
+        "sha256": "d361a34135cf8341abfd92d851fedb0dadc2ad2dfb693441d2f0480f772590d0"
+      },
+      "webp": {
+        "file": "hero-portrait-full.fcb7c2d9.webp",
+        "bytes": 11098,
+        "sha256": "fcb7c2d90a2708f5a4b0310188f49aa677088734a96d1a51de47d0dfc5fbede9"
+      }
+    },
+    {
+      "state": "mid",
+      "orientation": "portrait",
+      "width": 780,
+      "height": 1688,
+      "avif": {
+        "file": "hero-portrait-mid.3cb6da23.avif",
+        "bytes": 12261,
+        "sha256": "3cb6da2390ab40d1bedba35226de2bd5d41622db6b96d2f8ad818021e6d5b8f4"
+      },
+      "webp": {
+        "file": "hero-portrait-mid.e8580b5e.webp",
+        "bytes": 13782,
+        "sha256": "e8580b5e17e6fb13c0d19f506a91ebd78b037188e1c5416dbebacb15c1a461e8"
+      }
+    },
+    {
+      "state": "dust",
+      "orientation": "portrait",
+      "width": 780,
+      "height": 1688,
+      "avif": {
+        "file": "hero-portrait-dust.28551bb6.avif",
+        "bytes": 12139,
+        "sha256": "28551bb67c9cc95c4478e83ce03b9b6716b37760b33946ac9db4bf72a1b13eb4"
+      },
+      "webp": {
+        "file": "hero-portrait-dust.d1a2e4b5.webp",
+        "bytes": 16244,
+        "sha256": "d1a2e4b5bba58d88f43191dc4dcdbc70796d95eb712e18dc1a6a0b11f899f9bb"
+      }
+    },
+    {
+      "state": "full",
+      "orientation": "landscape",
+      "width": 2160,
+      "height": 1350,
+      "avif": {
+        "file": "hero-landscape-full.cd7d5299.avif",
+        "bytes": 22415,
+        "sha256": "cd7d5299c17bf6104e70662d7091dabad04889d19812a12a520214a3d185f989"
+      },
+      "webp": {
+        "file": "hero-landscape-full.a9fefe4e.webp",
+        "bytes": 29934,
+        "sha256": "a9fefe4e1c373449f0714f02088529b277d903321dc6a0a9596dafeb6555ec0f"
+      }
+    },
+    {
+      "state": "mid",
+      "orientation": "landscape",
+      "width": 2160,
+      "height": 1350,
+      "avif": {
+        "file": "hero-landscape-mid.a44e13aa.avif",
+        "bytes": 26935,
+        "sha256": "a44e13aa6ee00a21cfe809a75d7d6dbd3d199ff88adb8460bb58da62fce5d7bd"
+      },
+      "webp": {
+        "file": "hero-landscape-mid.f6756cd9.webp",
+        "bytes": 29358,
+        "sha256": "f6756cd920b11fcf275274f01b1fdce433ff16f2638844a89f19dbb3d7203e83"
+      }
+    },
+    {
+      "state": "dust",
+      "orientation": "landscape",
+      "width": 2160,
+      "height": 1350,
+      "avif": {
+        "file": "hero-landscape-dust.d33d58bc.avif",
+        "bytes": 28328,
+        "sha256": "d33d58bc686be98e22af84aeb3540ceec9fbefebc013e803d69d85244b337b3c"
+      },
+      "webp": {
+        "file": "hero-landscape-dust.9f349fa9.webp",
+        "bytes": 37800,
+        "sha256": "9f349fa9de0dd0251355a1e8900c2cc8b796247bd2d3f1ab4f6399b091c349bb"
+      }
+    }
+  ],
+  "og": {
+    "file": "hero.c7c711f6.png",
+    "bytes": 85678,
+    "sha256": "c7c711f6a2030629a7b49bb99c9aad1b7976c7cfde615a5d86c32d6957fde646",
+    "width": 1200,
+    "height": 630
+  }
+}

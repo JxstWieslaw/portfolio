@@ -14,7 +14,12 @@ and is not repeated here.
 | M1, NestJS API on Cloud Run + Neon, public read endpoints, OpenAPI snapshot | `docs/m1-status.md`; GCP `jxst-portfolio-api`, Neon `holy-star-27595330` |
 | M2 slice, the WebGL Assembly layer (three + R3F, 3 000 instanced cubes, seven formations, scroll morphing, 2D fallback) | PR #12, merged 2026-10-01; `docs/lead/2026-10-01-m2-assembly-3d.md` |
 | Typed API client in the web app (`apps/web/lib/api-client.ts`), health/readiness only | PRs #10–#11 |
-| In flight today | pnpm → npm workspaces (`chore/npm-workspaces`), the `develop` integration branch, profile and experience progression (`feat/profile-roles-progression`), the Assembly journey spec (`docs/assembly-journey-spec`) |
+| Phase 0, platform: npm workspaces, the `develop` integration branch | PRs #16, #21; release PRs #17, #26 |
+| Phase 1 (partly): motion hygiene, the six side canvases paint when seen, LCP-gated Assembly mount | PRs #36, #37, #43, #45. The LCP gap is **not** closed and was not re-measured after the models landed |
+| Assembly journey, slices 1 and 2 (GPU morph, artefact, set pieces, camera) and the scroll-velocity response | PRs #22, #37, #50 |
+| Model platform (build-time ingest, scanner, typed manifest and credits, runtime slot in the single canvas) and the first three models (own gyroscope, Kenney crystal cluster and gate, CC0), with footer credits | PRs #42 to #51; `docs/superpowers/specs/2026-10-02-model-platform.md`, `docs/lead/2026-10-02-model-platform.md`. Pulled forward from Phase 4: the build-time pipeline needs no cloud service |
+| **Released to production** | Release PR #53, merged to `main` by the owner on 2026-10-06 (`348ca6c`); CI, the Cloud Run API deploy and Vercel production all green; `/v1/ready` reports ready |
+| Next | Security headers and a report-only CSP, a real-phone performance check, the plain-three migration, detect-gpu tiers (slice 3), then Phases 2a and 2b once the owner supplies content |
 
 What is still "Coming soon" in the live site: `/work/[slug]`, `/lab`, `/about`, `/resume`, the
 "View perf" link, the writing feed, testimonials, the lead pipeline behind the contact form, and

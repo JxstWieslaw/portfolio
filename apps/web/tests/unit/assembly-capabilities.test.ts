@@ -16,6 +16,11 @@ describe('shouldMountWebGL', () => {
     expect(shouldMountWebGL({ rung, webgl2, noGl })).toBe(expected)
   })
 
+  it('never mounts under Save-Data: the lazy 3D chunk is decoration', () => {
+    expect(shouldMountWebGL({ rung: 'live', webgl2: true, noGl: false, saveData: true })).toBe(false)
+    expect(shouldMountWebGL({ rung: 'reduced-instances', webgl2: true, noGl: false, saveData: false })).toBe(true)
+  })
+
   it('never mounts under prefers-reduced-motion, whatever else is true', () => {
     expect(shouldMountWebGL({ rung: 'reduced-motion', webgl2: true, noGl: false })).toBe(false)
   })

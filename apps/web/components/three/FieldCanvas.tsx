@@ -10,6 +10,7 @@ import {
   resolveRung,
   type FallbackRung,
 } from '@/lib/formations/fallback'
+import { heroFlagOn } from '@/lib/hero/gate'
 import { paintCanvas } from '@/lib/formations/render'
 import { scheduleIdle } from '@/lib/schedule-idle'
 
@@ -61,6 +62,10 @@ export function FieldCanvas({ formation, animate = false, className }: FieldCanv
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+
+    // The hero's painted cubes are replaced by the poster while the monolith is the hero (spec § 7): paint nothing.
+    // Same answer as the engine gate in AssemblyLayer (one function), not a read of an attribute a script may not have set.
+    if (formation === 'monolith' && heroFlagOn(window.location.search)) return
 
     const caps = readCapabilities(canvas)
     const activeRung = resolveRung(caps)

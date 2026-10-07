@@ -20,16 +20,25 @@ export interface MountInputs {
   readonly webgl2: boolean
   /** `?nogl=1` — the manual kill switch for debugging the 2D path. */
   readonly noGl: boolean
+  /** `Save-Data` is on, or the connection says 2g. Optional so a caller that never probes it keeps today's answer. */
+  readonly saveData?: boolean
 }
 
 /**
  * Only the two rungs that may animate at all get WebGL. `reduced-motion` never
  * does: the static 2D frame *is* the reduced-motion design, by spec, and this
- * function is where that promise is kept.
+ * function is where that promise is kept. Save-Data never does either: the
+ * lazy 3D chunk is hundreds of kilobytes of decoration.
  */
-export function shouldMountWebGL({ rung, webgl2, noGl }: MountInputs): boolean {
-  if (noGl || !webgl2) return false
+export function shouldMountWebGL({ rung, webgl2, noGl, saveData }: MountInputs): boolean {
+  if (noGl || !webgl2 || saveData === true) return false
   return rung === 'live' || rung === 'reduced-instances'
+}
+
+/** The Network Information API, where it exists (Chromium). Absent means "no signal", not "fast". */
+export function readSaveData(): boolean {
+  const c = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+  return c?.saveData === true || c?.effectiveType === 'slow-2g' || c?.effectiveType === '2g'
 }
 
 /** `?nogl=1` anywhere in the query string. */

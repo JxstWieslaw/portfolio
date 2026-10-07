@@ -92,9 +92,9 @@ export function createAssemblyMaterial(uniforms: AssemblyUniforms): MeshStandard
     fragmentShader: FRAGMENT,
     uniforms: uniforms as unknown as Record<string, { value: unknown }>,
     flatShading: true,
-    roughness: 0.45,
-    metalness: 0.25,
-    envMapIntensity: 0.8,
+    roughness: 0.38,
+    metalness: 0.3,
+    envMapIntensity: 1,
   })
   return material as unknown as MeshStandardMaterial
 }
