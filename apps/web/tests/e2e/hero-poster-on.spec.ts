@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 /**
  * The build where the monolith is the default (`NEXT_PUBLIC_HERO=monolith`, the same thing S3 will get from flipping
- * `HERO_DEFAULT_ON`): the poster is in the first HTML, eager, with a noscript copy and an OG image, and `?hero=off`
+ * `HERO_DEFAULT_ON`): the poster is in the first HTML, eager, with an OG image, and `?hero=off`
  * still gives the painted hero back.
  *
  * It only runs in a build made with that variable (CI has a step for it), and in no other: in the default build the
@@ -20,18 +20,17 @@ const display = (page: Page, selector: string): Promise<string> => page.locator(
 test.describe('JavaScript off', () => {
   test.use({ javaScriptEnabled: false })
 
-  test('the poster is the hero: in the HTML, visible, decoded, with the noscript still beside it', async ({ page }) => {
+  test('the poster is the hero: in the HTML, visible and decoded, with one image path and no noscript copy', async ({ page }) => {
     await page.goto('/')
     await expect(page.locator('html')).toHaveAttribute('data-hero-mode', 'on')
     expect(await display(page, '.hero-poster')).toBe('block')
     const img = page.locator('.hero-poster-full')
     await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0), { timeout: 15_000 }).toBe(true)
-    // With scripting off the <noscript> content is real DOM: a plain <img> with its size.
-    const plain = page.locator('noscript img')
-    await expect(plain).toHaveCount(1)
-    expect(Number(await plain.getAttribute('width'))).toBeGreaterThan(0)
-    expect(Number(await plain.getAttribute('height'))).toBeGreaterThan(0)
-    expect(await plain.getAttribute('alt')).toBe('')
+    // One working no-JS path: the <picture> is it, so there is no second <img> in a <noscript> to fetch.
+    await expect(page.locator('noscript img')).toHaveCount(0)
+    expect(Number(await img.getAttribute('width'))).toBeGreaterThan(0)
+    expect(Number(await img.getAttribute('height'))).toBeGreaterThan(0)
+    expect(await img.getAttribute('alt')).toBe('')
     // The heading and the copy are all there: the poster is a backdrop, not the content.
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
   })

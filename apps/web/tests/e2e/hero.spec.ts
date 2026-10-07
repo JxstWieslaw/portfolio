@@ -280,3 +280,30 @@ test('the poster fades out once the engine paints, and is back when the engine g
   await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster')
   await expect.poll(() => posterOpacity(page), { timeout: 10_000 }).toBe(1)
 })
+
+/**
+ * The hero's glass panel blurs what is behind it (`backdrop-filter`), and that includes the fixed WebGL canvases. A clip-path,
+ * filter, mask or blend mode on any ancestor of the panel makes that ancestor the panel's backdrop root, and the blur then
+ * stops seeing the canvases. The poster's clip therefore lives on its own wrapper, never on an ancestor of the panel.
+ * This is the default build with WebGL live, which is the page every visitor gets today.
+ */
+test('the glass panel stays a backdrop for the WebGL canvases: no ancestor of it clips, filters or masks', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForSelector('html[data-gl="live"]', { timeout: 90_000 })
+  const offenders = await page.evaluate(() => {
+    const out: string[] = []
+    for (let el: Element | null = document.querySelector('[data-hero-panel]')?.parentElement ?? null; el; el = el.parentElement) {
+      const cs = getComputedStyle(el)
+      const tag = `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : ''}`
+      if (cs.clipPath !== 'none') out.push(`${tag} clip-path ${cs.clipPath}`)
+      if (cs.filter !== 'none') out.push(`${tag} filter ${cs.filter}`)
+      if (cs.maskImage !== 'none') out.push(`${tag} mask ${cs.maskImage}`)
+      if (cs.mixBlendMode !== 'normal') out.push(`${tag} mix-blend-mode ${cs.mixBlendMode}`)
+      if (cs.backdropFilter !== 'none' && el.tagName !== 'BODY') out.push(`${tag} backdrop-filter ${cs.backdropFilter}`)
+    }
+    return out
+  })
+  expect(offenders).toEqual([])
+  const panel = await page.locator('[data-hero-panel]').evaluate((el) => getComputedStyle(el).backdropFilter)
+  expect(panel).not.toBe('none')
+})

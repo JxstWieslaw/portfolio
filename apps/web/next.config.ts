@@ -87,6 +87,11 @@ const PERMISSIONS_POLICY = [
   .map((feature) => `${feature}=()`)
   .join(', ')
 
+// A typo here would silently mean "the default", which is the one thing the switch exists to avoid.
+if (process.env.NEXT_PUBLIC_HERO && process.env.NEXT_PUBLIC_HERO !== 'monolith' && process.env.NEXT_PUBLIC_HERO !== 'off') {
+  console.warn(`[hero] NEXT_PUBLIC_HERO=${process.env.NEXT_PUBLIC_HERO} is not recognised (use monolith or off): the default applies`)
+}
+
 const config: NextConfig = {
   reactStrictMode: true,
   // Always defined, so the bundler inlines it either way and the model test seam

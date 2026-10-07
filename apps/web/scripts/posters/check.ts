@@ -9,7 +9,7 @@ import path from 'node:path'
 import sharp from 'sharp'
 
 import type { PosterFile, PosterManifest } from '../../lib/hero/posters'
-import { BUDGET_BYTES, budgetFor, ORIENTATIONS, OG, posterInputsHash, POSTER_PIPELINE_VERSION, staleMessage, STATES } from './spec'
+import { BUDGET_BYTES, budgetFor, MIN_BYTES, ORIENTATIONS, OG, posterInputsHash, POSTER_PIPELINE_VERSION, staleMessage, STATES } from './spec'
 
 export const POSTER_PUBLIC = 'public/posters'
 export const OG_PUBLIC = 'public/og'
@@ -22,7 +22,7 @@ export function readManifest(webRoot: string): PosterManifest | null {
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as PosterManifest) : null
 }
 
-async function checkFile(webRoot: string, dir: string, f: PosterFile, label: string, format: 'avif' | 'webp' | 'png', size: { width: number; height: number }, budget: number): Promise<string[]> {
+async function checkFileUnsafe(webRoot: string, dir: string, f: PosterFile, label: string, format: 'avif' | 'webp' | 'png', size: { width: number; height: number }, budget: number): Promise<string[]> {
   const problems: string[] = []
   const full = path.join(webRoot, dir, f.file)
   if (!existsSync(full)) return [`${label}: ${f.file} is in the manifest but not on disk`]
@@ -31,6 +31,8 @@ async function checkFile(webRoot: string, dir: string, f: PosterFile, label: str
   const sum = sha256Bytes(bytes)
   if (sum !== f.sha256) problems.push(`${label}: ${f.file} does not match its recorded sha256`)
   if (!f.file.includes(`.${f.sha256.slice(0, 8)}.`) || !f.file.endsWith(`.${format}`)) problems.push(`${label}: ${f.file} is not named <name>.${f.sha256.slice(0, 8)}.${format}`)
+  const floor = format === 'png' ? MIN_BYTES.og : MIN_BYTES.poster
+  if (bytes.length < floor) problems.push(`${label}: ${f.file} is only ${bytes.length} bytes, under the ${floor} byte floor: a blank frame?`)
   if (bytes.length > budget) problems.push(`${label}: ${f.file} is ${bytes.length} bytes, over its ${budget} byte budget`)
   const meta = await sharp(bytes).metadata()
   const wantFormat = format === 'avif' ? 'heif' : format
@@ -39,12 +41,25 @@ async function checkFile(webRoot: string, dir: string, f: PosterFile, label: str
   return problems
 }
 
+/** One corrupt file is a problem to report, not a reason to stop looking at the rest. */
+async function checkFile(...args: Parameters<typeof checkFileUnsafe>): Promise<string[]> {
+  try {
+    return await checkFileUnsafe(...args)
+  } catch (error) {
+    return [`${args[3]}: ${args[2].file} could not be read as an image (${error instanceof Error ? error.message : String(error)})`]
+  }
+}
+
 export async function checkPosters(webRoot: string): Promise<string[]> {
   const manifest = readManifest(webRoot)
   if (!manifest) return [`${MANIFEST_FILE} is missing: run npm run posters:render`]
   const problems: string[] = []
   if (manifest.pipeline !== POSTER_PIPELINE_VERSION) problems.push(`manifest was written by pipeline ${manifest.pipeline}, this is ${POSTER_PIPELINE_VERSION}`)
-  if (manifest.inputsHash !== posterInputsHash(webRoot)) problems.push(staleMessage())
+  try {
+    if (manifest.inputsHash !== posterInputsHash(webRoot)) problems.push(staleMessage())
+  } catch (error) {
+    problems.push(error instanceof Error ? error.message : String(error))
+  }
 
   const expected = ORIENTATIONS.flatMap((o) => STATES.map((s) => ({ o, s })))
   if (manifest.posters.length !== expected.length) problems.push(`expected ${expected.length} posters, the manifest has ${manifest.posters.length}`)

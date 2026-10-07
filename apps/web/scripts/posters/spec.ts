@@ -45,6 +45,12 @@ export const ENCODE = {
   og: { palette: true, colours: 128, dither: 0.6, compressionLevel: 9, effort: 10 },
 } as const
 
+/**
+ * Floors, not budgets: a poster smaller than this is a blank or near-blank frame that encoded to nothing. The real files are
+ * 10 kB and up (posters) and 80 kB (OG).
+ */
+export const MIN_BYTES = { poster: 4_000, og: 30_000 } as const
+
 /** The spec's tolerance between the poster and the first live frame (§ 7): mean and p95 of the per-pixel error on 0..1. */
 export const PARITY = { mean: 0.03, p95: 0.1 } as const
 
@@ -70,8 +76,13 @@ export function budgetFor(state: string, orientation: string, format: 'avif' | '
   return state === 'full' ? BUDGET_BYTES.portraitFull : BUDGET_BYTES.portraitOther
 }
 
-/** Files (relative to `apps/web`) whose bytes decide what the engine draws or where it frames the subject. */
+/**
+ * Files (relative to `apps/web`) whose bytes decide what the engine draws, where it frames the subject, or how the page
+ * around it lays out (the framing reads the glass panel's box). A unit test checks that every module the engine and the
+ * layer import under `lib/hero` and `components/three/hero` is listed here.
+ */
 export const SOURCE_FILES = [
+  // The engine and what it imports.
   'components/three/hero/hero.glsl.ts',
   'components/three/hero/HeroEngine.ts',
   'components/three/hero/HeroLayer.tsx',
@@ -79,7 +90,24 @@ export const SOURCE_FILES = [
   'lib/hero/progress.ts',
   'lib/hero/frame.ts',
   'lib/hero/tiers.ts',
+  'lib/hero/governor.ts',
+  'lib/hero/clock.ts',
+  // The page the framing measures: the hero section, the components in its panel, the nav, the type and the stylesheet.
   'components/sections/Hero.tsx',
+  'components/ui/GlassCard.tsx',
+  'components/ui/Button.tsx',
+  'components/ui/Eyebrow.tsx',
+  'components/ui/KpiTile.tsx',
+  'components/ui/Reveal.tsx',
+  'components/layout/Section.tsx',
+  'components/layout/Nav.tsx',
+  'app/fonts.ts',
+  'app/globals.css',
+  // The copy that sets the panel's height.
+  '../../content/profile.json',
+  '../../content/projects.json',
+  // The pipeline itself.
+  'scripts/render-posters.ts',
 ] as const
 
 /** Hash text with line endings normalised, so a Windows checkout and a Linux one agree. */
@@ -99,13 +127,23 @@ export function canonicalJson(value: unknown): string {
 /** `sharp` is pinned exactly in package.json, so its version is part of the inputs (an encoder change changes bytes). */
 export function sharpVersionFrom(webRoot: string): string {
   const pkg = JSON.parse(readFileSync(path.join(webRoot, 'package.json'), 'utf8')) as { devDependencies?: Record<string, string> }
-  return pkg.devDependencies?.sharp ?? 'unknown'
+  const version = pkg.devDependencies?.sharp
+  if (!version) throw new Error('sharp is not pinned in apps/web/package.json devDependencies, so the posters have no encoder version to hash')
+  return version
 }
 
 /** The first 16 hex of the sha256 of everything that decides the render. Key order never matters. */
 export function posterInputsHash(webRoot: string): string {
   const sources: Record<string, string> = {}
-  for (const file of SOURCE_FILES) sources[file] = sha256Text(readFileSync(path.join(webRoot, file), 'utf8'))
+  for (const file of SOURCE_FILES) {
+    let text: string
+    try {
+      text = readFileSync(path.join(webRoot, file), 'utf8')
+    } catch {
+      throw new Error(`the poster inputs list names ${file}, which cannot be read: update SOURCE_FILES in scripts/posters/spec.ts`)
+    }
+    sources[file] = sha256Text(text)
+  }
   const inputs = {
     pipeline: POSTER_PIPELINE_VERSION,
     sources,

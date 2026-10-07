@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import sharp from 'sharp'
 
 /**
  * The hero poster (hero monolith spec § 7, slice S2) in a real browser, in the default build, where the monolith is
@@ -108,6 +109,28 @@ test.describe('the poster as the hero (?hero=a without the engine)', () => {
     expect(heroOn?.width).toBe(heroOff?.width)
   })
 
+  test('is clipped to the hero: once the hero has scrolled away the next section looks the same as without the poster', async ({ page }) => {
+    const shot = async (url: string): Promise<Buffer> => {
+      await page.goto(url)
+      await page.waitForLoadState('load')
+      const bottom = await page.evaluate(() => {
+        const r = document.querySelector('#hero')?.getBoundingClientRect()
+        return (r?.bottom ?? 0) + window.scrollY
+      })
+      await page.evaluate((y) => window.scrollTo(0, y + 20), bottom)
+      await page.waitForTimeout(800)
+      return page.screenshot()
+    }
+    const without = await shot('/?hero=off&nogl=1')
+    const withPoster = await shot('/?hero=a&nogl=1')
+    const a = await sharp(without).removeAlpha().greyscale().raw().toBuffer()
+    const b = await sharp(withPoster).removeAlpha().greyscale().raw().toBuffer()
+    let sum = 0
+    for (let i = 0; i < a.length; i++) sum += Math.abs((a[i] ?? 0) - (b[i] ?? 0))
+    // A fixed poster that escaped its clip would fill this whole viewport with a mean difference of tens of levels.
+    expect(sum / a.length).toBeLessThan(2)
+  })
+
   test('adds no layout shift of its own to the load', async ({ page }) => {
     // The sum of layout-shift entries over the load, with the poster on and with it off: the poster must not add any.
     const cls = async (url: string): Promise<number> => {
@@ -172,6 +195,12 @@ test.describe('the paths that never mount the engine', () => {
     await page.waitForTimeout(1500)
     expect(seen.chunks).toEqual([])
     await expect(page.locator('canvas[data-hero-canvas]')).toHaveCount(0)
+    // Save-Data asked for fewer downloads: the poster, but never the scroll-floor stills (a scroll effect is not worth them).
+    await expect(page.locator('html')).toHaveAttribute('data-hero-saver', '')
+    expect(await display(page, '.hero-poster-floor')).toBe('none')
+    await page.evaluate(() => window.scrollTo(0, 400))
+    await page.waitForTimeout(1000)
+    expect(seen.posters.filter((url) => /-(mid|dust)./.test(url))).toEqual([])
   })
 })
 

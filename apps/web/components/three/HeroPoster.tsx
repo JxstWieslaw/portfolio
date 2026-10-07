@@ -54,32 +54,32 @@ function Picture({
  *
  * Server component, no client code. It is always in the markup and shown by CSS only while `html[data-hero-mode='on']`
  * (see `globals.css`), so a visit's `?hero=a` or `?hero=off` needs no rerender. In a build where the monolith is the
- * default the image is eager and the `<noscript>` copy exists; otherwise it is lazy inside a `display: none` box, which
- * the browser does not fetch, so the default page pays nothing for it.
+ * default the image is eager; otherwise it is lazy inside a `display: none` box, which the browser does not fetch, so
+ * the default page pays nothing for it. (In a default-on build `?hero=off` still fetches the eager still: the browser
+ * discovers the image before any script can hide it. That is the kill switch's one cost.)
  *
- * Out of flow (`position: fixed; inset: 0`, clipped to the hero section), so it cannot move a pixel of content:
- * the `<img>` has intrinsic `width` and `height`, and the box it fills is the section's, not its own.
+ * There is deliberately no `<noscript>` copy. A `<picture>` in the server HTML already works with JavaScript off, and a
+ * second image would be a second request and, in landscape, a portrait still stacked on the right one. One no-JS path.
+ *
+ * Out of flow: a fixed box inside a clip wrapper (`.hero-poster-clip`, absolute, the sticky backdrop's size), so it
+ * cannot move a pixel of content, and the wrapper is a sibling of the glass panel, never an ancestor (a clip on an
+ * ancestor would stop the panel's backdrop blur). The `<img>` has intrinsic `width` and `height`.
  *
  * The `mid` and `dust` stills are the scroll floor: shown, and cross-faded by scroll, only when the poster is what the
- * page has (`html[data-hero='poster']`), a browser supports scroll-driven animation and motion is allowed. They are
- * `loading="lazy"` in a `display: none` box until then, so nobody who gets the live engine downloads them.
+ * page has (`html[data-hero='poster']`), a browser supports scroll-driven animation, and motion and data are allowed
+ * (not reduced motion, not Save-Data). They are `loading="lazy"` in a `display: none` box until then, so nobody who
+ * gets the live engine, or who asked to save data, downloads them.
  */
 export function HeroPoster({ mode = buildHeroMode(), manifest = posterManifest }: HeroPosterProps) {
-  const fallback = findPoster(manifest, 'full', 'portrait')
   const eager = mode === 'on'
   return (
-    <div aria-hidden="true" data-hero-poster="" className="hero-poster">
-      {eager ? (
-        // Picture-less browsers and readers that ignore <source> still get the still; it sits under the <picture> so it is never doubled.
-        <noscript>
-          {/* eslint-disable-next-line @next/next/no-img-element -- a decorative still behind <noscript>; next/image needs JavaScript */}
-          <img className="hero-poster-img" src={posterUrl(fallback.webp.file)} width={fallback.width} height={fallback.height} alt="" />
-        </noscript>
-      ) : null}
-      <Picture manifest={manifest} state="full" lazy={!eager} priority="low" className="hero-poster-img hero-poster-full" />
-      <div data-hero-poster-floor="" className="hero-poster-floor">
-        <Picture manifest={manifest} state="mid" lazy priority="low" className="hero-poster-img hero-poster-mid" />
-        <Picture manifest={manifest} state="dust" lazy priority="low" className="hero-poster-img hero-poster-dust" />
+    <div aria-hidden="true" data-hero-poster-clip="" className="hero-poster-clip">
+      <div data-hero-poster="" className="hero-poster">
+        <Picture manifest={manifest} state="full" lazy={!eager} priority="low" className="hero-poster-img hero-poster-full" />
+        <div data-hero-poster-floor="" className="hero-poster-floor">
+          <Picture manifest={manifest} state="mid" lazy priority="low" className="hero-poster-img hero-poster-mid" />
+          <Picture manifest={manifest} state="dust" lazy priority="low" className="hero-poster-img hero-poster-dust" />
+        </div>
       </div>
     </div>
   )

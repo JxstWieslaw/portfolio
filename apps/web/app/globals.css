@@ -1234,8 +1234,13 @@ html[data-hero-mode='on'] .hero-poster {
 
 /* The poster is fixed to the viewport, exactly like the engine's canvas, so the two are the same picture in the same
    place at every scroll (the page's nav sits in flow above the hero, which would offset a poster that scrolled with the
-   section). The hero section clips it, so it still scrolls away with the section and never paints over the next. */
-section[data-section='hero'] {
+   section). It lives in a clip wrapper that is a sibling of the glass panel, never an ancestor of it: a clip-path, filter
+   or mask on an ancestor of the panel makes that ancestor the panel's backdrop root, and the panel's backdrop-filter
+   would then stop blurring the fixed WebGL canvases behind it. The wrapper is the sticky backdrop's size, so the poster
+   still scrolls away with the hero and never paints over the next section. */
+.hero-poster-clip {
+  position: absolute;
+  inset: 0;
   clip-path: inset(0);
 }
 
@@ -1261,14 +1266,15 @@ html[data-hero='live'] [data-wash='monolith'] {
 /* The scroll floor: the poster triptych. Where the poster is what the page has (`data-hero='poster'`: no WebGL2,
    Save-Data, `?nogl=1`, a lost context, the governor's floor), scrolling the hero lays the mid and then the dust
    still over the assembled one, mirroring the engine's own disassembly. Scroll-driven animation only, so no
-   JavaScript; a browser without it keeps the assembled still, and reduced motion never gets the extra stills. */
+   JavaScript; a browser without it keeps the assembled still. Reduced motion never gets the extra stills, and neither does
+   Save-Data (`data-hero-saver`, set by the gate) or `prefers-reduced-data`: they are extra downloads for a scroll effect. */
 .hero-poster-floor {
   display: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
+@media (prefers-reduced-motion: no-preference) and (not (prefers-reduced-data: reduce)) {
   @supports (animation-timeline: scroll()) {
-    html[data-hero-mode='on'][data-hero='poster'] .hero-poster-floor {
+    html[data-hero-mode='on'][data-hero='poster']:not([data-hero-saver]) .hero-poster-floor {
       display: block;
     }
 

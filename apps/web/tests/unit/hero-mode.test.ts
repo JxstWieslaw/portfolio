@@ -42,6 +42,14 @@ describe('the hero mode: one constant, one env switch, one query string', () => 
     }
   })
 
+  it('off wins over a, whatever the order, and the first a still wins over a stray value', () => {
+    for (const build of ['on', 'off'] as const) {
+      expect(heroModeFor('?hero=a&hero=off', build)).toBe('off')
+      expect(heroModeFor('?hero=off&hero=a', build)).toBe('off')
+      expect(heroModeFor('?hero=b&hero=a', 'off')).toBe('on')
+    }
+  })
+
   it('the pre-paint script agrees with heroModeFor on every case, including repeated parameters', () => {
     const searches = ['', '?hero=a', '?hero=off', '?hero=b', '?hero=b&hero=a', '?hero=a&hero=off', '?hero=off&hero=a', '?a=1&hero=a', '?hero=a&x', '?x&hero=off&y=2', '?hero=', '?xhero=a']
     for (const build of ['on', 'off'] as const satisfies readonly HeroMode[]) {

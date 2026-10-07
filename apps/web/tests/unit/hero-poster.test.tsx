@@ -47,16 +47,18 @@ describe('HeroPoster', () => {
     expect(full).toContain('fetchPriority="low"')
   })
 
-  it('is eager and has a noscript still where the monolith is the default', () => {
-    const out = html('on')
-    expect(out).toContain('<noscript><img ')
-    expect(img(out, 'hero-poster-full')).toContain('loading="eager"')
+  it('is eager where the monolith is the default, and lazy where it is not', () => {
+    expect(img(html('on'), 'hero-poster-full')).toContain('loading="eager"')
+    expect(img(html('off'), 'hero-poster-full')).toContain('loading="lazy"')
   })
 
-  it('is lazy, and has no noscript still, where the monolith is not the default', () => {
-    const out = html('off')
-    expect(out).not.toContain('<noscript')
-    expect(img(out, 'hero-poster-full')).toContain('loading="lazy"')
+  it('has one no-JS path, the <picture>: no noscript copy that would be a second request', () => {
+    for (const mode of ['on', 'off'] as const) expect(html(mode)).not.toContain('<noscript')
+  })
+
+  it('sits in a clip wrapper that is a sibling of whatever it is placed beside, not a wrapper around the page', () => {
+    const out = html('on')
+    expect(out.startsWith('<div aria-hidden="true" data-hero-poster-clip="" class="hero-poster-clip"><div data-hero-poster="" class="hero-poster">')).toBe(true)
   })
 
   it('never makes the scroll-floor stills eager, in either mode', () => {
