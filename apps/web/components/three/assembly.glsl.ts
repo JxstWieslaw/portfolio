@@ -120,8 +120,11 @@ uniform float uAttractRadius;
 uniform float uAttractPull;
 uniform int uAttractCount;
 uniform float uVelocity;
+uniform float uFadeA;
+uniform float uFadeB;
 
 varying vec3 vInstanceColor;
+varying vec3 vView;
 
 ${SIMPLEX}
 
@@ -238,7 +241,8 @@ void main() {
     centre += q * (falloff * falloff * uRepelRadius * uRepel / dist);
   }
 
-  float edge = mix(fromEdge, toEdge, m) * (1.0 + 0.25 * envelope);
+  float fade = mix(mix(uFadeA, uFadeB, uSwap), mix(uFadeB, uFadeA, uSwap), m);
+  float edge = mix(fromEdge, toEdge, m) * (1.0 + 0.25 * envelope) * fade;
   // Self-rotation: half a turn across the morph plus a faint idle twist.
   vec3 axis = hashAxis(aSeed);
   float angle = m * 3.14159265 + uTime * 0.15 * aSeed;
@@ -250,12 +254,30 @@ void main() {
   csm_Normal = rotateAxis(normal, axis, angle);
   if (uVelocity > 0.0) csm_Normal = normalize(csm_Normal * vec3(sqrt(uVelocityS), 1.0 / uVelocityS, sqrt(uVelocityS)));
   vInstanceColor = mix(shade(fromT), shade(toT), m);
+  vView = (modelViewMatrix * vec4(csm_Position, 1.0)).xyz;
 }
 `
 
+/**
+ * The hero's thin-film cue on the cubes (spec § 4.5): a violet, cyan and magenta cycle, the engine's own three stops,
+ * added at glancing angles so the page reads as one material. The facet normal comes from screen derivatives, because
+ * the base material has not computed its own yet when this runs.
+ */
 export const FRAGMENT = /* glsl */ `
 varying vec3 vInstanceColor;
+varying vec3 vView;
+vec3 film(float h) {
+  h = fract(h) * 3.0;
+  float f = smoothstep(0.0, 1.0, fract(h));
+  vec3 a = vec3(.386, .258, .956);
+  vec3 b = vec3(.136, .807, .947);
+  vec3 c = vec3(.694, .061, .863);
+  return h < 1.0 ? mix(a, b, f) : h < 2.0 ? mix(b, c, f) : mix(c, a, f);
+}
 void main() {
-  csm_DiffuseColor = vec4(vInstanceColor, 1.0);
+  vec3 n = normalize(cross(dFdx(vView), dFdy(vView)));
+  float ndv = abs(dot(n, normalize(vView)));
+  float fres = pow(1.0 - ndv, 3.2);
+  csm_DiffuseColor = vec4(vInstanceColor + film(0.95 * (1.0 - ndv) + 0.35 + 0.35 * n.x) * fres * 0.3, 1.0);
 }
 `

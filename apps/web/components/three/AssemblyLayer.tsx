@@ -111,6 +111,13 @@ export function AssemblyLayer() {
   const [keep, setKeep] = useState<number | null>(null)
   const [hero, setHero] = useState(false)
   const [heroLive, setHeroLive] = useState(false)
+  // The engine has painted and has not given up: sticky across a pause out of view, so the cubes' hand-over stays the
+  // only thing that can appear where the monolith was.
+  const [heroSeen, setHeroSeen] = useState(false)
+  const heroReported = useCallback((live: boolean) => {
+    setHeroLive(live)
+    if (live) setHeroSeen(true)
+  }, [])
   const heroCaught = useCallback((error?: unknown) => {
     document.documentElement.setAttribute('data-hero-reason', 'throw')
     console.warn('[hero] gave up', 'throw', error)
@@ -118,10 +125,12 @@ export function AssemblyLayer() {
     window.setTimeout(() => document.documentElement.setAttribute('data-hero', 'poster'), 0)
     setHero(false)
     setHeroLive(false)
+    setHeroSeen(false)
   }, [])
   const heroOff = useCallback(() => {
     setHero(false)
     setHeroLive(false)
+    setHeroSeen(false)
   }, [])
 
   useEffect(() => {
@@ -178,12 +187,12 @@ export function AssemblyLayer() {
     >
       {hero ? (
         <AssemblyBoundary onError={heroCaught}>
-          <HeroLayer onGiveUp={heroOff} onLive={setHeroLive} />
+          <HeroLayer onGiveUp={heroOff} onLive={heroReported} />
         </AssemblyBoundary>
       ) : null}
       {keep === null ? null : (
         <AssemblyBoundary onError={giveUp}>
-          <AssemblyCanvas keep={keep} hero={heroLive} onLive={setLive} onGiveUp={giveUp} />
+          <AssemblyCanvas keep={keep} hero={heroLive} handover={heroSeen} onLive={setLive} onGiveUp={giveUp} />
         </AssemblyBoundary>
       )}
     </div>

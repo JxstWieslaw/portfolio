@@ -32,6 +32,8 @@ export interface RenderState {
   readonly frame: HeroFrame
   /** 1 for film grain, 0 for the deterministic still the parity test and the poster script render. */
   readonly grain: number
+  /** Integrated scroll speed, seconds (`lib/hero/surge`); 0 at rest. Optional: a still render has none. */
+  readonly surge?: number
 }
 
 export interface EngineInfo {
@@ -411,6 +413,7 @@ export class HeroEngine {
     gl.uniform2f(this.loc(p, 'uRes'), this.width, this.height)
     gl.uniform1f(this.loc(p, 'uTime'), st.time)
     gl.uniform1f(this.loc(p, 'uS'), st.s)
+    gl.uniform1f(this.loc(p, 'uSurge'), st.surge ?? 0)
     gl.uniform2f(this.loc(p, 'uCenter'), st.frame.cx, st.frame.cy)
     gl.uniform1f(this.loc(p, 'uZoom'), st.frame.zoom)
     gl.uniform1f(this.loc(p, 'uAspect'), this.width / this.height)

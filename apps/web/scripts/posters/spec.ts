@@ -92,6 +92,7 @@ export const SOURCE_FILES = [
   'lib/hero/tiers.ts',
   'lib/hero/governor.ts',
   'lib/hero/clock.ts',
+  'lib/hero/surge.ts',
   // The page the framing measures: the hero section, the components in its panel, the nav, the type and the stylesheet.
   'components/sections/Hero.tsx',
   'components/ui/GlassCard.tsx',

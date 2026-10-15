@@ -31,6 +31,7 @@ import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
+import { handoverFades } from '@/lib/assembly/handover'
 import { assemblyClock, resetAssemblyClock } from '@/lib/hero/clock'
 import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
 import { BREATH_FPS, NO_DROP, ScrollVelocity, bindReducedMotion, biasFor, calmAt, dropTrigger, lerpMotion, motionFor, settledFormation, shiverAt, type DropState } from '@/lib/assembly/motion'
@@ -94,6 +95,11 @@ export interface AssemblyCanvasProps {
   readonly onGiveUp: () => void
   /** The hero monolith engine owns the hero: draw no cubes or artefact while the view is the hero. */
   readonly hero?: boolean
+  /**
+   * The hero engine has painted and has not given up. Sticky while it is paused out of view, unlike `hero`: the cubes'
+   * own monolith and the procedural hero artefact stay gone, so only the hand-over to the stream is ever visible.
+   */
+  readonly handover?: boolean
 }
 
 /** The scroll-speed read for the e2e job; module-local so it folds away in production (see `test-seam.ts`). */
@@ -298,6 +304,7 @@ interface SceneProps {
   readonly onLive: (live: boolean) => void
   readonly onGiveUp: () => void
   readonly hero?: boolean
+  readonly handover?: boolean
   readonly bindInvalidate: (invalidate: () => void) => void
 }
 
@@ -318,14 +325,14 @@ interface Motion {
   velocity: ScrollVelocity
 }
 
-function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInvalidate }: SceneProps) {
+function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover = false, bindInvalidate }: SceneProps) {
   const { gl, scene, camera, size, invalidate } = useThree()
 
   // The hero going live or stopping changes what this frame draws. The prop reaches this tree after the parent's own
   // layout effects, so the redraw is asked for from in here, in the same commit, before the next paint.
   useLayoutEffect(() => {
     invalidate()
-  }, [heroOwns, invalidate])
+  }, [heroOwns, handover, invalidate])
   // A remounted page starts a new assembly: forget this one, so the hero is never seeded from a stale start.
   useEffect(() => resetAssemblyClock, [])
 
@@ -685,6 +692,11 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInva
     // Scroll speed: one damped scalar, one uniform. Cubes only: the models are separate meshes and never see it.
     uniforms.uVelocity.value = m.velocity.step(window.scrollY, t, size.height)
     uniforms.uStaggerByT.value = to === 'ring' ? 1 : 0
+    // The hand-over: the monolith side is size 0, so the stream grows out of the dispersing hero and never shows the
+    // cubes' own monolith next to the engine's. Slot-based like `uUnitA/B`.
+    const fades = handoverFades(handover, from, to)
+    uniforms.uFadeA.value = plan.state.a === to ? fades.to : fades.from
+    uniforms.uFadeB.value = plan.state.b === from ? fades.from : fades.to
     // The hero engine draws the hero: no cubes while the view is the hero (spec 4.4).
     const inHero = heroOwns && (from === 'cloud' ? to === 'monolith' : from === 'monolith' && mix === 0)
     geometry.instanceCount = inHero ? 0 : Math.max(a.count, b.count)
@@ -697,7 +709,8 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInva
     const orbitWeight = to === 'orbit' ? smoothstep(0.5, 1, mix) : from === 'orbit' ? 1 - smoothstep(0, 0.5, mix) : 0
     const heroUnit = scalars('monolith').unit
     const ignite = igniteScale(elapsed)
-    const hero = inHero ? 0 : heroUnit * ignite * heroWeight
+    // The procedural shell is the hero only where the engine is not: with the monolith engine it exists as the orbit's core.
+    const hero = inHero || handover ? 0 : heroUnit * ignite * heroWeight
     const asCore = sTo.unit * ORBIT_ARTEFACT_SCALE * orbitWeight
     if (hero >= asCore) {
       artefact.group.position.set(ARTEFACT_CENTRE[0] * heroUnit, ARTEFACT_CENTRE[1] * heroUnit, ARTEFACT_CENTRE[2] * heroUnit)
@@ -712,7 +725,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInva
     // change the program's light count and force a recompile.
     // TODO(slice 3): drive the light by tier as well — off at tier 1, where
     // the environment is skipped too (§ 5.6); it stays on for every tier now.
-    artefact.light.intensity = ARTEFACT_LIGHT_INTENSITY * Math.max(ignite * heroWeight, orbitWeight)
+    artefact.light.intensity = ARTEFACT_LIGHT_INTENSITY * Math.max(handover ? 0 : ignite * heroWeight, orbitWeight)
 
     // Models (platform spec § 3): placed, scaled in and animated here, never on a loop of their own.
     // A loaded `artefact`-role model takes the artefact's place; scale 0, never `visible` (it holds a light).
@@ -766,7 +779,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, bindInva
   return null
 }
 
-export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero }: AssemblyCanvasProps) {
+export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero, handover }: AssemblyCanvasProps) {
   const store = useRef<AssemblyStore>({
     scroll: { from: 'monolith', to: 'monolith', mix: 0, opacity: 1 },
     pointer: { x: 0, y: 0, active: false },
@@ -834,7 +847,7 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero }: Assembl
         }}
         style={{ position: 'absolute', inset: 0 }}
       >
-        <Scene store={store} keep={keep} onLive={onLive} onGiveUp={onGiveUp} hero={hero} bindInvalidate={bindInvalidate} />
+        <Scene store={store} keep={keep} onLive={onLive} onGiveUp={onGiveUp} hero={hero} handover={handover} bindInvalidate={bindInvalidate} />
       </Canvas>
     </div>
   )

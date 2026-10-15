@@ -56,6 +56,11 @@ export interface HeroProps {
   /** Standfirst. Defaults to the spec § 5.5 sub. */
   readonly sub?: string
   /**
+   * The same standfirst, shorter, for phones (below the `sm` breakpoint). The full `sub` shows from `sm` up.
+   * Omit it and `sub` shows at every width. Both live in the one paragraph, so the hero keeps a single `.hero-sub`.
+   */
+  readonly subShort?: string
+  /**
    * The hero KPI trio — `getKpis('hero')`. The middle figure is derived
    * (`domainsShipped`) and arrives already resolved; this component renders
    * whatever value it is handed and never recomputes it.
@@ -83,6 +88,10 @@ export const HERO_COPY = {
     'Technical direction, code review and mentorship by day; real-time 3D on the web that holds ' +
     'frame rate on a mid-range phone. An AI agent fleet runs review, security and performance ' +
     'passes inside the delivery loop; decisions and standards stay with me.',
+  /** Below 640px the panel is ~640px tall and leaves ~140px for the monolith; this keeps the claim and the domains. */
+  subShort:
+    'Hospital operations, learning platforms, creator-discovery tooling, procurement systems. ' +
+    'Technical direction by day; real-time 3D on the web that holds frame rate on a mid-range phone.',
   primaryCta: { label: 'See the work', href: '#work' },
   secondaryCta: { label: "Let's talk", href: '#contact' },
   scrollCue: { href: '#proof', label: 'Scroll', ariaLabel: 'Scroll to content' },
@@ -90,6 +99,7 @@ export const HERO_COPY = {
   eyebrow: string
   headline: string
   sub: string
+  subShort: string
   primaryCta: HeroCta
   secondaryCta: HeroCta
   scrollCue: HeroScrollCue
@@ -184,6 +194,20 @@ const HERO_CSS = `
   text-wrap: pretty;
 }
 
+.hero-sub-short { display: none; }
+
+/* Phones: the short standfirst, so the monolith keeps room above the panel. 640px is Tailwind's sm. */
+@media (width < 640px) {
+  .hero-sub-full { display: none; }
+  .hero-sub-short { display: inline; }
+}
+
+/* Phones only: a lighter glass so the monolith reads through the panel. The blur stays; only the ground alpha moves.
+   The 72 percent recipe applies from 768px, where the panel leaves the monolith's side of the screen alone. */
+@media (width < 768px) {
+  .hero-panel [data-hero-panel] { --glass-bg: rgba(17, 22, 29, 0.6); }
+}
+
 .hero-ctas {
   display: flex;
   flex-wrap: wrap;
@@ -249,6 +273,8 @@ export function Hero({
   eyebrow = HERO_COPY.eyebrow,
   headline = HERO_COPY.headline,
   sub = HERO_COPY.sub,
+  // The short standfirst pairs with the canonical sub only; a caller's own sub shows at every width.
+  subShort = sub === HERO_COPY.sub ? HERO_COPY.subShort : undefined,
   kpis = NO_KPIS,
   primaryCta = HERO_COPY.primaryCta,
   secondaryCta = HERO_COPY.secondaryCta,
@@ -281,7 +307,18 @@ export function Hero({
             {headline}
           </h1>
 
-          {sub ? <p className="hero-sub">{sub}</p> : null}
+          {sub ? (
+            <p className="hero-sub">
+              {subShort ? (
+                <>
+                  <span className="hero-sub-full">{sub}</span>
+                  <span className="hero-sub-short">{subShort}</span>
+                </>
+              ) : (
+                sub
+              )}
+            </p>
+          ) : null}
 
           {hasCtas ? (
             <div className="hero-ctas">

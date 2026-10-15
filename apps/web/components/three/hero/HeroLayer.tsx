@@ -5,6 +5,7 @@ import { readCapabilities, resolveRung } from '@/lib/formations/fallback'
 import { assemblyClock } from '@/lib/hero/clock'
 import { dampFrame, freeRect, heroFrame, type HeroFrame } from '@/lib/hero/frame'
 import { governorStep, initialGovernor, MAX_SAMPLE_MS, percentile, type GovernorPhase, type GovernorState } from '@/lib/hero/governor'
+import { SURGE_REST, surgeStep, type SurgeState } from '@/lib/hero/surge'
 import { assemblyS, cameraFor, heroWeight, loadAt, LOAD_SECONDS, scrollP, type Pointer } from '@/lib/hero/progress'
 import { initialTier, TIERS, tierOverride, type HeroTier } from '@/lib/hero/tiers'
 import { HeroEngine, type EngineOptions, type EngineTier } from './HeroEngine'
@@ -139,6 +140,7 @@ export class HeroController {
   private pointer: Pointer = { x: 0.5, y: 0.5, active: 0 }
   private pointerGoal = { x: 0.5, y: 0.5, on: 0 }
   private lastOpacity = -1
+  private surge: SurgeState = SURGE_REST
   private panelObserver: ResizeObserver | null = null
 
   constructor(
@@ -417,7 +419,9 @@ export class HeroController {
 
     const time = this.freeze ? this.freeze.t : elapsed + 1
     const s = this.freeze ? this.freeze.s : assemblyS(loadAt(elapsed), p)
-    const drawn = engine.render({ time, s, camera: cameraFor(s, p, time, this.pointer), frame: this.frame, grain: this.grain })
+    // Scroll speed surges the reflections and the dust spin; a frozen still has none.
+    this.surge = this.freeze ? SURGE_REST : surgeStep(this.surge, window.scrollY, now, window.innerHeight)
+    const drawn = engine.render({ time, s, camera: cameraFor(s, p, time, this.pointer), frame: this.frame, grain: this.grain, surge: this.surge.surge })
     if (!drawn) {
       // A lost context is the loss handler's business; anything else means we would be reporting a dead hero as live.
       if (!engine.isLost()) this.giveUp('render')
