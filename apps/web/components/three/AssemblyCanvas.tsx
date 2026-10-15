@@ -697,6 +697,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     const fades = handoverFades(handover, from, to)
     uniforms.uFadeA.value = plan.state.a === to ? fades.to : fades.from
     uniforms.uFadeB.value = plan.state.b === from ? fades.from : fades.to
+    uniforms.uFilm.value = handover ? 1 : 0
     // The hero engine draws the hero: no cubes while the view is the hero (spec 4.4).
     const inHero = heroOwns && (from === 'cloud' ? to === 'monolith' : from === 'monolith' && mix === 0)
     geometry.instanceCount = inHero ? 0 : Math.max(a.count, b.count)

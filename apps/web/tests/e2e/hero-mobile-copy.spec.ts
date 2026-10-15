@@ -27,9 +27,9 @@ async function state(page: Page) {
   })
 }
 
-test('390 px: the short standfirst and the lighter glass, with the blur intact', async ({ page }) => {
+test('390 px with the monolith on (?hero=a): the short standfirst and the lighter glass, with the blur intact', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/')
+  await page.goto('/?hero=a')
   await page.locator(PANEL).waitFor()
   const s = await state(page)
   expect(s.short).toBe(true)
@@ -41,9 +41,31 @@ test('390 px: the short standfirst and the lighter glass, with the blur intact',
   expect(s.blur).toMatch(/blur\(12px\)/)
 })
 
-test('639 px is still short and 640 px is full', async ({ page }) => {
-  await page.setViewportSize({ width: 639, height: 900 })
+test('the default build is exactly the full copy and the 72 percent glass at 390 px (no unapproved copy change)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
+  await page.locator(PANEL).waitFor()
+  await expect(page.locator('html')).toHaveAttribute('data-hero-mode', 'off')
+  const s = await state(page)
+  expect(s.short).toBe(false)
+  expect(s.full).toBe(true)
+  expect(s.subText).toContain('An AI agent fleet runs review')
+  expect(s.subText).not.toContain('Technical direction by day;')
+  expect(s.background).toBe('rgba(17, 22, 29, 0.72)')
+})
+
+test('?hero=off at 390 px is the default copy even with a monolith build flag in the query', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/?hero=a&hero=off')
+  await page.locator(PANEL).waitFor()
+  const s = await state(page)
+  expect(s.full).toBe(true)
+  expect(s.short).toBe(false)
+})
+
+test('639 px is still short and 640 px is full (monolith on)', async ({ page }) => {
+  await page.setViewportSize({ width: 639, height: 900 })
+  await page.goto('/?hero=a')
   await page.locator(PANEL).waitFor()
   expect((await state(page)).short).toBe(true)
   await page.setViewportSize({ width: 640, height: 900 })
@@ -52,9 +74,9 @@ test('639 px is still short and 640 px is full', async ({ page }) => {
   expect(s.full).toBe(true)
 })
 
-test('820 px: the full standfirst and the brief\'s 72 percent glass', async ({ page }) => {
+test('820 px (monolith on): the full standfirst and the 72 percent glass from the brief', async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 1180 })
-  await page.goto('/')
+  await page.goto('/?hero=a')
   await page.locator(PANEL).waitFor()
   const s = await state(page)
   expect(s.full).toBe(true)
@@ -64,18 +86,18 @@ test('820 px: the full standfirst and the brief\'s 72 percent glass', async ({ p
   expect(s.blur).toMatch(/blur\(12px\)/)
 })
 
-test('1440 px: the full standfirst and the brief\'s 72 percent glass', async ({ page }) => {
+test('1440 px (monolith on): the full standfirst and the 72 percent glass from the brief', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/')
+  await page.goto('/?hero=a')
   await page.locator(PANEL).waitFor()
   const s = await state(page)
   expect(s.full).toBe(true)
   expect(s.background).toBe('rgba(17, 22, 29, 0.72)')
 })
 
-test('the short copy makes the 390 px panel at least 100 px shorter, so the monolith has room', async ({ page }) => {
+test('the short copy makes the 390 px panel at least 100 px shorter, so the CTAs reach the fold', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/')
+  await page.goto('/?hero=a')
   await page.locator(PANEL).waitFor()
   const short = (await state(page)).panelHeight
   // Force the full variant for comparison, in this page only.

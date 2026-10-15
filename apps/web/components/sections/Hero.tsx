@@ -196,16 +196,18 @@ const HERO_CSS = `
 
 .hero-sub-short { display: none; }
 
-/* Phones: the short standfirst, so the monolith keeps room above the panel. 640px is Tailwind's sm. */
+/* Only while the monolith is the hero (html[data-hero-mode='on']: ?hero=a or a monolith build); a default visit
+   keeps the full standfirst and the 72 percent glass at every width.
+   Phones: the short standfirst, so the CTAs sit above the fold. 640px is Tailwind's sm. */
 @media (width < 640px) {
-  .hero-sub-full { display: none; }
-  .hero-sub-short { display: inline; }
+  html[data-hero-mode='on'] .hero-sub-full { display: none; }
+  html[data-hero-mode='on'] .hero-sub-short { display: inline; }
 }
 
-/* Phones only: a lighter glass so the monolith reads through the panel. The blur stays; only the ground alpha moves.
-   The 72 percent recipe applies from 768px, where the panel leaves the monolith's side of the screen alone. */
+/* Phones only: a lighter glass so the monolith reads through the panel as it scrolls up over it. The blur stays; only
+   the ground alpha moves. The 72 percent recipe applies from 768px. */
 @media (width < 768px) {
-  .hero-panel [data-hero-panel] { --glass-bg: rgba(17, 22, 29, 0.6); }
+  html[data-hero-mode='on'] .hero-panel [data-hero-panel] { --glass-bg: rgba(17, 22, 29, 0.6); }
 }
 
 .hero-ctas {
@@ -311,8 +313,11 @@ export function Hero({
             <p className="hero-sub">
               {subShort ? (
                 <>
-                  <span className="hero-sub-full">{sub}</span>
-                  <span className="hero-sub-short">{subShort}</span>
+                  <span className="hero-sub-full">{sub}</span>{' '}
+                  {/* `hidden` so a context without the stylesheet (reader mode, text only) does not read both. */}
+                  <span className="hero-sub-short" hidden>
+                    {subShort}
+                  </span>
                 </>
               ) : (
                 sub

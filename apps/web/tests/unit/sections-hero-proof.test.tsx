@@ -191,6 +191,11 @@ describe('Hero — copy', () => {
     const css = heroCss()
     expect(css).toContain('@media (width < 640px)')
     expect(blockAfter(css, '.hero-sub-short')).toContain('display: none')
+    // Only while the monolith is the hero: a default visit never swaps the copy.
+    expect(css).toContain("html[data-hero-mode='on'] .hero-sub-full { display: none; }")
+    expect(css).toContain("html[data-hero-mode='on'] .hero-sub-short { display: inline; }")
+    // No stylesheet (reader mode, text only): the short variant is `hidden`, so the two are never read run together.
+    expect(paragraphs[0]?.querySelector('.hero-sub-short')).toHaveAttribute('hidden')
   })
 
   it("shows a caller's own sub at every width (no short variant is invented for it)", () => {
@@ -203,7 +208,7 @@ describe('Hero — copy', () => {
   it('lightens the glass on phones only, leaving the blur and the 768px recipe alone', () => {
     const css = heroCss()
     expect(css).toContain('@media (width < 768px)')
-    expect(css).toContain('--glass-bg: rgba(17, 22, 29, 0.6)')
+    expect(css).toContain("html[data-hero-mode='on'] .hero-panel [data-hero-panel] { --glass-bg: rgba(17, 22, 29, 0.6); }")
     expect(css).not.toContain('backdrop-filter')
   })
 

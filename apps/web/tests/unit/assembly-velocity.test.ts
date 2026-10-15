@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createAssemblyUniforms } from '@/components/three/AssemblyMaterial'
-import { FRAGMENT, VERTEX } from '@/components/three/assembly.glsl'
+import { FILM_APPLY, FILM_DECL, FRAGMENT, VERTEX } from '@/components/three/assembly.glsl'
 import { assemblyBuilder } from '@/lib/assembly/bundle-cache'
 import {
   BREATH_FPS,
@@ -211,38 +211,35 @@ describe('with velocity 0 the cubes are byte-identical to develop (1b1694e golde
     })
   }
 
-  it("the uniforms are develop's, plus uVelocity at exactly 0 and the hand-over's two fades at 1 (no change at rest)", () => {
+  it("the uniforms are develop's, plus uVelocity, the fades and the film switch at their resting values", () => {
     const now = JSON.parse(JSON.stringify(createAssemblyUniforms())) as Record<string, unknown>
     expect(now.uVelocity).toEqual({ value: 0 })
     expect(now.uFadeA).toEqual({ value: 1 })
     expect(now.uFadeB).toEqual({ value: 1 })
-    delete now.uVelocity
-    delete now.uFadeA
-    delete now.uFadeB
+    expect(now.uFilm).toEqual({ value: 0 })
+    for (const key of ['uVelocity', 'uFadeA', 'uFadeB', 'uFilm']) delete now[key]
     expect(now).toEqual(golden.uniforms)
-    expect(Object.keys(createAssemblyUniforms()).slice(0, -3)).toEqual(Object.keys(golden.uniforms))
+    expect(Object.keys(createAssemblyUniforms()).slice(0, -4)).toEqual(Object.keys(golden.uniforms))
   })
 
-  it("the vertex program is develop's with only the velocity and hand-over lines added", () => {
+  it("the vertex program is develop's with only the velocity and the guarded hand-over lines added", () => {
     const added = VERTEX.split('\n').filter((line) => line.includes('uVelocity'))
     // The uniform, the shared scale, the guarded stretch and the guarded normal (4 lines): nothing else.
     expect(added).toHaveLength(4)
-    // The hand-over's lines (S3): two uniforms, the view-space varying and its write, and the fade folded into `edge`.
-    const handover = ['uniform float uFadeA;', 'uniform float uFadeB;', 'varying vec3 vView;', 'vView = ']
-    const edgeNow = '  float edge = mix(fromEdge, toEdge, m) * (1.0 + 0.25 * envelope) * fade;'
-    const edgeWas = '  float edge = mix(fromEdge, toEdge, m) * (1.0 + 0.25 * envelope);'
     const lines = VERTEX.split('\n')
       .filter((line) => !line.includes('uVelocity'))
-      .filter((line) => !handover.some((h) => line.trim().startsWith(h)))
-      .filter((line) => !line.trim().startsWith('float fade = '))
-      .map((line) => (line === edgeNow ? edgeWas : line))
+      // Two uniforms, a comment, and one guarded line: at both fades 1 the edge is untouched.
+      .filter((line) => !line.includes('uFade') && !line.trim().startsWith('// The hand-over fade'))
     expect(sha(lines.join('\n'))).toBe(golden.vertex)
+    expect(VERTEX).toContain('if (uFadeA < 1.0 || uFadeB < 1.0) edge *=')
   })
 
-  it('the fragment program adds a film tint on top of the instance colour and nothing else', () => {
-    expect(FRAGMENT).toContain('csm_DiffuseColor = vec4(vInstanceColor + film(')
-    // Facing the camera (fres 0) the tint vanishes, so the cube is its instance colour there.
-    expect(FRAGMENT).toContain('* fres *')
+  it("the fragment program is develop's with only the guarded film chunks added, so a default visit is byte-identical", () => {
+    expect(sha(FRAGMENT.replace(FILM_DECL, '').replace(FILM_APPLY, ''))).toBe(golden.fragment)
+    // The tint runs only behind uFilm, and a degenerate facet cannot make a NaN of it.
+    expect(FILM_APPLY.startsWith('  if (uFilm > 0.0) {')).toBe(true)
+    expect(FILM_APPLY).toContain('length(c) > 1e-8')
+    expect(FILM_DECL + FILM_APPLY).not.toContain('vView;')
   })
 
   it('the stretch is guarded so a resting frame never runs it, and is volume-preserving', () => {
