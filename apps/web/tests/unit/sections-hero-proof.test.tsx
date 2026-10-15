@@ -193,9 +193,9 @@ describe('Hero — copy', () => {
     expect(blockAfter(css, '.hero-sub-short')).toContain('display: none')
     // Only while the monolith is the hero: a default visit never swaps the copy.
     expect(css).toContain("html[data-hero-mode='on'] .hero-sub-full { display: none; }")
-    expect(css).toContain("html[data-hero-mode='on'] .hero-sub-short { display: inline !important; }")
-    // No stylesheet (reader mode, text only): the short variant is `hidden`, so the two are never read run together.
-    expect(paragraphs[0]?.querySelector('.hero-sub-short')).toHaveAttribute('hidden')
+    expect(css).toContain("html[data-hero-mode='on'] .hero-sub-short { display: inline; }")
+    // No stylesheet (reader mode, text only): a space separates the two, so they are never run together.
+    expect(paragraphs[0]?.textContent).toBe(`${HERO_COPY.sub} ${HERO_COPY.subShort}`)
   })
 
   it("shows a caller's own sub at every width (no short variant is invented for it)", () => {

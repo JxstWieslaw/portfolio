@@ -201,8 +201,7 @@ const HERO_CSS = `
    Phones: the short standfirst, so the CTAs sit above the fold. 640px is Tailwind's sm. */
 @media (width < 640px) {
   html[data-hero-mode='on'] .hero-sub-full { display: none; }
-  /* !important: Tailwind's preflight sets [hidden] to display none !important, and the hidden attribute is the no-stylesheet default. */
-  html[data-hero-mode='on'] .hero-sub-short { display: inline !important; }
+  html[data-hero-mode='on'] .hero-sub-short { display: inline; }
 }
 
 /* Phones only: a lighter glass so the monolith reads through the panel as it scrolls up over it. The blur stays; only
@@ -315,10 +314,10 @@ export function Hero({
               {subShort ? (
                 <>
                   <span className="hero-sub-full">{sub}</span>{' '}
-                  {/* `hidden` so a context without the stylesheet (reader mode, text only) does not read both. */}
-                  <span className="hero-sub-short" hidden>
-                    {subShort}
-                  </span>
+                  {/* A space between the two, so text-only contexts do not run them together. (The hidden attribute cannot
+                      be the default: Tailwind's preflight makes it display none !important in a layer, which beats this
+                      stylesheet's own rule even with !important.) */}
+                  <span className="hero-sub-short">{subShort}</span>
                 </>
               ) : (
                 sub
