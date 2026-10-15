@@ -51,9 +51,22 @@ describe('the hero band and the hand-over line up', () => {
     expect(end.from === 'stream' || end.mix > 0.9).toBe(true)
   })
 
-  it('is exactly reversible: the same scroll gives the same fade going up as going down', () => {
-    const down = resolveScroll(boxes, 300, vh)
-    const up = resolveScroll(boxes, 300, vh)
+  it('the effective cube size is a function of scroll alone: 0 at the top, rising monotonically through the band to 1, and the same going up as going down', () => {
+    // Effective size of a cube is the mix of the two slot multipliers by the morph's mix.
+    const size = (y: number): number => {
+      const state = resolveScroll(boxes, y, vh)
+      const fades = handoverFades(true, state.from, state.to)
+      return fades.from + (fades.to - fades.from) * state.mix
+    }
+    const ys: number[] = []
+    for (let y = 0; y <= 1.6 * vh; y += 8) ys.push(y)
+    const down = ys.map(size)
+    const up = [...ys].reverse().map(size).reverse()
     expect(up).toEqual(down)
+    expect(down[0]).toBe(0)
+    expect(down.at(-1)).toBe(1)
+    for (let i = 1; i < down.length; i += 1) expect(down[i] as number).toBeGreaterThanOrEqual(down[i - 1] as number)
+    // It actually passes through the middle: the hand-over is a ramp, not a switch.
+    expect(down.some((v) => v > 0.2 && v < 0.8)).toBe(true)
   })
 })

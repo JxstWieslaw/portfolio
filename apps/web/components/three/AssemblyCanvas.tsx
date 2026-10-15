@@ -750,6 +750,16 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
       markSlotCrashed()
     }
     artefact.tick(t)
+    if (DEBUG_HOOK) {
+      window.__ASSEMBLY_RIG__ = {
+        fadeA: uniforms.uFadeA.value,
+        fadeB: uniforms.uFadeB.value,
+        swap: uniforms.uSwap.value,
+        film: uniforms.uFilm.value,
+        shell: artefact.group.scale.x,
+        light: artefact.light.intensity,
+      }
+    }
 
     if (!live.current) {
       live.current = true

@@ -39,8 +39,10 @@ interface HeroSeam {
   readonly tier: number
   readonly lost: number
   readonly ready: boolean
-  /** The integrated scroll speed driving the reflection surge, seconds; 0 at rest. */
+  /** The integrated scroll speed driving the reflection surge, seconds; grows only while the page moves. */
   readonly surge: number
+  /** The damped scroll-speed weight, 0..1: exactly 0 at rest. */
+  readonly weight: number
   /** Renders a deterministic still: the clock stops at `t` and the assembly is `s`. */
   setFreeze(t: number, s: number): void
 }
@@ -195,6 +197,7 @@ export class HeroController {
         lost: { enumerable: true, get: (): number => this.lostCount },
         ready: { enumerable: true, get: (): boolean => this.firstShown },
         surge: { enumerable: true, get: (): number => this.surge.surge },
+        weight: { enumerable: true, get: (): number => this.surge.weight },
         setFreeze: {
           value: (t: number, s: number): void => {
             this.freeze = { t, s }
@@ -330,6 +333,8 @@ export class HeroController {
   private teardown(canvas: boolean, release = true): void {
     cancelAnimationFrame(this.raf)
     this.raf = 0
+    // A fresh engine starts from rest: no ghost speed on the first frame after a wake.
+    this.surge = SURGE_REST
     window.clearTimeout(this.releaseTimer)
     window.clearTimeout(this.idleTimer)
     window.clearTimeout(this.restoreTimer)
@@ -493,6 +498,7 @@ export class HeroController {
   private pause(): void {
     this.status = 'paused'
     this.weight = 0
+    this.surge = { ...SURGE_REST, surge: this.surge.surge }
     this.setOpacity(0)
     window.clearTimeout(this.releaseTimer)
     this.releaseTimer = window.setTimeout(() => {

@@ -34,6 +34,24 @@ const cubes = (page: Page): Promise<Cubes> =>
 const surge = (page: Page): Promise<number> =>
   page.evaluate(() => (window as unknown as { __ASSEMBLY_HERO__?: { surge: number } }).__ASSEMBLY_HERO__?.surge ?? -1)
 
+const weight = (page: Page): Promise<number> =>
+  page.evaluate(() => (window as unknown as { __ASSEMBLY_HERO__?: { weight: number } }).__ASSEMBLY_HERO__?.weight ?? -1)
+
+interface Rig {
+  readonly fadeA: number
+  readonly fadeB: number
+  readonly swap: number
+  readonly film: number
+  readonly shell: number
+  readonly light: number
+}
+
+const rig = (page: Page): Promise<Rig | null> =>
+  page.evaluate(() => (window as unknown as { __ASSEMBLY_RIG__?: Rig }).__ASSEMBLY_RIG__ ?? null)
+
+/** The sizes of the formation being left and the one approached, after the slot mapping the shader does. */
+const sides = (r: Rig): { from: number; to: number } => (r.swap < 0.5 ? { from: r.fadeA, to: r.fadeB } : { from: r.fadeB, to: r.fadeA })
+
 const heroOpacity = (page: Page): Promise<number> =>
   page.evaluate(() => Number(document.querySelector<HTMLCanvasElement>('canvas[data-hero-canvas]')?.style.opacity ?? 'NaN'))
 
@@ -55,6 +73,13 @@ test('the monolith disperses into the stream: cubes stay out at the top, grow as
   await expect.poll(async () => (await cubes(page)).count, { timeout: 30_000 }).toBeGreaterThan(0)
   const mid = await cubes(page)
   expect(mid.fade).toEqual([0, 1])
+  // What the shader was actually handed, after the A/B slot mapping: the monolith side 0, the stream side whole, the
+  // film cue on, and the procedural shell and its light off.
+  await expect.poll(async () => (await rig(page))?.film, { timeout: 30_000 }).toBe(1)
+  const r = (await rig(page)) as Rig
+  expect(sides(r)).toEqual({ from: 0, to: 1 })
+  expect(r.shell).toBe(0)
+  expect(r.light).toBe(0)
   // The engine's layer is still painting and has started to fade, so the dust and the cubes share the band.
   expect(await heroOpacity(page)).toBeGreaterThan(0)
 
@@ -63,6 +88,10 @@ test('the monolith disperses into the stream: cubes stay out at the top, grow as
   await scrollToViewports(page, 1.7)
   await expect.poll(() => heroOpacity(page), { timeout: 30_000 }).toBe(0)
   await expect.poll(async () => (await cubes(page)).fade, { timeout: 30_000 }).toEqual([1, 1])
+  // The engine is paused out of view but still owns the hand-over: the film stays on, the shell stays gone.
+  const after = (await rig(page)) as Rig
+  expect(after.film).toBe(1)
+  expect(after.shell).toBe(0)
 
   // Back up: it reassembles (the engine returns, the cubes are gone from the hero again).
   await scrollToViewports(page, 0)
@@ -90,25 +119,31 @@ test('the procedural cube monolith never shows next to the engine: while live, t
   expect([...seen]).toEqual(['[0,1]'])
 })
 
-test('scroll speed surges the reflections and is exactly 0 again at rest', async ({ page }) => {
+test('scroll speed surges the reflections inside the hero band and the weight is exactly 0 again at rest', async ({ page }) => {
   // A 2560-wide software canvas draws less than two frames a second on a CI runner, and the surge (correctly) reads a
   // gap above half a second as "not scrolling". The rule itself is unit-tested; this is the wiring on realistic sizes.
   test.skip((page.viewportSize()?.width ?? 0) > 2000, 'software GL at ultrawide is too slow to sample a speed')
   await page.goto('/?hero=a&tier=1')
   await page.waitForSelector(LIVE, { timeout: 90_000 })
   expect(await surge(page)).toBe(0)
-  await page.mouse.move(400, 400)
-  // Software GL draws a frame every few hundred milliseconds, and the surge ignores a gap above half a second or a
-  // jump of a whole viewport between two frames. So scroll steadily and briskly rather than in one burst.
-  for (let i = 0; i < 40; i += 1) {
-    await page.mouse.wheel(0, 140)
-    await page.waitForTimeout(80)
+  expect(await weight(page)).toBe(0)
+  // Stay inside the hero band (the engine pauses at 0.9 viewports): 24 steps of 1.5 percent of a viewport, 60 ms
+  // apart, is about 0.4 viewports at 0.25 viewports a second, above the dead zone and below the engine's pause.
+  const step = await page.evaluate(() => Math.round(window.innerHeight * 0.015))
+  let peak = 0
+  for (let i = 0; i < 24; i += 1) {
+    await page.mouse.wheel(0, step)
+    await page.waitForTimeout(60)
+    peak = Math.max(peak, await weight(page))
   }
+  expect(await page.evaluate(() => window.scrollY)).toBeLessThan((await page.evaluate(() => window.innerHeight)) * 0.9)
   await expect.poll(() => surge(page), { timeout: 20_000 }).toBeGreaterThan(0)
-  // At rest the integral stops growing: two reads a second apart agree.
-  await page.waitForTimeout(2500)
+  expect(peak).toBeGreaterThan(0)
+  // At rest the weight is exactly 0 and the integral stops growing.
+  await expect.poll(() => weight(page), { timeout: 20_000 }).toBe(0)
   const a = await surge(page)
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(1500)
+  expect(await weight(page)).toBe(0)
   expect(await surge(page)).toBe(a)
 })
 
@@ -150,14 +185,36 @@ test('Save-Data keeps the poster and never runs the hand-over', async ({ page })
   expect((await cubes(page)).fade).toBeNull()
 })
 
-test('the lowest tier (a device that gave up) keeps the poster: ?tier=0 never runs the hand-over', async ({ page }) => {
+test('the lowest tier (a device that gave up) keeps the poster: ?tier=0 never runs the hand-over and the cubes own the hero', async ({ page }) => {
   await page.goto('/?hero=a&tier=0')
-  await page.waitForTimeout(6000)
-  await expect(page.locator('html')).not.toHaveAttribute('data-hero', 'live')
+  await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster', { timeout: 30_000 })
   await expect(page.locator('canvas[data-hero-canvas]')).toHaveCount(0)
-  // The cubes (the 3D layer is separate from the hero engine) are untouched: every fade is 1.
-  const { fade } = await cubes(page)
-  if (fade !== null) expect(fade).toEqual([1, 1])
+  // The 3D layer is separate from the hero engine and must report, or this fails: every fade is 1, the film is off,
+  // and the cubes' own monolith draws.
+  await expect.poll(async () => (await cubes(page)).fade, { timeout: 60_000 }).toEqual([1, 1])
+  await expect.poll(async () => (await cubes(page)).count, { timeout: 30_000 }).toBeGreaterThan(0)
+  expect((await rig(page))?.film).toBe(0)
+})
+
+test('a give-up in mid-session hands the hero back: the own cube monolith returns and the film cue is off', async ({ page }) => {
+  await page.goto('/?hero=a&tier=1')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  await expect.poll(async () => (await cubes(page)).count, { timeout: 60_000 }).toBe(0)
+  await expect.poll(async () => (await rig(page))?.film, { timeout: 30_000 }).toBe(1)
+  const fire = (type: 'webglcontextlost' | 'webglcontextrestored'): Promise<void> =>
+    page.evaluate((name) => {
+      document.querySelector('canvas[data-hero-canvas]')?.dispatchEvent(new Event(name, { cancelable: true }))
+    }, type)
+  await fire('webglcontextlost')
+  await fire('webglcontextrestored')
+  await page.waitForSelector(LIVE, { timeout: 90_000 })
+  await fire('webglcontextlost')
+  await expect(page.locator('html')).toHaveAttribute('data-hero-reason', /^lost-x2/, { timeout: 30_000 })
+  // The procedural monolith is the hero again: cubes instanced, nothing faded, no film, and the shell is back.
+  await expect.poll(async () => (await cubes(page)).count, { timeout: 60_000 }).toBeGreaterThan(0)
+  await expect.poll(async () => (await cubes(page)).fade, { timeout: 30_000 }).toEqual([1, 1])
+  await expect.poll(async () => (await rig(page))?.film, { timeout: 30_000 }).toBe(0)
+  await expect.poll(async () => (await rig(page))?.shell, { timeout: 30_000 }).toBeGreaterThan(0)
 })
 
 test('?hero=off wins over ?hero=a, in either order, and leaves the page as the default build has it', async ({ page }) => {
@@ -181,6 +238,8 @@ test('the default build is unchanged: no flag, no engine, no hand-over, the cube
   await expect(page.locator('html')).toHaveAttribute('data-hero-mode', 'off')
   await expect(page.locator('html')).not.toHaveAttribute('data-hero', /.+/)
   await expect.poll(async () => (await cubes(page)).fade, { timeout: 30_000 }).toEqual([1, 1])
-  // The cubes' own monolith draws at the top (3000 or the reduced count), not zero.
+  // The cubes' own monolith draws at the top (3000 or the reduced count), not zero, with no film cue and the shell on.
   expect((await cubes(page)).count).toBeGreaterThan(0)
+  expect((await rig(page))?.film).toBe(0)
+  await expect.poll(async () => (await rig(page))?.shell, { timeout: 30_000 }).toBeGreaterThan(0)
 })
