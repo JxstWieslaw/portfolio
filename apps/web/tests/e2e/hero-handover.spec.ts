@@ -51,7 +51,7 @@ test('the monolith disperses into the stream: cubes stay out at the top, grow as
   expect(await heroOpacity(page)).toBeGreaterThan(0.9)
 
   // Into the hero-to-proof band: the monolith side stays at 0, the stream side is whole, cubes are instanced.
-  await scrollToViewports(page, 0.45)
+  await scrollToViewports(page, 0.65)
   await expect.poll(async () => (await cubes(page)).count, { timeout: 30_000 }).toBeGreaterThan(0)
   const mid = await cubes(page)
   expect(mid.fade).toEqual([0, 1])
@@ -75,7 +75,8 @@ test('the procedural cube monolith never shows next to the engine: while live, t
   await page.waitForSelector(LIVE, { timeout: 90_000 })
   await expect.poll(async () => (await cubes(page)).fade, { timeout: 60_000 }).not.toBeNull()
   const seen = new Set<string>()
-  for (const v of [0, 0.15, 0.3, 0.45, 0.6, 0.75]) {
+  // The band starts about 0.45 viewports down at 1440x900 and the engine's layer is gone by about 0.9.
+  for (const v of [0, 0.3, 0.55, 0.65, 0.75, 0.85]) {
     await scrollToViewports(page, v)
     await page.waitForTimeout(700)
     const { fade, count } = await cubes(page)
@@ -84,7 +85,8 @@ test('the procedural cube monolith never shows next to the engine: while live, t
       seen.add(JSON.stringify(fade))
     }
   }
-  for (const entry of seen) expect(entry).toBe('[0,1]')
+  // Not vacuous: at least one sampled frame had cubes instanced and the engine painting.
+  expect([...seen]).toEqual(['[0,1]'])
 })
 
 test('scroll speed surges the reflections and is exactly 0 again at rest', async ({ page }) => {
