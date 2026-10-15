@@ -58,8 +58,9 @@ test('the monolith disperses into the stream: cubes stay out at the top, grow as
   // The engine's layer is still painting and has started to fade, so the dust and the cubes share the band.
   expect(await heroOpacity(page)).toBeGreaterThan(0)
 
-  // Past the band: the engine's layer is gone and the stream stands on its own at full size.
-  await scrollToViewports(page, 1.3)
+  // Past the band (it ends about 1.15 viewports down on a phone): the engine's layer is gone and the stream stands
+  // on its own at full size.
+  await scrollToViewports(page, 1.7)
   await expect.poll(() => heroOpacity(page), { timeout: 30_000 }).toBe(0)
   await expect.poll(async () => (await cubes(page)).fade, { timeout: 30_000 }).toEqual([1, 1])
 
@@ -90,13 +91,18 @@ test('the procedural cube monolith never shows next to the engine: while live, t
 })
 
 test('scroll speed surges the reflections and is exactly 0 again at rest', async ({ page }) => {
+  // A 2560-wide software canvas draws less than two frames a second on a CI runner, and the surge (correctly) reads a
+  // gap above half a second as "not scrolling". The rule itself is unit-tested; this is the wiring on realistic sizes.
+  test.skip((page.viewportSize()?.width ?? 0) > 2000, 'software GL at ultrawide is too slow to sample a speed')
   await page.goto('/?hero=a&tier=1')
   await page.waitForSelector(LIVE, { timeout: 90_000 })
   expect(await surge(page)).toBe(0)
   await page.mouse.move(400, 400)
-  for (let i = 0; i < 8; i += 1) {
-    await page.mouse.wheel(0, 220)
-    await page.waitForTimeout(50)
+  // Software GL draws a frame every few hundred milliseconds, and the surge ignores a gap above half a second or a
+  // jump of a whole viewport between two frames. So scroll steadily and briskly rather than in one burst.
+  for (let i = 0; i < 40; i += 1) {
+    await page.mouse.wheel(0, 140)
+    await page.waitForTimeout(80)
   }
   await expect.poll(() => surge(page), { timeout: 20_000 }).toBeGreaterThan(0)
   // At rest the integral stops growing: two reads a second apart agree.
