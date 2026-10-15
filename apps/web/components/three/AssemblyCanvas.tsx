@@ -700,7 +700,10 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     // The hero engine draws the hero: no cubes while the view is the hero (spec 4.4).
     const inHero = heroOwns && (from === 'cloud' ? to === 'monolith' : from === 'monolith' && mix === 0)
     geometry.instanceCount = inHero ? 0 : Math.max(a.count, b.count)
-    if (DEBUG_HOOK) window.__ASSEMBLY_CUBES__ = geometry.instanceCount
+    if (DEBUG_HOOK) {
+      window.__ASSEMBLY_CUBES__ = geometry.instanceCount
+      window.__ASSEMBLY_FADE__ = [fades.from, fades.to]
+    }
 
     // The artefact: ignites 0.6 s into the assembly and belongs to the hero,
     // so it fades with the monolith's share of the morph; it returns as the

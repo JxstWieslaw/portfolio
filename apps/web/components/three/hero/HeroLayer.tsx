@@ -39,6 +39,8 @@ interface HeroSeam {
   readonly tier: number
   readonly lost: number
   readonly ready: boolean
+  /** The integrated scroll speed driving the reflection surge, seconds; 0 at rest. */
+  readonly surge: number
   /** Renders a deterministic still: the clock stops at `t` and the assembly is `s`. */
   setFreeze(t: number, s: number): void
 }
@@ -192,6 +194,7 @@ export class HeroController {
         tier: { enumerable: true, get: (): number => this.tier },
         lost: { enumerable: true, get: (): number => this.lostCount },
         ready: { enumerable: true, get: (): boolean => this.firstShown },
+        surge: { enumerable: true, get: (): number => this.surge.surge },
         setFreeze: {
           value: (t: number, s: number): void => {
             this.freeze = { t, s }

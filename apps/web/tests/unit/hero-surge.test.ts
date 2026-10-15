@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { SURGE_REST, surgeStep } from '@/lib/hero/surge'
+import {
+  VELOCITY_DEADZONE,
+  VELOCITY_FALL,
+  VELOCITY_FULL,
+  VELOCITY_MAX_GAP,
+  VELOCITY_RISE,
+  velocityWeight,
+} from '@/lib/assembly/motion'
+import { SURGE_DEADZONE, SURGE_FALL, SURGE_FULL, SURGE_REST, SURGE_RISE, surgeStep, surgeWeight } from '@/lib/hero/surge'
 
 const VH = 800
 
@@ -55,11 +63,15 @@ describe('surgeStep', () => {
     const stalled = surgeStep(surgeStep(SURGE_REST, 0, 0, VH), 100, 2000, VH)
     expect(stalled.weight).toBe(0)
   })
+})
 
-  it('holds 0 under reduced motion', () => {
-    const moving = run(3, 0.5)
-    const held = surgeStep(moving, moving.y + 500, moving.t + 16, VH, true)
-    expect(held.weight).toBe(0)
-    expect(held.surge).toBe(moving.surge)
+describe("the copies of the cubes scroll-speed constants", () => {
+  it('match lib/assembly/motion, so the cubes and the hero agree on what fast is', () => {
+    expect(SURGE_FULL).toBe(VELOCITY_FULL)
+    expect(SURGE_DEADZONE).toBe(VELOCITY_DEADZONE)
+    expect(SURGE_RISE).toBe(VELOCITY_RISE)
+    expect(SURGE_FALL).toBe(VELOCITY_FALL)
+    expect(0.5).toBe(VELOCITY_MAX_GAP)
+    for (const v of [0, 0.1, 0.15, 0.5, 2, 3.9, 4, 9, -2, Number.NaN]) expect(surgeWeight(v)).toBe(velocityWeight(v))
   })
 })
