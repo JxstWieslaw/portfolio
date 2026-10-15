@@ -201,7 +201,8 @@ const HERO_CSS = `
    Phones: the short standfirst, so the CTAs sit above the fold. 640px is Tailwind's sm. */
 @media (width < 640px) {
   html[data-hero-mode='on'] .hero-sub-full { display: none; }
-  html[data-hero-mode='on'] .hero-sub-short { display: inline; }
+  /* !important: Tailwind's preflight sets [hidden] to display none !important, and the hidden attribute is the no-stylesheet default. */
+  html[data-hero-mode='on'] .hero-sub-short { display: inline !important; }
 }
 
 /* Phones only: a lighter glass so the monolith reads through the panel as it scrolls up over it. The blur stays; only
