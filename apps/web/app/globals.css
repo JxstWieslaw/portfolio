@@ -801,7 +801,6 @@
     padding: 24px;
     background: rgba(17, 22, 29, 0.86);
     backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
   }
 
   &[data-variant='proof'] > dt {
@@ -867,12 +866,17 @@
 /* --- GlassCard (design-foundations § 3.1) -------------------------------- */
 
 /* The recipe, including the signature lit top edge that overrides the
-   four-sided --line-1 border. */
+   four-sided --line-1 border.
+
+   Write backdrop-filter UNPREFIXED, never next to a hand-written
+   -webkit-backdrop-filter: lightningcss (Tailwind v4) then keeps only the
+   prefixed one and Chromium computes backdrop-filter: none. It adds the
+   -webkit- fallback itself from the Safari 16.4 target. Guarded by
+   tests/e2e/glass.spec.ts. */
 @utility glass {
   position: relative;
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--line-1);
   border-top: 1px solid var(--glass-highlight);
   border-radius: var(--r-panel);
@@ -958,7 +962,6 @@
   padding: 24px;
   background: rgba(17, 22, 29, 0.86);
   backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   transition: background var(--d-2) var(--ease);
 
   /* The process rail measures 0.88 where the proof strip measures 0.86. */
@@ -987,7 +990,6 @@
   flex-direction: column;
   background: rgba(17, 22, 29, 0.62);
   backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px dashed var(--line-2);
   border-radius: var(--r-panel);
   color: var(--fg-2);
