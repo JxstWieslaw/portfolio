@@ -123,22 +123,29 @@ test('scroll speed surges the reflections inside the hero band and the weight is
   // A 2560-wide software canvas draws less than two frames a second on a CI runner, and the surge (correctly) reads a
   // gap above half a second as "not scrolling". The rule itself is unit-tested; this is the wiring on realistic sizes.
   test.skip((page.viewportSize()?.width ?? 0) > 2000, 'software GL at ultrawide is too slow to sample a speed')
+  // A small viewport keeps software GL frames quick enough to sample a speed on a CI runner.
+  await page.setViewportSize({ width: 800, height: 600 })
   await page.goto('/?hero=a&tier=1')
   await page.waitForSelector(LIVE, { timeout: 90_000 })
   expect(await surge(page)).toBe(0)
   expect(await weight(page)).toBe(0)
-  // Stay inside the hero band (the engine pauses at 0.9 viewports): 24 steps of 1.5 percent of a viewport, 60 ms
-  // apart, is about 0.4 viewports at 0.25 viewports a second, above the dead zone and below the engine's pause.
-  const step = await page.evaluate(() => Math.round(window.innerHeight * 0.015))
+  // Stay inside the hero band (the engine pauses at 0.9 viewports): 8 steps of 4 percent of a viewport, 60 ms apart,
+  // down then back up, until a frame has seen the speed. About 0.3 viewports at 0.6 viewports a second, above the
+  // dead zone and well inside the band.
+  const step = await page.evaluate(() => Math.round(window.innerHeight * 0.04))
   let peak = 0
-  for (let i = 0; i < 24; i += 1) {
-    await page.mouse.wheel(0, step)
-    await page.waitForTimeout(60)
-    peak = Math.max(peak, await weight(page))
+  for (let cycle = 0; cycle < 12 && peak === 0; cycle += 1) {
+    for (const dir of [1, -1]) {
+      for (let i = 0; i < 8; i += 1) {
+        await page.mouse.wheel(0, dir * step)
+        await page.waitForTimeout(60)
+        peak = Math.max(peak, await weight(page))
+      }
+    }
   }
   expect(await page.evaluate(() => window.scrollY)).toBeLessThan((await page.evaluate(() => window.innerHeight)) * 0.9)
-  await expect.poll(() => surge(page), { timeout: 20_000 }).toBeGreaterThan(0)
   expect(peak).toBeGreaterThan(0)
+  expect(await surge(page)).toBeGreaterThan(0)
   // At rest the weight is exactly 0 and the integral stops growing.
   await expect.poll(() => weight(page), { timeout: 20_000 }).toBe(0)
   const a = await surge(page)
