@@ -120,6 +120,8 @@ uniform float uAttractRadius;
 uniform float uAttractPull;
 uniform int uAttractCount;
 uniform float uVelocity;
+uniform float uFadeA;
+uniform float uFadeB;
 
 varying vec3 vInstanceColor;
 
@@ -239,6 +241,8 @@ void main() {
   }
 
   float edge = mix(fromEdge, toEdge, m) * (1.0 + 0.25 * envelope);
+  // The hand-over fade. Guarded, so with both fades at 1 (every visit without the hero engine) the edge is untouched.
+  if (uFadeA < 1.0 || uFadeB < 1.0) edge *= mix(mix(uFadeA, uFadeB, uSwap), mix(uFadeB, uFadeA, uSwap), m);
   // Self-rotation: half a turn across the morph plus a faint idle twist.
   vec3 axis = hashAxis(aSeed);
   float angle = m * 3.14159265 + uTime * 0.15 * aSeed;
@@ -253,9 +257,38 @@ void main() {
 }
 `
 
+/**
+ * The hero's thin-film cue on the cubes (spec § 4.5): a violet, cyan and magenta cycle, the engine's own three stops,
+ * added at glancing angles so the page reads as one material. It runs only while `uFilm` is 1, which is only while the
+ * hero engine owns the hero: every other visit gets the instance colour and nothing else, byte for byte. The facet
+ * normal comes from screen derivatives of `vViewPosition` (the standard material declares it; the base material has not
+ * computed its own normal when this runs), with a guard for a degenerate facet.
+ *
+ * Exported as two chunks so a test can take them out and prove the rest of the program is develop's.
+ */
+export const FILM_DECL = `uniform float uFilm;
+vec3 film(float h) {
+  h = fract(h) * 3.0;
+  float f = smoothstep(0.0, 1.0, fract(h));
+  vec3 a = vec3(.386, .258, .956);
+  vec3 b = vec3(.136, .807, .947);
+  vec3 c = vec3(.694, .061, .863);
+  return h < 1.0 ? mix(a, b, f) : h < 2.0 ? mix(b, c, f) : mix(c, a, f);
+}
+`
+
+export const FILM_APPLY = `  if (uFilm > 0.0) {
+    vec3 c = cross(dFdx(vViewPosition), dFdy(vViewPosition));
+    vec3 n = length(c) > 1e-8 ? normalize(c) : vec3(0.0, 0.0, 1.0);
+    float ndv = abs(dot(n, normalize(vViewPosition)));
+    float fres = pow(1.0 - ndv, 3.2);
+    csm_DiffuseColor.rgb += film(0.95 * (1.0 - ndv) + 0.35 + 0.35 * n.x) * fres * 0.3 * uFilm;
+  }
+`
+
 export const FRAGMENT = /* glsl */ `
 varying vec3 vInstanceColor;
-void main() {
+${FILM_DECL}void main() {
   csm_DiffuseColor = vec4(vInstanceColor, 1.0);
-}
+${FILM_APPLY}}
 `

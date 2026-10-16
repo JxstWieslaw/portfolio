@@ -84,6 +84,9 @@ test.describe('the poster as the hero (?hero=a without the engine)', () => {
     const heroOff = await page.locator('#hero').boundingBox()
 
     await page.goto('/?hero=a&nogl=1')
+    // The phone copy variant (monolith on, below 640px) is a deliberate height change of its own and has its own spec;
+    // this test is about the poster, so both pages are compared with the same standfirst.
+    await page.addStyleTag({ content: '.hero-sub-full{display:inline!important}.hero-sub-short{display:none!important}' })
     const poster = page.locator(POSTER)
     await expect(poster).toBeVisible()
     expect(await poster.evaluate((el) => getComputedStyle(el).position)).toBe('fixed')

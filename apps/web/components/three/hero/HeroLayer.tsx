@@ -5,6 +5,7 @@ import { readCapabilities, resolveRung } from '@/lib/formations/fallback'
 import { assemblyClock } from '@/lib/hero/clock'
 import { dampFrame, freeRect, heroFrame, type HeroFrame } from '@/lib/hero/frame'
 import { governorStep, initialGovernor, MAX_SAMPLE_MS, percentile, type GovernorPhase, type GovernorState } from '@/lib/hero/governor'
+import { SURGE_REST, surgeStep, type SurgeState } from '@/lib/hero/surge'
 import { assemblyS, cameraFor, heroWeight, loadAt, LOAD_SECONDS, scrollP, type Pointer } from '@/lib/hero/progress'
 import { initialTier, TIERS, tierOverride, type HeroTier } from '@/lib/hero/tiers'
 import { HeroEngine, type EngineOptions, type EngineTier } from './HeroEngine'
@@ -38,6 +39,10 @@ interface HeroSeam {
   readonly tier: number
   readonly lost: number
   readonly ready: boolean
+  /** The integrated scroll speed driving the reflection surge, seconds; grows only while the page moves. */
+  readonly surge: number
+  /** The damped scroll-speed weight, 0..1: exactly 0 at rest. */
+  readonly weight: number
   /** Renders a deterministic still: the clock stops at `t` and the assembly is `s`. */
   setFreeze(t: number, s: number): void
 }
@@ -139,6 +144,7 @@ export class HeroController {
   private pointer: Pointer = { x: 0.5, y: 0.5, active: 0 }
   private pointerGoal = { x: 0.5, y: 0.5, on: 0 }
   private lastOpacity = -1
+  private surge: SurgeState = SURGE_REST
   private panelObserver: ResizeObserver | null = null
 
   constructor(
@@ -190,6 +196,8 @@ export class HeroController {
         tier: { enumerable: true, get: (): number => this.tier },
         lost: { enumerable: true, get: (): number => this.lostCount },
         ready: { enumerable: true, get: (): boolean => this.firstShown },
+        surge: { enumerable: true, get: (): number => this.surge.surge },
+        weight: { enumerable: true, get: (): number => this.surge.weight },
         setFreeze: {
           value: (t: number, s: number): void => {
             this.freeze = { t, s }
@@ -325,6 +333,8 @@ export class HeroController {
   private teardown(canvas: boolean, release = true): void {
     cancelAnimationFrame(this.raf)
     this.raf = 0
+    // A fresh engine starts from rest: no ghost speed on the first frame after a wake.
+    this.surge = SURGE_REST
     window.clearTimeout(this.releaseTimer)
     window.clearTimeout(this.idleTimer)
     window.clearTimeout(this.restoreTimer)
@@ -417,7 +427,9 @@ export class HeroController {
 
     const time = this.freeze ? this.freeze.t : elapsed + 1
     const s = this.freeze ? this.freeze.s : assemblyS(loadAt(elapsed), p)
-    const drawn = engine.render({ time, s, camera: cameraFor(s, p, time, this.pointer), frame: this.frame, grain: this.grain })
+    // Scroll speed surges the reflections and the dust spin; a frozen still has none.
+    this.surge = this.freeze ? SURGE_REST : surgeStep(this.surge, window.scrollY, now, window.innerHeight)
+    const drawn = engine.render({ time, s, camera: cameraFor(s, p, time, this.pointer), frame: this.frame, grain: this.grain, surge: this.surge.surge })
     if (!drawn) {
       // A lost context is the loss handler's business; anything else means we would be reporting a dead hero as live.
       if (!engine.isLost()) this.giveUp('render')
@@ -486,6 +498,7 @@ export class HeroController {
   private pause(): void {
     this.status = 'paused'
     this.weight = 0
+    this.surge = { ...SURGE_REST, surge: this.surge.surge }
     this.setOpacity(0)
     window.clearTimeout(this.releaseTimer)
     this.releaseTimer = window.setTimeout(() => {

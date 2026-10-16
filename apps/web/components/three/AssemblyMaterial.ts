@@ -48,6 +48,11 @@ export interface AssemblyUniforms {
   readonly uAttractCount: { value: number }
   /** Damped scroll speed, 0..1: stretches each cube along the scroll axis. Exactly 0 at rest (animation § 6, A2). */
   readonly uVelocity: { value: number }
+  /** Size multipliers of the A and B slots, 0..1: the hero hand-over grows the stream out of the dispersing monolith. */
+  readonly uFadeA: { value: number }
+  readonly uFadeB: { value: number }
+  /** 1 while the hero engine owns the hero: the cubes carry its thin-film cue. 0 everywhere else (byte-identical output). */
+  readonly uFilm: { value: number }
 }
 
 /** The 2D painter's ramp, sRGB; the shader converts to linear. */
@@ -82,6 +87,9 @@ export function createAssemblyUniforms(): AssemblyUniforms {
     uAttractPull: { value: 0 },
     uAttractCount: { value: 0 },
     uVelocity: { value: 0 },
+    uFadeA: { value: 1 },
+    uFadeB: { value: 1 },
+    uFilm: { value: 0 },
   }
 }
 

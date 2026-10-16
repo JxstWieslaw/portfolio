@@ -33,6 +33,17 @@ declare global {
     __ASSEMBLY_VELOCITY__?: () => number
     /** How many cubes the last drawn frame instanced (0 while the hero engine owns the hero). Same switch and guard. */
     __ASSEMBLY_CUBES__?: number
+    /** The hand-over's size multipliers of the two cube slots (0 = the monolith side while the engine owns the hero). Same switch and guard. */
+    __ASSEMBLY_FADE__?: readonly [number, number]
+    /** What the last cube frame actually handed the GPU after slot mapping, and the procedural shell. Same switch and guard. */
+    __ASSEMBLY_RIG__?: {
+      readonly fadeA: number
+      readonly fadeB: number
+      readonly swap: number
+      readonly film: number
+      readonly shell: number
+      readonly light: number
+    }
   }
 }
 

@@ -20,6 +20,7 @@ const COMMON = `#version 300 es
 precision highp float;
 precision highp int;
 uniform vec2 uRes;uniform float uTime;uniform float uS;uniform vec2 uCenter;uniform float uZoom;uniform float uAspect;
+uniform float uSurge;
 uniform vec3 uRo;uniform vec3 uUu;uniform vec3 uVv;uniform vec3 uWw;uniform vec4 uP;uniform float uMirror;uniform float uHead;uniform float uMixRefl;
 const vec3 BG=vec3(.004,.0056,.0086);const vec3 VIOL=vec3(.202,.042,.846);const vec3 VIOLL=vec3(.386,.258,.956);
 const vec3 CYANL=vec3(.136,.807,.947);const vec3 MAG=vec3(.694,.061,.863);
@@ -38,7 +39,7 @@ return vec4(uP.x*dot(r,uUu)+uP.z*d,uP.y*dot(r,uVv)+uP.w*d,((F+N)*d-2.*F*N)/(F-N)
 vec3 mirrorP(vec3 p){return vec3(p.x,-3.-p.y,p.z);}`
 
 const ENV = `vec3 envA(vec3 d){
-d.xz=r2(d.xz,uTime*.035);
+d.xz=r2(d.xz,uTime*.035+uSurge*.6);
 float y=d.y;float az=atan(d.x,d.z);
 vec3 c=mix(vec3(.002,.003,.007),vec3(.012,.009,.042),smoothstep(-.3,.8,y));
 c+=VIOL*.2*exp(-abs(y-.02)*8.);
@@ -85,7 +86,7 @@ float sz=inside>.5?mix(.01+.014*h.z,.093,t):mix(.026*(.4+h.z),0.,smoothstep(0.,.
 float room=max(.092-sz*1.75,0.);
 vec3 off=(hash33(id+3.1)-.5)*2.*room*(inside>.5?(1.-t):1.);
 off+=vec3(0.,sin(uTime*.4+h.x*20.),0.)*.01*(1.-t);
-float spin=(1.-t)*(h.x-.5)*uTime*.8;
+float spin=(1.-t)*(h.x-.5)*(uTime+uSurge*1.5)*.8;
 float a=h.z*6.283+spin,b=h.y*6.283+spin*.7;
 vec3 v=aP*sz;v.xy=r2(v.xy,-b);v.xz=r2(v.xz,-a);
 N.xy=r2(N.xy,-b);N.xz=r2(N.xz,-a);

@@ -168,11 +168,48 @@ describe('Hero — copy', () => {
         name: 'I lead teams that ship production software — and I make the web move.',
       })
     ).toBeInTheDocument()
-    expect(screen.getByText(/Hospital operations, learning platforms/)).toBeInTheDocument()
-    expect(screen.getByText(/real-time 3D on the web that holds frame rate/)).toBeInTheDocument()
+    // The full standfirst and its phone variant share one paragraph; both carry the domains and the 3D claim.
+    expect(screen.getAllByText(/Hospital operations, learning platforms/)).toHaveLength(2)
+    expect(screen.getAllByText(/real-time 3D on the web that holds frame rate/)).toHaveLength(2)
 
     expect(screen.getByRole('link', { name: 'See the work' })).toHaveAttribute('href', '#work')
     expect(screen.getByRole('link', { name: "Let's talk" })).toHaveAttribute('href', '#contact')
+  })
+
+  it('carries a shorter standfirst for phones inside the one hero-sub paragraph', () => {
+    const { container } = render(<Hero kpis={HERO_KPIS} />)
+    const paragraphs = container.querySelectorAll('.hero-sub')
+    expect(paragraphs).toHaveLength(1)
+    const full = paragraphs[0]?.querySelector('.hero-sub-full')?.textContent ?? ''
+    const short = paragraphs[0]?.querySelector('.hero-sub-short')?.textContent ?? ''
+    expect(full).toBe(HERO_COPY.sub)
+    expect(short).toBe(HERO_COPY.subShort)
+    expect(short.length).toBeLessThan(full.length * 0.6)
+    // Same voice: plain sentences, no em dash.
+    expect(short).not.toContain('—')
+    // CSS: the short one shows below sm (640px) and the full one from sm up.
+    const css = heroCss()
+    expect(css).toContain('@media (width < 640px)')
+    expect(blockAfter(css, '.hero-sub-short')).toContain('display: none')
+    // Only while the monolith is the hero: a default visit never swaps the copy.
+    expect(css).toContain("html[data-hero-mode='on'] .hero-sub-full { display: none; }")
+    expect(css).toContain("html[data-hero-mode='on'] .hero-sub-short { display: inline; }")
+    // No stylesheet (reader mode, text only): a space separates the two, so they are never run together.
+    expect(paragraphs[0]?.textContent).toBe(`${HERO_COPY.sub} ${HERO_COPY.subShort}`)
+  })
+
+  it("shows a caller's own sub at every width (no short variant is invented for it)", () => {
+    const { container } = render(<Hero sub="Custom sub" kpis={HERO_KPIS} />)
+    expect(container.querySelector('.hero-sub-short')).toBeNull()
+    expect(container.querySelector('.hero-sub-full')).toBeNull()
+    expect(container.querySelector('.hero-sub')?.textContent).toBe('Custom sub')
+  })
+
+  it('lightens the glass on phones only, leaving the blur and the 768px recipe alone', () => {
+    const css = heroCss()
+    expect(css).toContain('@media (width < 768px)')
+    expect(css).toContain("html[data-hero-mode='on'] .hero-panel [data-hero-panel] { --glass-bg: rgba(17, 22, 29, 0.6); }")
+    expect(css).not.toContain('backdrop-filter')
   })
 
   it('never ships the export copy the owner rejected', () => {
