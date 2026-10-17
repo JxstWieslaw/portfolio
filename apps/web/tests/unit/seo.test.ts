@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { SITE_DESCRIPTION, SITE_TITLE, canonical, personJsonLd, siteUrl } from '@/lib/seo'
+import { SITE_DESCRIPTION, SITE_TITLE, canonical, homeJsonLd, jsonLdScript, personJsonLd, siteUrl } from '@/lib/seo'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -81,5 +81,28 @@ describe('personJsonLd', () => {
 
   it('serialises without throwing', () => {
     expect(() => JSON.stringify(ld)).not.toThrow()
+  })
+})
+
+describe('homeJsonLd', () => {
+  const graph = homeJsonLd()['@graph'] as Record<string, unknown>[]
+
+  it('is a Person and a WebSite that reference each other', () => {
+    const person = graph.find((node) => node['@type'] === 'Person')
+    const site = graph.find((node) => node['@type'] === 'WebSite')
+    expect(person?.['@id']).toBeTruthy()
+    expect(site?.publisher).toEqual({ '@id': person?.['@id'] })
+  })
+
+  it('takes knowsAbout from the skills content, not from hand-written strings', () => {
+    const person = personJsonLd()
+    expect(person.knowsAbout).toEqual(expect.arrayContaining(['TypeScript', 'Next.js', 'WebGL']))
+    expect(new Set(person.knowsAbout as string[]).size).toBe((person.knowsAbout as string[]).length)
+  })
+
+  it('escapes < so the payload cannot close its script tag', () => {
+    const script = jsonLdScript({ name: '</script><b>' })
+    expect(script).not.toContain('<')
+    expect(JSON.parse(script)).toEqual({ name: '</script><b>' })
   })
 })
