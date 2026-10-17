@@ -51,6 +51,9 @@ test.describe('JavaScript on, the engine kept away (?nogl=1)', () => {
     await expect(page.locator('html')).toHaveAttribute('data-hero', 'poster', { timeout: 20_000 })
 
     // The link preview is the same render, at the size the spec gives.
+    // The hero render replaces the static brand card: still exactly one of each.
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(1)
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveCount(1)
     const og = await page.locator('meta[property="og:image"]').getAttribute('content')
     expect(og).toMatch(/\/og\/hero\.[0-9a-f]{8}\.png$/)
     expect(await page.locator('meta[property="og:image:width"]').getAttribute('content')).toBe('1200')

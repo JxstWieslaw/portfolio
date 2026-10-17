@@ -41,7 +41,11 @@ test.describe('a default visit', () => {
     await page.waitForTimeout(1500)
     expect(seen.posters).toEqual([])
     // The hero render is never the preview when the monolith is not the hero; the static brand card always is.
-    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /brand\/og-default\.png$/)
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(1)
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveCount(1)
+    const og = await page.locator('meta[property="og:image"]').getAttribute('content')
+    expect(og).toMatch(/^https?:\/\/.+\/brand\/og-default\.png$/)
+    expect(og).not.toMatch(/\/og\/hero\./)
   })
 })
 
