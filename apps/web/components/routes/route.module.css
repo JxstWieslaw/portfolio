@@ -36,6 +36,11 @@
   color: var(--fg-2);
 }
 
+.crumbs li {
+  display: flex;
+  align-items: center;
+}
+
 .crumbs li + li::before {
   content: '/';
   margin-right: 0.5rem;

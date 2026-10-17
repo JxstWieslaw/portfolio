@@ -66,7 +66,7 @@ export default function AboutPage() {
             What I do
           </h2>
           <p className={styles.prose}>{profile.sub}</p>
-          <dl className={`${styles.facts} mt-8`}>
+          <dl className={styles.facts} style={{ marginTop: '2rem' }}>
             {profile.roles.map((role) => (
               <div key={`${role.org}-${role.title}`}>
                 <dt>{role.org}</dt>
