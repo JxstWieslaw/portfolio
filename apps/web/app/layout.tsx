@@ -94,7 +94,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Outside <main>, so the skip link genuinely skips it. */}
         <Nav socialLinks={profile.links} />
 
-        <main id="main">{children}</main>
+        {/* tabIndex -1: the skip link must move focus here, not just scroll; Safari and some screen readers otherwise keep it on the link. */}
+        <main id="main" tabIndex={-1} className="outline-none">
+          {children}
+        </main>
 
         <Footer name={profile.name} credits={getCredits()} />
       </body>

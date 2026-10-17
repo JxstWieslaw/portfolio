@@ -23,22 +23,22 @@ export default function NotFound() {
           <Button variant="primary" size="lg" href="/">
             Back to the home page
           </Button>
+          <nav aria-label="Sections of the home page" className="w-full">
+            <ul className="flex flex-wrap gap-3">
+              {NAV_ITEMS.map((item) => (
+                <li key={item.id}>
+                  {/* Absolute to the home page: the nav's own links are in-page anchors and would go nowhere from here. */}
+                  <Button href={`/${item.href}`} size="md">
+                    {item.label}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </>
       }
     >
       <p>The link may be out of date, or the address mistyped. The home page has everything, or you can go straight to a section.</p>
-      <nav aria-label="Sections of the home page" className="mt-6">
-        <ul className="flex flex-wrap gap-3">
-          {NAV_ITEMS.map((item) => (
-            <li key={item.id}>
-              {/* Absolute to the home page: the nav's own links are in-page anchors and would go nowhere from here. */}
-              <Button href={`/${item.href}`} size="md">
-                {item.label}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </nav>
     </StatusPage>
   )
 }
