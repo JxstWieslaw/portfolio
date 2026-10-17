@@ -193,6 +193,11 @@ export default async function CaseStudyPage({ params }: Props) {
               </li>
             ))}
           </ul>
+          <div className={`${styles.actions} mt-6`}>
+            <Button href="/work" variant="secondary">
+              All work
+            </Button>
+          </div>
         </section>
       </Container>
 

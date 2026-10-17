@@ -1,5 +1,6 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { Container } from '@/components/layout/Container'
@@ -7,7 +8,19 @@ import { Button } from '@/components/ui/Button'
 import { Eyebrow } from '@/components/ui/Eyebrow'
 import { Monogram } from '@/components/ui/Monogram'
 import { cx } from '@/lib/cx'
-import { HOME_HREF, NAV_CTA, NAV_ITEMS, type NavCta, type NavItem } from '@/lib/nav-items'
+import {
+  HOME_HREF,
+  NAV_CTA,
+  NAV_ITEMS,
+  NAV_PAGES,
+  type NavCta,
+  type NavItem,
+  type NavPage,
+  isHome,
+  navCurrentPage,
+  resolveHref,
+  resolveNavHref,
+} from '@/lib/nav-items'
 
 /**
  * The sticky header — design-home.md § 2, with the mobile half authored under
@@ -24,6 +37,12 @@ import { HOME_HREF, NAV_CTA, NAV_ITEMS, type NavCta, type NavItem } from '@/lib/
  * a bottom sheet — bottom-anchored rather than a top drawer so it stays
  * thumb-reachable on a tablet as well as a phone. The CTA never collapses: at
  * every width there is one destination reachable in a single tap.
+ *
+ * The header is route-aware (one `usePathname`, no other client dependency). On `/` the section anchors stay bare
+ * (`#lead`) and the scroll-spy runs exactly as before. On every other route they become root-relative (`/#lead`), the
+ * spy is not started (there are no sections to observe), and the items that are real pages carry
+ * `aria-current="page"`. Hierarchy: the bar is the six section pills plus `About`; `Resume` is secondary and appears
+ * in the sheet (and the footer) only.
  *
  * Two behaviours are guarded against scroll thrash. The condense listener is
  * passive and sets a boolean, so React bails out of every scroll event that
@@ -90,6 +109,7 @@ const NAV_PILL = [
   'hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--fg-0)]',
   'focus-visible:bg-[rgba(255,255,255,0.04)] focus-visible:text-[var(--fg-0)]',
   'aria-[current=true]:bg-[rgba(255,255,255,0.06)] aria-[current=true]:text-[var(--fg-0)]',
+  'aria-[current=page]:bg-[rgba(255,255,255,0.06)] aria-[current=page]:text-[var(--fg-0)]',
 ].join(' ')
 
 /** The same pill typography at a full-width, 56px row for thumbs. */
@@ -100,6 +120,7 @@ const SHEET_ROW = [
   'hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--fg-0)]',
   'focus-visible:bg-[rgba(255,255,255,0.04)] focus-visible:text-[var(--fg-0)]',
   'aria-[current=true]:bg-[rgba(255,255,255,0.06)] aria-[current=true]:text-[var(--fg-0)]',
+  'aria-[current=page]:bg-[rgba(255,255,255,0.06)] aria-[current=page]:text-[var(--fg-0)]',
 ].join(' ')
 
 /**
@@ -223,9 +244,16 @@ export type NavProps = {
    * test can prove the component is driven by data rather than by a literal.
    */
   items?: readonly NavItem[]
+  /**
+   * The standalone pages: `About` in the bar, `Resume` (flagged `secondary`) in the sheet only. Defaults to
+   * `NAV_PAGES`.
+   */
+  pages?: readonly NavPage[]
   cta?: NavCta
-  /** Where the monogram points. `app/layout.tsx` owns `<main id="main">`. */
+  /** Where the monogram points on `/`; off the home page it is always `/`. `app/layout.tsx` owns `<main id="main">`. */
   homeHref?: string
+  /** Overrides `usePathname()`. For tests and stories; the layout never passes it. */
+  pathname?: string
   /** Only ever the monogram's accessible name; `Monogram` owns the default. */
   name?: string
   /**
@@ -236,18 +264,30 @@ export type NavProps = {
   className?: string
 }
 
+const NO_SPY_ITEMS: readonly NavItem[] = []
 const NO_SOCIAL_LINKS: readonly NavSocialLink[] = []
 
 export function Nav({
   items = NAV_ITEMS,
+  pages = NAV_PAGES,
   cta = NAV_CTA,
   homeHref = HOME_HREF,
   name,
   socialLinks = NO_SOCIAL_LINKS,
+  pathname: pathnameOverride,
   className,
 }: NavProps) {
+  const routerPathname = usePathname()
+  const pathname = pathnameOverride ?? routerPathname
+  const onHome = isHome(pathname)
   const condensed = useCondensed()
-  const activeId = useActiveSection(items)
+  // Off the home page there are no sections to watch, so the observer is never created.
+  const activeId = useActiveSection(onHome ? items : NO_SPY_ITEMS)
+  const barPages = pages.filter((page) => page.secondary !== true)
+
+  /** `aria-current`: the scroll-spy's `"true"` on `/`, `"page"` on the route an item opens. */
+  const currentOf = (item: NavItem): 'true' | 'page' | undefined =>
+    navCurrentPage(item, pathname) ?? (onHome && activeId === item.id ? 'true' : undefined)
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const sheetId = useId()
@@ -264,16 +304,16 @@ export function Nav({
       <div aria-hidden="true" data-nav-chrome="" className={CHROME} />
       <Container className={ROW}>
         <div className="pointer-events-auto">
-          <Monogram href={homeHref} name={name} size="nav" />
+          <Monogram href={onHome ? homeHref : '/'} name={name} size="nav" />
         </div>
 
         {/* ≥1024 only. Below that the same six links live in the sheet. */}
         <nav aria-label="Primary" className="pointer-events-auto hidden items-center gap-1 lg:flex">
-          {items.map((item) => (
+          {[...items, ...barPages].map((item) => (
             <a
               key={item.id}
-              href={item.href}
-              aria-current={activeId === item.id ? 'true' : undefined}
+              href={resolveNavHref(item, pathname)}
+              aria-current={currentOf(item)}
               className={NAV_PILL}
             >
               {item.label}
@@ -282,7 +322,7 @@ export function Nav({
         </nav>
 
         <div className="pointer-events-auto flex items-center gap-2">
-          <Button href={cta.href} variant="secondary" size="md">
+          <Button href={resolveHref(cta.href, pathname)} variant="secondary" size="md">
             {cta.label}
           </Button>
 
@@ -326,15 +366,31 @@ export function Nav({
           {items.map((item) => (
             <a
               key={item.id}
-              href={item.href}
+              href={resolveNavHref(item, pathname)}
               onClick={closeMenu}
-              aria-current={activeId === item.id ? 'true' : undefined}
+              aria-current={currentOf(item)}
               className={SHEET_ROW}
             >
               {item.label}
             </a>
           ))}
         </nav>
+
+        {pages.length > 0 ? (
+          <nav aria-label="Pages" className="grid gap-1">
+            {pages.map((page) => (
+              <a
+                key={page.id}
+                href={resolveNavHref(page, pathname)}
+                onClick={closeMenu}
+                aria-current={currentOf(page)}
+                className={SHEET_ROW}
+              >
+                {page.label}
+              </a>
+            ))}
+          </nav>
+        ) : null}
 
         {socialLinks.length > 0 ? (
           <div className="grid gap-3">

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Nav } from '@/components/layout/Nav'
@@ -134,6 +134,7 @@ describe('Nav — structure and copy', () => {
       'Stack',
       'Experience',
       'Writing',
+      'About',
     ])
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
       '#work',
@@ -142,6 +143,7 @@ describe('Nav — structure and copy', () => {
       '#stack',
       '#timeline',
       '#writing',
+      '/about',
     ])
   })
 
@@ -354,6 +356,74 @@ describe('Nav — active section', () => {
     for (const marked of Array.from(document.querySelectorAll('a[aria-current="true"]'))) {
       expect(marked.textContent).toBe('Writing')
     }
+  })
+})
+
+describe('Nav — route-aware links', () => {
+  function hrefs(nav: HTMLElement): string[] {
+    return Array.from(nav.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '')
+  }
+
+  it('keeps bare in-page anchors on the home page', () => {
+    render(<Nav pathname="/" />)
+    const primary = screen.getByRole('navigation', { name: 'Primary' })
+    expect(hrefs(primary)).toContain('#work')
+    expect(hrefs(primary)).toContain('#timeline')
+    expect(screen.getByRole('link', { name: NAV_CTA.label })).toHaveAttribute('href', '#contact')
+    expect(screen.getByRole('link', { name: /home/i })).toHaveAttribute('href', '#main')
+  })
+
+  it('makes sections root-relative and opens the real Work page on other routes', () => {
+    render(<Nav pathname="/about" />)
+    expect(hrefs(screen.getByRole('navigation', { name: 'Primary' }))).toEqual([
+      '/work',
+      '/#lead',
+      '/#craft',
+      '/#stack',
+      '/#timeline',
+      '/#writing',
+      '/about',
+    ])
+    expect(screen.getByRole('link', { name: NAV_CTA.label })).toHaveAttribute('href', '/#contact')
+    expect(screen.getByRole('link', { name: /home/i })).toHaveAttribute('href', '/')
+  })
+
+  it('marks the page you are on with aria-current="page", including case-study children', () => {
+    const { unmount } = render(<Nav pathname="/work/gabar" />)
+    const primary = screen.getByRole('navigation', { name: 'Primary' })
+    expect(within(primary).getByRole('link', { name: 'Work' })).toHaveAttribute('aria-current', 'page')
+    expect(primary.querySelectorAll('[aria-current]')).toHaveLength(1)
+    unmount()
+
+    render(<Nav pathname="/about" />)
+    expect(
+      within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('link', { name: 'About' })
+    ).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('does not treat a lookalike path as the Work page', () => {
+    render(<Nav pathname="/workshop" />)
+    expect(document.querySelector('[aria-current]')).toBeNull()
+  })
+
+  it('starts no scroll-spy off the home page', () => {
+    const observer = stubIntersectionObserver()
+    mountSections(NAV_ITEMS.map((item) => item.id))
+    render(<Nav pathname="/resume" />)
+    expect(observer.observed()).toEqual([])
+  })
+
+  it('keeps Resume out of the bar and puts it in the sheet, marked current on /resume', async () => {
+    const user = userEvent.setup()
+    render(<Nav pathname="/resume" />)
+    expect(
+      within(screen.getByRole('navigation', { name: 'Primary' })).queryByRole('link', { name: 'Resume' })
+    ).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /open menu/i }))
+    const pages = screen.getByRole('navigation', { name: 'Pages' })
+    expect(hrefs(pages)).toEqual(['/about', '/resume'])
+    expect(within(pages).getByRole('link', { name: 'Resume' })).toHaveAttribute('aria-current', 'page')
   })
 })
 

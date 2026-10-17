@@ -19,9 +19,15 @@
 export type NavItem = {
   /** The section's DOM id. The scroll-spy's observation target. */
   readonly id: string
-  /** Always `#${id}`. */
+  /** The in-page anchor, always `#${id}`. What the item opens while the visitor is on `/`. */
   readonly href: string
   readonly label: string
+  /**
+   * The real page behind the item, when there is one. Off the home page the item opens this instead of the anchor,
+   * and it is the page that earns `aria-current="page"`. Only `Work` has one: on `/` it scrolls to the section,
+   * everywhere else it is the `/work` index.
+   */
+  readonly route?: string
 }
 
 /**
@@ -29,13 +35,59 @@ export type NavItem = {
  * from the export.
  */
 export const NAV_ITEMS = [
-  { id: 'work', href: '#work', label: 'Work' },
+  { id: 'work', href: '#work', label: 'Work', route: '/work' },
   { id: 'lead', href: '#lead', label: 'How I lead' },
   { id: 'craft', href: '#craft', label: 'Craft' },
   { id: 'stack', href: '#stack', label: 'Stack' },
   { id: 'timeline', href: '#timeline', label: 'Experience' },
   { id: 'writing', href: '#writing', label: 'Writing' },
 ] as const satisfies readonly NavItem[]
+
+/**
+ * The standalone pages that have no home-page section. `About` joins the bar (the second page a visitor looks for);
+ * `Resume` is secondary and lives in the mobile sheet and the footer only, so the condensed bar stays six pills
+ * plus one. Both are real routes, so they are the same on every page.
+ */
+export const NAV_PAGES = [
+  { id: 'about', href: '/about', label: 'About', route: '/about' },
+  { id: 'resume', href: '/resume', label: 'Resume', route: '/resume', secondary: true },
+] as const satisfies readonly NavPage[]
+
+export type NavPage = NavItem & { readonly secondary?: boolean }
+
+/** `/` is the only route that owns the in-page anchors. `null` (no router, as in a unit test) counts as home. */
+export function isHome(pathname: string | null): boolean {
+  return pathname === null || pathname === '/'
+}
+
+/** `/work` is current on `/work` and `/work/gabar`, but not on `/workshop`. */
+export function isCurrentRoute(pathname: string | null, route: string): boolean {
+  if (pathname === null) return false
+  return pathname === route || pathname.startsWith(`${route}/`)
+}
+
+/**
+ * Where an item points from the page the visitor is on. On `/` the anchors stay bare (`#lead`), so the smooth scroll
+ * and the scroll-spy behave exactly as before; anywhere else a bare anchor would go nowhere, so it becomes
+ * root-relative (`/#lead`) and a real page is opened outright.
+ */
+export function resolveNavHref(item: NavItem, pathname: string | null): string {
+  if (!item.href.startsWith('#')) return item.href
+  if (isHome(pathname)) return item.href
+  return item.route ?? `/${item.href}`
+}
+
+/** `"page"` when the visitor is on the route the item opens; the scroll-spy owns the `"true"` mark on `/`. */
+export function navCurrentPage(item: NavItem, pathname: string | null): 'page' | undefined {
+  if (item.route === undefined) return undefined
+  if (isHome(pathname) && item.href.startsWith('#')) return undefined
+  return isCurrentRoute(pathname, item.route) ? 'page' : undefined
+}
+
+/** Where the monogram and the CTA go: bare on `/`, root-relative elsewhere. */
+export function resolveHref(href: string, pathname: string | null): string {
+  return href.startsWith('#') && !isHome(pathname) ? `/${href}` : href
+}
 
 export type NavCta = {
   readonly href: string
