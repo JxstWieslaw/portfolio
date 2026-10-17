@@ -13,7 +13,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['e2e/**/*.spec.ts', 'visual/**/*.spec.ts'],
+  // tests/visual/home.spec.ts is excluded here: it compares against Linux baselines made in the pinned
+  // Playwright container, so it runs only from playwright.visual.config.ts (`npm run test:visual`).
+  testMatch: ['e2e/**/*.spec.ts', 'visual/hero-parity.spec.ts'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

@@ -123,6 +123,45 @@ jobs:
           path: apps/web/playwright-report/
           retention-days: 7
 
+  # Visual regression is its own job so it runs in parallel with e2e (adds no wall-clock time to it) and
+  # inside the Playwright image pinned below. The image carries the fonts and Chromium build the committed
+  # `-linux` baselines were made with, which a bare ubuntu-latest runner does not guarantee across image
+  # updates. Bump PLAYWRIGHT_IMAGE together with @playwright/test (the first step fails if they differ),
+  # then regenerate the baselines: docs/visual-regression.md.
+  visual:
+    name: Visual regression (Linux baselines)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm install -g npm@11.19.0
+      - run: npm ci
+      - name: Playwright image matches the installed @playwright/test
+        run: |
+          installed=$(node -p "require('./node_modules/@playwright/test/package.json').version")
+          echo "installed=$installed image=1.63.0"
+          test "$installed" = "1.63.0"
+      - run: npm run test:visual -w @repo/web
+        env:
+          HOME: /root
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ failure() }}
+        with:
+          name: visual-diffs
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+            apps/web/tests/visual/home.spec.ts-snapshots/
+          retention-days: 7
+
   api-integration:
     name: API — migrations, seed and integration tests on Postgres 17
     runs-on: ubuntu-latest

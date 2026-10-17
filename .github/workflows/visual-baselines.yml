@@ -1,0 +1,42 @@
+# Regenerates the Linux visual baselines in the same Playwright image the `visual` CI job compares in.
+# Manual only. Run it from the Actions tab on the branch whose layout changed (Run workflow, pick the
+# branch), download the `visual-baselines` artifact, copy the PNGs into
+# apps/web/tests/visual/home.spec.ts-snapshots/, review them by eye, commit. See docs/visual-regression.md.
+name: Update visual baselines
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baselines:
+    name: Regenerate Linux baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm install -g npm@11.19.0
+      - run: npm ci
+      - name: Playwright image matches the installed @playwright/test
+        run: |
+          installed=$(node -p "require('./node_modules/@playwright/test/package.json').version")
+          test "$installed" = "1.63.0"
+      - run: npm run test:visual -w @repo/web -- --update-snapshots
+        env:
+          HOME: /root
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: visual-baselines
+          path: apps/web/tests/visual/home.spec.ts-snapshots/*-linux.png
+          retention-days: 14
+          if-no-files-found: error
