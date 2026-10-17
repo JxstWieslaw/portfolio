@@ -1,0 +1,247 @@
+/* Route-level styles for the deep pages (/work, /about, /resume).
+   Tokens only; nothing here is a literal brand colour. The home page's WebGL layer is not
+   mounted on these routes (see docs/phase-2a-routes.md), so this is the calm static backdrop:
+   a violet wash from the top-left and a faint cyan one at the right, behind the page header. */
+
+.page {
+  position: relative;
+  isolation: isolate;
+  /* The sticky header is 72px tall and takes layout space; this is the air under it. */
+  padding-block: clamp(2rem, 6vw, 5rem) clamp(4rem, 8vw, 8rem);
+}
+
+.page::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: min(640px, 90vw);
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 70% at 8% 0%, color-mix(in srgb, var(--violet-500) 28%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 55% at 100% 10%, color-mix(in srgb, var(--cyan-400) 12%, transparent), transparent 70%);
+}
+
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+
+.crumbs li + li::before {
+  content: '/';
+  margin-right: 0.5rem;
+  color: var(--fg-3);
+}
+
+.crumbs a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--fg-2);
+  text-decoration: none;
+}
+
+.crumbs a:hover,
+.crumbs a:focus-visible {
+  color: var(--fg-0);
+}
+
+.crumbs [aria-current='page'] {
+  color: var(--fg-1);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem 2rem;
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.facts dt {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+
+.facts dd {
+  margin: 0.25rem 0 0;
+  color: var(--fg-0);
+}
+
+.prose {
+  max-width: 68ch;
+  color: var(--fg-1);
+  text-wrap: pretty;
+}
+
+.block {
+  margin-top: clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .cardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .cardGrid[data-cols='3'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.cardGrid > li {
+  display: flex;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.skills {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .skills {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.skills dt {
+  margin-bottom: 0.5rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   /resume: a page that reads on a screen and prints as a document.
+   --------------------------------------------------------------------------------------------- */
+
+.resume h2 {
+  margin: 0 0 1rem;
+}
+
+.role {
+  break-inside: avoid;
+}
+
+.roleHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+}
+
+.period {
+  font-family: var(--font-mono);
+  font-size: var(--label);
+  letter-spacing: 0.08em;
+  color: var(--fg-2);
+}
+
+.printNote {
+  color: var(--fg-2);
+  font-size: var(--small);
+}
+
+.printOnly {
+  display: none;
+}
+
+@media print {
+  .page {
+    padding: 0;
+    color: #000;
+  }
+
+  .page::before {
+    display: none;
+  }
+
+  .resume,
+  .resume * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    border-color: #999 !important;
+  }
+
+  .resume a {
+    text-decoration: none;
+  }
+
+  .printHide {
+    display: none !important;
+  }
+
+  .printOnly {
+    display: block;
+  }
+
+  .period {
+    color: #333 !important;
+  }
+
+  .resume h2 {
+    break-after: avoid;
+    border-bottom: 1px solid #999;
+    padding-bottom: 0.25rem;
+  }
+
+  .block {
+    margin-top: 1.25rem;
+  }
+
+  @page {
+    margin: 16mm;
+  }
+}
