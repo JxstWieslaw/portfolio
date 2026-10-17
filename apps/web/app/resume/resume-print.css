@@ -1,0 +1,23 @@
+/* /resume on paper.
+   The root layout owns the sticky header, the skip link and the footer, and they sit directly
+   under <body>. A page cannot reach them from a CSS module (module selectors must be local), so
+   the print rules that hide them live here, imported by this route only. Everything is inside
+   @media print: on screen this file changes nothing. */
+@media print {
+  body > header,
+  body > footer,
+  body > a[href='#main'],
+  .skip-link {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  @page {
+    margin: 16mm;
+  }
+}

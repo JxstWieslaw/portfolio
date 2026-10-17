@@ -119,17 +119,3 @@ export function homeJsonLd(): Record<string, unknown> {
     ],
   }
 }
-
-/**
- * The JSON-LD payload, safe to place inside a `<script>` element.
- *
- * `JSON.stringify` escapes quotes but NOT `<`, so a string containing `</script>` would close
- * the tag early and everything after it would be parsed as markup. Today this content is typed
- * and comes from the repo, so that cannot happen, but a guard that only works while the input
- * stays trusted is not a guard. Escaping `<` costs nothing and stays correct when that changes.
- *
- * `<` is valid inside a JSON string literal, so the parsed object is unchanged.
- */
-export function jsonLdScript(data: Record<string, unknown> = homeJsonLd()): string {
-  return JSON.stringify(data).replace(/</g, '\\u003c')
-}

@@ -4,6 +4,13 @@ import { Button } from '@/components/ui/Button'
 import { StatusPage } from '@/components/layout/StatusPage'
 import { NAV_ITEMS } from '@/lib/nav-items'
 
+/** The standalone pages. Sections below link to the home page's own anchors. */
+const PAGES = [
+  { href: '/work', label: 'All work' },
+  { href: '/about', label: 'About' },
+  { href: '/resume', label: 'Resume' },
+] as const
+
 /**
  * Next answers with a real 404 status for anything that renders this. `noindex` is belt and braces for crawlers that
  * ignore the status. The title picks up the template, so the tab reads "Page not found — Wieslaw Samushonga".
@@ -23,8 +30,15 @@ export default function NotFound() {
           <Button variant="primary" size="lg" href="/">
             Back to the home page
           </Button>
-          <nav aria-label="Sections of the home page" className="w-full">
+          <nav aria-label="Pages and sections" className="w-full">
             <ul className="flex flex-wrap gap-3">
+              {PAGES.map((page) => (
+                <li key={page.href}>
+                  <Button href={page.href} size="md">
+                    {page.label}
+                  </Button>
+                </li>
+              ))}
               {NAV_ITEMS.map((item) => (
                 <li key={item.id}>
                   {/* Absolute to the home page: the nav's own links are in-page anchors and would go nowhere from here. */}

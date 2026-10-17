@@ -21,7 +21,9 @@ import {
   getSkills,
   getWriting,
 } from '@/lib/content'
-import { jsonLdScript } from '@/lib/seo'
+import { getCaseStudy } from '@/lib/routes'
+import { jsonLdScript } from '@/lib/route-seo'
+import { homeJsonLd } from '@/lib/seo'
 
 /**
  * The flagship scroll.
@@ -39,15 +41,15 @@ import { jsonLdScript } from '@/lib/seo'
 /**
  * Only a project with a genuine destination becomes a link.
  *
- * `/work/[slug]` is not built in this milestone (reconciliation section 9), and most of these
- * are private client codebases that will never have a public case study at all. A card without
- * a destination renders as a plain container offering an architecture walkthrough instead —
- * see `ProjectCard`. `links[0]` is the project's own public home where one exists, which today
- * is PR-Pulse on GitHub.
+ * Every non-placeholder project has a case-study page at `/work/<slug>` (`lib/routes.ts` is the
+ * single rule for which), so its card links there, including the private client work, where the
+ * page offers a private walkthrough instead of the code. A placeholder card renders as the
+ * non-interactive "in preparation" card and has no destination. PR-Pulse's own public home is a
+ * link on its case-study page.
  */
 function toBentoProject(project: ReturnType<typeof getBentoProjects>[number]): SelectedWorkProject {
   const domain = getDomain(project.domain)
-  const external = project.links?.[0]?.url
+  const caseStudy = getCaseStudy(project.slug)
 
   return {
     slug: project.slug,
@@ -62,7 +64,7 @@ function toBentoProject(project: ReturnType<typeof getBentoProjects>[number]): S
       label: domain?.label ?? project.domain,
       accent: domain?.accent ?? 'violet',
     },
-    ...(external === undefined ? {} : { href: external }),
+    ...(caseStudy === undefined ? {} : { href: `/work/${caseStudy.slug}` }),
     ...(project.placeholder === true
       ? {
           placeholder: true,
@@ -145,7 +147,7 @@ export default function HomePage() {
           the content later comes from an external feed. See lib/seo.ts. */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: jsonLdScript() }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(homeJsonLd()) }}
       />
     </>
   )

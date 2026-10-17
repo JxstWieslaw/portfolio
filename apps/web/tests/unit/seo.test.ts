@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { SITE_DESCRIPTION, SITE_TITLE, canonical, homeJsonLd, jsonLdScript, personJsonLd, siteUrl } from '@/lib/seo'
+import { SITE_DESCRIPTION, SITE_TITLE, canonical, homeJsonLd, personJsonLd, siteUrl } from '@/lib/seo'
+import { jsonLdScript } from '@/lib/route-seo'
 
 afterEach(() => {
   vi.unstubAllEnvs()

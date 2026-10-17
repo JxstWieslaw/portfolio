@@ -75,11 +75,13 @@ describe('Footer — navigation', () => {
     const nav = screen.getByRole('navigation', { name: 'Footer' })
     const live = Array.from(nav.querySelectorAll('a[href]'))
     expect(live.map((link) => link.getAttribute('href'))).toEqual([
-      '#work',
-      '#lead',
-      '#craft',
-      '#writing',
-      '#contact',
+      '/work',
+      '/#lead',
+      '/#craft',
+      '/about',
+      '/resume',
+      '/#writing',
+      '/#contact',
     ])
   })
 
@@ -87,13 +89,13 @@ describe('Footer — navigation', () => {
   it('uses the reconciled label for the leadership section', () => {
     renderFooter()
     const nav = screen.getByRole('navigation', { name: 'Footer' })
-    expect(within(nav).getByRole('link', { name: 'How I lead' })).toHaveAttribute('href', '#lead')
+    expect(within(nav).getByRole('link', { name: 'How I lead' })).toHaveAttribute('href', '/#lead')
     expect(within(nav).queryByRole('link', { name: 'How I work' })).toBeNull()
   })
 })
 
-describe('Footer — routes that do not exist yet (§ 9)', () => {
-  const unbuilt = ['Lab', 'About', 'Resume']
+describe('Footer — routes that do not exist yet', () => {
+  const unbuilt = ['Lab']
 
   it.each(unbuilt)('renders %s as a disabled link with no href', (label) => {
     renderFooter()
@@ -131,7 +133,7 @@ describe('Footer — routes that do not exist yet (§ 9)', () => {
       }
     }
 
-    expect(reached).toEqual(['View perf', 'Lab', 'About', 'Resume'])
+    expect(reached).toEqual(['View perf', 'Lab'])
   })
 
   it('does not ship the export dead `#` on View perf', () => {
