@@ -192,6 +192,16 @@ const config: NextConfig = {
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }, { key: 'X-Content-Type-Options', value: 'nosniff' }],
       },
       {
+        // Brand assets keep their names (the manifest and the link-preview card refer to them by name), so they cannot be
+        // immutable; a day fresh plus a week of stale-while-revalidate keeps repeat visits free without pinning a stale mark.
+        source: '/icons/:file',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' }, ...safe],
+      },
+      {
+        source: '/brand/og-default.png',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' }, { key: 'X-Content-Type-Options', value: 'nosniff' }],
+      },
+      {
         // The manifest keeps its name across ingests, so it must always revalidate.
         source: '/models/manifest.json',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }, ...safe],

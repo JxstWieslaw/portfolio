@@ -1,3 +1,5 @@
+import type { Metadata } from 'next'
+
 import { AssemblyLayer } from '@/components/three/AssemblyLayer'
 import { DecorativeLayerNote } from '@/components/three/SectionBackdrop'
 import { Contact } from '@/components/sections/Contact'
@@ -20,7 +22,8 @@ import {
   getWriting,
 } from '@/lib/content'
 import { getCaseStudy } from '@/lib/routes'
-import { personJsonLdScript } from '@/lib/seo'
+import { jsonLdScript } from '@/lib/route-seo'
+import { homeJsonLd } from '@/lib/seo'
 
 /**
  * The flagship scroll.
@@ -70,6 +73,11 @@ function toBentoProject(project: ReturnType<typeof getBentoProjects>[number]): S
         }
       : {}),
   }
+}
+
+/** The home page owns its canonical; deep routes set their own (see app/layout.tsx). */
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
 }
 
 export default function HomePage() {
@@ -132,14 +140,14 @@ export default function HomePage() {
 
       {/*
         JSON-LD last: it is metadata, not content, and keeping it out of the reading order
-        means no assistive technology walks it. `Person` asserts BOTH job titles — collapsing
+        means no assistive technology walks it. The graph is a `Person` and its `WebSite`; the `Person` asserts BOTH job titles — collapsing
         them to one would misrepresent the positioning the whole page rests on.
       */}
-      {/* personJsonLdScript() escapes `<`, so the payload cannot close this tag early even if
+      {/* jsonLdScript() escapes `<`, so the payload cannot close this tag early even if
           the content later comes from an external feed. See lib/seo.ts. */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: personJsonLdScript() }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(homeJsonLd()) }}
       />
     </>
   )

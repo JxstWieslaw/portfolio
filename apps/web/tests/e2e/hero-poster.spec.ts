@@ -31,7 +31,7 @@ function watch(page: Page): { posters: string[]; chunks: string[] } {
 const display = (page: Page, selector: string): Promise<string> => page.locator(selector).first().evaluate((el) => getComputedStyle(el).display)
 
 test.describe('a default visit', () => {
-  test('is the painted hero it always was: no poster shown, none fetched, no preview image', async ({ page }) => {
+  test('is the painted hero it always was: no poster shown, none fetched, the static brand card as preview image', async ({ page }) => {
     const seen = watch(page)
     await page.goto('/')
     await expect(page.locator('html')).toHaveAttribute('data-hero-mode', 'off')
@@ -40,7 +40,12 @@ test.describe('a default visit', () => {
     await expect(page.locator('canvas[data-f="monolith"]')).toHaveAttribute('data-rung', /.+/)
     await page.waitForTimeout(1500)
     expect(seen.posters).toEqual([])
-    await expect(page.locator('meta[property="og:image"]')).toHaveCount(0)
+    // The hero render is never the preview when the monolith is not the hero; the static brand card always is.
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(1)
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveCount(1)
+    const og = await page.locator('meta[property="og:image"]').getAttribute('content')
+    expect(og).toMatch(/^https?:\/\/.+\/brand\/og-default\.png$/)
+    expect(og).not.toMatch(/\/og\/hero\./)
   })
 })
 

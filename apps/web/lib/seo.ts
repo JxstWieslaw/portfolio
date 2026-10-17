@@ -6,7 +6,7 @@
  * Rapidev Labs. The design export's later pivot is not represented anywhere in this file.
  */
 
-import { getProfile } from './content'
+import { getProfile, getSkills } from './content'
 
 /**
  * The production origin.
@@ -29,6 +29,10 @@ export function canonical(path = '/'): string {
   return new URL(path, `${siteUrl()}/`).toString()
 }
 
+/** Stable `@id`s so the Person and the WebSite in the graph can point at each other. */
+const PERSON_ID = () => `${canonical('/')}#person`
+const WEBSITE_ID = () => `${canonical('/')}#website`
+
 export const SITE_TITLE = 'Wieslaw Samushonga — Tech Lead & Software Engineer'
 
 /**
@@ -45,6 +49,12 @@ export const SITE_DESCRIPTION =
 
 /** Link kinds that represent an identity elsewhere, rather than a call to action. */
 const SAME_AS_LABELS = new Set(['LinkedIn', 'GitHub', 'X', 'Medium', 'Instagram', 'Reddit'])
+
+/** The skills the content marks `core`, in content order and without repeats. Nothing here is written by hand. */
+function coreSkills(): string[] {
+  const names = getSkills().flatMap((group) => group.items.filter((item) => item.level === 'core').map((item) => item.name))
+  return [...new Set(names)]
+}
 
 /**
  * JSON-LD `Person` for the home page.
@@ -63,6 +73,7 @@ export function personJsonLd(): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'Person',
+    '@id': PERSON_ID(),
     name: profile.name,
     url: canonical('/'),
     email: `mailto:${profile.email}`,
@@ -78,30 +89,33 @@ export function personJsonLd(): Record<string, unknown> {
       addressCountry: 'ZW',
     },
     description: profile.sub,
-    knowsAbout: [
-      'Software architecture',
-      'Technical leadership',
-      'TypeScript',
-      'Next.js',
-      'WebGL',
-      'React Three Fiber',
-      'Real-time 3D on the web',
-    ],
+    knowsAbout: coreSkills(),
     ...(sameAs.length > 0 ? { sameAs } : {}),
   }
 }
 
 /**
- * The JSON-LD payload, safe to place inside a `<script>` element.
- *
- * `JSON.stringify` escapes quotes but NOT `<`, so a string containing `</script>` would close
- * the tag early and everything after it would be parsed as markup. Today this content is typed
- * and comes from the repo, so that cannot happen — but the RSS-fed writing entries are already
- * slated to become external data, and a guard that only works while the input stays trusted is
- * not a guard. Escaping `<` costs nothing and stays correct when the assumption changes.
- *
- * `<` is valid inside a JSON string literal, so the parsed object is unchanged.
+ * The home page's JSON-LD: a `Person` and the `WebSite` that person publishes, as one graph. The two reference each
+ * other by `@id` so a consumer reads "this site is by this person" rather than two unrelated records.
  */
-export function personJsonLdScript(): string {
-  return JSON.stringify(personJsonLd()).replace(/</g, '\\u003c')
+export function homeJsonLd(): Record<string, unknown> {
+  const { '@context': _context, ...person } = personJsonLd()
+  void _context
+
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      person,
+      {
+        '@type': 'WebSite',
+        '@id': WEBSITE_ID(),
+        url: canonical('/'),
+        name: SITE_TITLE,
+        description: SITE_DESCRIPTION,
+        inLanguage: 'en-GB',
+        publisher: { '@id': PERSON_ID() },
+        author: { '@id': PERSON_ID() },
+      },
+    ],
+  }
 }
