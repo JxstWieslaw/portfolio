@@ -3,30 +3,18 @@ import { expect, test } from '@playwright/test'
 const WIDTHS = [390, 834, 1440, 2560] as const
 
 /**
- * Skipped in CI, and this is a real gap rather than a tidy-up.
+ * Visual regression for the home page, on LINUX baselines only.
  *
- * Playwright suffixes every snapshot with the platform it was captured on:
- * `home-1440-desktop-win32.png` here, `…-linux.png` on GitHub's ubuntu runners. The
- * committed baselines are win32, so the first CI run reported four failures of the form
- * "A snapshot doesn't exist at …-linux.png, writing actual" — not a regression it caught,
- * but a comparison it could not make. Committing Linux baselines alongside would not fix
- * the underlying issue either: font rasterisation differs between the two platforms, so
- * one set can never satisfy both, and whichever half is generated off-platform is
- * unverifiable by the person who generated it.
+ * Playwright suffixes every snapshot with the platform it was captured on, and font
+ * rasterisation differs between win32 and linux, so one set can never satisfy both. Linux is
+ * the authority: the baselines (`home-<width>-desktop-linux.png`) are generated and compared
+ * inside the pinned Playwright container in CI (`visual` job in .github/workflows/ci.yml,
+ * `visual-baselines.yml` to regenerate). Never commit baselines made on Windows or macOS.
  *
- * So visual regression is a LOCAL tool at M0. The 56 e2e and accessibility tests still
- * run on all five projects in CI — only these four comparisons are skipped.
- *
- * To restore it, make one platform authoritative rather than two: generate the baselines
- * inside the official Playwright container, which is the same image CI uses —
- *
- *   docker run --rm -v "$PWD":/w -w /w/apps/web mcr.microsoft.com/playwright:v1.56.0-jammy \
- *     npx playwright test tests/visual --project=desktop --update-snapshots
- *
- * — commit the resulting `-linux` files, delete the `-win32` ones, drop this skip, and run
- * the same command locally whenever a baseline needs refreshing.
+ * This spec is collected only by playwright.visual.config.ts (`npm run test:visual`), so the
+ * main e2e job, which runs on the bare ubuntu runner, never compares against container pixels.
+ * To refresh: see docs/visual-regression.md.
  */
-test.skip(!!process.env.CI, 'visual baselines are win32-only; see the note above')
 
 // This file sets its own viewport per test, so running it under all five Playwright
 // projects would produce 20 near-identical baselines. One engine is enough.
@@ -51,8 +39,16 @@ for (const width of WIDTHS) {
   test(`home page layout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.goto('/')
+    // ?nogl=1 keeps the WebGL hero engine off, so the poster image is the hero and the page is
+    // the same pixels on every machine. The engine has its own specs (hero-*.spec.ts).
+    await page.goto('/?nogl=1')
     await page.waitForLoadState('networkidle')
+    // The fonts are self-hosted (next/font/local) but still load asynchronously: wait for
+    // them so a capture never lands on the metric-matched fallback face.
+    await page.evaluate(() => document.fonts.ready)
+    // Full-page capture reads the layout height once; hold for two frames so lazy images and
+    // the sticky header have settled.
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))))
 
     // The decorative canvas is excluded deliberately: M2 replaces its internals with
     // WebGL, and this suite must not fail on that planned change. This is a CSS hide,
@@ -74,8 +70,17 @@ for (const width of WIDTHS) {
 
     await expect(page).toHaveScreenshot(`home-${width}.png`, {
       fullPage: true,
-      maxDiffPixelRatio: 0.01,
+      // Same container, same fonts, same Chromium: a render is near byte-identical, so the
+      // budget is tiny. 0.002 of a full-page frame tolerates sub-pixel anti-aliasing noise
+      // (a few thousand pixels at 1440 wide) but not a moved or resized block, and a changed
+      // page height fails outright because Playwright compares dimensions first.
+      maxDiffPixelRatio: 0.002,
+      // Per-pixel colour distance (YIQ, 0 to 1). 0.2 is Playwright's default: it ignores the
+      // gamma and dithering wobble in the poster's gradients and keeps real colour changes.
+      threshold: 0.2,
       animations: 'disabled',
+      // Caret blink is the only time-dependent paint left (the footer year is a literal).
+      caret: 'hide',
     })
   })
 }
