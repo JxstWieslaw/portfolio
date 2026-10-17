@@ -1,21 +1,19 @@
 import type { MetadataRoute } from 'next'
 
+import { getSiteRoutes } from '@/lib/routes'
 import { canonical } from '@/lib/seo'
 
 /**
- * Only `/` exists in this milestone.
+ * Every route that exists, from `lib/routes.ts`, so the sitemap and the pages cannot drift.
  *
- * The deep routes (`/work`, `/lab`, `/about`, `/resume`) are deliberately absent rather than
- * listed-and-broken — a sitemap that advertises 404s is worse than a short one. `/admin` is
- * excluded permanently by spec section 3.
+ * No `lastModified`: the content carries no modified dates, and `new Date()` would claim every
+ * page changed on every build, which teaches crawlers to ignore the field. `/admin` is excluded
+ * permanently by spec section 3 and `/lab` is not built.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [
-    {
-      url: canonical('/'),
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 1,
-    },
-  ]
+  return getSiteRoutes().map((route) => ({
+    url: canonical(route.path),
+    changeFrequency: route.changeFrequency,
+    priority: route.priority,
+  }))
 }

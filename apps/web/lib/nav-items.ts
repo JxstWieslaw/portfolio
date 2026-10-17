@@ -55,9 +55,10 @@ export const HOME_HREF = '#main'
 export type FooterLink = {
   readonly label: string
   /**
-   * Absent ⇒ the route does not exist in this milestone. Reconciliation § 9
-   * confirms `/lab`, `/about` and `/resume` are out of scope, so they ship as
+   * Absent ⇒ the route does not exist yet (today only `/lab`), so it ships as
    * an announced, focusable "Coming soon" affordance instead of a 404 trap.
+   * Section links are root-relative (`/#work`) so they also work from the deep
+   * routes (`/about`, `/work/...`), where a bare `#work` would go nowhere.
    */
   readonly href?: string
 }
@@ -72,25 +73,25 @@ export type FooterColumn = {
  * The footer's two columns, verbatim from design-home.md § 12 — with the one
  * copy reversal reconciliation § 1 requires ("How I work" → `How I lead`).
  *
- * The three href-less entries are the § 9 routes.
+ * `Lab` is the one href-less entry: `/lab` is Phase 3.
  */
 export const FOOTER_COLUMNS = [
   {
     id: 'sections',
     links: [
-      { label: 'Work', href: '#work' },
-      { label: 'How I lead', href: '#lead' },
-      { label: 'Craft', href: '#craft' },
+      { label: 'Work', href: '/work' },
+      { label: 'How I lead', href: '/#lead' },
+      { label: 'Craft', href: '/#craft' },
       { label: 'Lab' },
     ],
   },
   {
     id: 'more',
     links: [
-      { label: 'About' },
-      { label: 'Resume' },
-      { label: 'Writing', href: '#writing' },
-      { label: 'Contact', href: '#contact' },
+      { label: 'About', href: '/about' },
+      { label: 'Resume', href: '/resume' },
+      { label: 'Writing', href: '/#writing' },
+      { label: 'Contact', href: '/#contact' },
     ],
   },
 ] as const satisfies readonly FooterColumn[]

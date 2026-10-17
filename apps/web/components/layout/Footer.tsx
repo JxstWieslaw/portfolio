@@ -12,14 +12,12 @@ import { FOOTER_COLUMNS, type FooterColumn, type FooterLink } from '@/lib/nav-it
  * A server component: it renders copy and anchors and owns no state, so there
  * is nothing for `'use client'` to buy.
  *
- * The one substantive decision is the treatment of `/lab`, `/about`, `/resume`
- * and the perf page. Reconciliation § 9 confirms none of them exist in this
- * milestone, and the export links all of them. Shipping the hrefs would ship
- * four 404s, and deleting the entries would quietly lose four planned
- * destinations, so they render as the pattern § 8 already sanctions for the AR
- * button: `aria-disabled`, still focusable, still in the reading order, and
- * carrying a visible `Coming soon` badge that is part of the accessible name.
- * Greying them out alone would announce nothing.
+ * `/about` and `/resume` are real routes now. `/lab` (Phase 3) and the perf page do not
+ * exist yet, so they keep the pattern § 8 sanctions for the AR button: `aria-disabled`,
+ * still focusable, still in the reading order, and carrying a visible `Coming soon` badge that
+ * is part of the accessible name. Greying them out alone would announce nothing.
+ *
+ * Section links are root-relative (`/#lead`) so they work from the deep routes too.
  */
 
 /**

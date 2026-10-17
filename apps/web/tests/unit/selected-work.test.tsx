@@ -211,15 +211,13 @@ describe('SelectedWork — the bento', () => {
     }
   })
 
-  it('offers /work as a Coming soon affordance rather than a 404 trap', () => {
+  it('links the All work pill to the /work index', () => {
     render(<SelectedWork projects={SEVEN} />)
-    const pill = screen.getByRole('button', { name: /All work/ })
+    const pill = screen.getByRole('link', { name: /All work/ })
 
-    expect(pill).toHaveAccessibleName(expect.stringContaining('Coming soon'))
-    expect(pill).toHaveAttribute('aria-disabled', 'true')
-    // aria-disabled, never the attribute: it must stay focusable and announced.
-    expect(pill).not.toBeDisabled()
-    expect(pill).not.toHaveAttribute('href')
+    expect(pill).toHaveAttribute('href', '/work')
+    expect(pill).not.toHaveAttribute('aria-disabled')
+    expect(screen.queryByText('Coming soon')).toBeNull()
   })
 
   it('renders nothing past the seventh slot', () => {

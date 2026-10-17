@@ -14,6 +14,17 @@
     "gzip": true
   },
   {
+    "name": "route pages (about, resume, work, work/[slug])",
+    "path": [
+      ".next/static/chunks/app/about/page-*.js",
+      ".next/static/chunks/app/resume/page-*.js",
+      ".next/static/chunks/app/work/page-*.js",
+      ".next/static/chunks/app/work/*/page-*.js"
+    ],
+    "limit": "4 kB",
+    "gzip": true
+  },
+  {
     "name": "assembly core (three + R3F + CSM + scene, lazy)",
     "path": [
       ".next/static/chunks/*.*.js",

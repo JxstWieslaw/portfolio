@@ -52,10 +52,10 @@ export interface SelectedWorkProps {
   readonly eyebrow?: string
   readonly title?: string
   readonly lede?: ReactNode
-  /** Label on the (disabled) index pill. */
+  /** Label on the index pill. */
   readonly allWorkLabel?: string
-  /** The affordance announced in its place — § 9, `/work` is not built yet. */
-  readonly comingSoonLabel?: string
+  /** Where the index pill points: the `/work` route. */
+  readonly allWorkHref?: string
 }
 
 /**
@@ -117,7 +117,7 @@ export function SelectedWork({
   title = 'Selected work',
   lede = DEFAULT_LEDE,
   allWorkLabel = 'All work',
-  comingSoonLabel = 'Coming soon',
+  allWorkHref = '/work',
 }: SelectedWorkProps) {
   const slots = projects.slice(0, BENTO_LAYOUT.length)
 
@@ -137,19 +137,7 @@ export function SelectedWork({
         lede={lede}
         tone="violet"
         action={
-          /**
-           * `/work` is out of scope for this milestone (§ 9), so the pill is a
-           * designed dead end rather than a 404 trap: `aria-disabled`, never
-           * the `disabled` attribute, so it stays focusable, and the
-           * `Coming soon` badge is real text inside the accessible name rather
-           * than a visual-only cue.
-           */
-          <Button
-            variant="unsupported"
-            unsupportedLabel={comingSoonLabel}
-            trailing="→"
-            title="The full work index is not published yet"
-          >
+          <Button href={allWorkHref} variant="secondary" size="md" trailing="→">
             {allWorkLabel}
           </Button>
         }
