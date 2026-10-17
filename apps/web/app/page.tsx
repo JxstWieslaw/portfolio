@@ -97,7 +97,6 @@ export default function HomePage() {
       <DecorativeLayerNote />
 
       <Hero kpis={getKpis('hero')} />
-      <div style={{ height: 8 }} aria-hidden="true" />
 
       <ProofStrip domains={getDomains()} kpis={getKpis('proof')} />
 
