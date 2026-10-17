@@ -9,7 +9,7 @@
  * Run: npx tsx scripts/brand/render-icons.ts   (from apps/web). Output is committed; this is not a build step.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -43,9 +43,24 @@ async function png(svg: string, file: string, size: number, opaque = false): Pro
   await (opaque ? image.flatten({ background: BG }) : image).png({ compressionLevel: 9 }).toFile(file)
 }
 
+function icoFromPng(data: Buffer, size: number): Buffer {
+  const header = Buffer.alloc(22)
+  header.writeUInt16LE(1, 2) // type: icon
+  header.writeUInt16LE(1, 4) // one image
+  header[6] = size
+  header[7] = size
+  header.writeUInt16LE(1, 10) // colour planes
+  header.writeUInt16LE(32, 12) // bits per pixel
+  header.writeUInt32LE(data.length, 14)
+  header.writeUInt32LE(22, 18) // image data offset
+  return Buffer.concat([header, data])
+}
+
 async function main(): Promise<void> {
-  writeFileSync(out('app/icon.svg'), mark(64) + '\n')
-  await png(mark(64), out('app/icon.png'), 32)
+  writeFileSync(out('app/icon1.svg'), mark(64) + '\n')
+  await png(mark(64), out('app/icon2.png'), 32)
+  // Browsers still ask for /favicon.ico by default. An ICO may carry a PNG image, so this is the 32px PNG in an ICO header.
+  writeFileSync(out('app/favicon.ico'), icoFromPng(readFileSync(out('app/icon2.png')), 32))
   await png(mark(64), out('app/apple-icon.png'), 180, true)
   await png(mark(64), out('public/icons/icon-192.png'), 192)
   await png(mark(64), out('public/icons/icon-512.png'), 512)
