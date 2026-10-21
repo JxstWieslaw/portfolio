@@ -12,26 +12,24 @@ const seen = vi.hoisted(() => ({
   throwNext: false,
 }))
 
-vi.mock('next/dynamic', async () => {
+vi.mock('@/components/three/hero/HeroLayer', () => ({
+  default: function HeroStub(props: { onLive: (live: boolean) => void; onGiveUp: () => void }) {
+    seen.hero = props
+    if (seen.throwNext) throw new Error('boom')
+    return null
+  },
+}))
+
+vi.mock('@/components/three/AssemblyCanvas', async () => {
   const React = await import('react')
   return {
-    default: (loader: () => unknown) => {
-      const isHero = loader.toString().includes('hero/HeroLayer')
-      if (isHero) {
-        return function HeroStub(props: { onLive: (live: boolean) => void; onGiveUp: () => void }) {
-          seen.hero = props
-          if (seen.throwNext) throw new Error('boom')
-          return null
-        }
-      }
-      return function CanvasStub(props: { hero?: boolean; handover?: boolean }) {
-        React.useEffect(() => {
-          seen.canvas.mounted = true
-        }, [])
-        seen.canvas.hero = props.hero === true
-        seen.canvas.handover = props.handover === true
-        return null
-      }
+    default: function CanvasStub(props: { hero?: boolean; handover?: boolean }) {
+      React.useEffect(() => {
+        seen.canvas.mounted = true
+      }, [])
+      seen.canvas.hero = props.hero === true
+      seen.canvas.handover = props.handover === true
+      return null
     },
   }
 })

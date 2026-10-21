@@ -31,9 +31,18 @@
       "!.next/static/chunks/655.*.js",
       "!.next/static/chunks/826.*.js",
       "!.next/static/chunks/models.*.js",
-      "!.next/static/chunks/hero.*.js"
+      "!.next/static/chunks/hero.*.js",
+      "!.next/static/chunks/late-ui.*.js"
     ],
     "limit": "275 kB",
+    "gzip": true
+  },
+  {
+    "name": "late UI (contact form + Craft controls, lazy)",
+    "path": [
+      ".next/static/chunks/late-ui.*.js"
+    ],
+    "limit": "4 kB",
     "gzip": true
   },
   {

@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// The lazy wrapper is its own unit (contact-late-hydration.test.tsx); here the controls are the subject, rendered eagerly.
+vi.mock('@/components/sections/CraftControlsLazy', async () => {
+  const { CraftControls } = await import('@/components/sections/CraftControls')
+  return { CraftControlsLazy: CraftControls }
+})
 import { Craft } from '@/components/sections/Craft'
 import { Stack, toneForGroup, type StackGroup } from '@/components/sections/Stack'
 import { resetRevealSystem } from '@/components/ui/Reveal'
