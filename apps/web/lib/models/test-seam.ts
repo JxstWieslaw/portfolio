@@ -13,6 +13,7 @@
 
 import type { ModelPlacement } from '@/lib/assembly/chapters'
 import type { FormationId } from '@/lib/formations/config'
+import type { CubeFreezeHandle } from '@/lib/assembly/cube-freeze'
 
 export interface ModelTestSeam {
   /** Formation id to placement, merged over the ledger. */
@@ -29,6 +30,8 @@ declare global {
   interface Window {
     __ASSEMBLY_MODELS_TEST__?: ModelTestSeam
     __ASSEMBLY_DEBUG__?: AssemblyDebug
+    /** The cube parity spec's handle: set a frozen frame, read what it drew. Only with `?cubefreeze=`. Same switch and guard. */
+    __ASSEMBLY_FREEZE__?: CubeFreezeHandle
     /** The cubes' damped scroll-speed weight (`uVelocity`), 0 at rest. Same switch and the same guard as the rest of the seam. */
     __ASSEMBLY_VELOCITY__?: () => number
     /** How many cubes the last drawn frame instanced (0 while the hero engine owns the hero). Same switch and guard. */

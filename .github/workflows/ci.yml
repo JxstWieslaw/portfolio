@@ -162,6 +162,44 @@ jobs:
             apps/web/tests/visual/home.spec.ts-snapshots/
           retention-days: 7
 
+  # The cubes' pixel parity (plain-three migration spec, S0) is its own job for the same reasons as `visual`: it runs in
+  # parallel with e2e (adds nothing to its wall-clock time), inside the pinned Playwright image its Linux baselines were
+  # made in. It needs the cube freeze seam, so it builds its own app with NEXT_PUBLIC_MODEL_TEST=1 (the config does the
+  # build). Baselines: docs/visual-regression.md, "Cube parity".
+  cubes:
+    name: Cube pixel parity (Linux baselines)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm install -g npm@11.19.0
+      - run: npm ci
+      - name: Playwright image matches the installed @playwright/test
+        run: |
+          installed=$(node -p "require('./node_modules/@playwright/test/package.json').version")
+          echo "installed=$installed image=1.63.0"
+          test "$installed" = "1.63.0"
+      - run: npm run test:cubes -w @repo/web
+        env:
+          HOME: /root
+          NEXT_PUBLIC_MODEL_TEST: '1'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ failure() }}
+        with:
+          name: cube-diffs
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          retention-days: 7
+
   api-integration:
     name: API — migrations, seed and integration tests on Postgres 17
     runs-on: ubuntu-latest
