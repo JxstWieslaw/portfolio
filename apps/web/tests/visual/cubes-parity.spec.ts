@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { basename, dirname } from 'node:path'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import sharp from 'sharp'
 
@@ -42,6 +42,9 @@ const TOLERANCE = {
   over8: Number(process.env.CUBES_TOL_OVER8 ?? 0.0005),
 }
 
+/** Dots in a snapshot name are not safe across Playwright's path handling: 0.25 becomes 0p25. */
+const tag = (n: number): string => String(n).replace('.', 'p')
+
 interface Frame {
   readonly name: string
   readonly t: number
@@ -58,13 +61,13 @@ const FRAMES: readonly Frame[] = [
   // Each formation at rest, as the scroll store reports it: the section the visitor is in, the next one waiting.
   ...IDS.map((id, i): Frame => ({ name: `rest-${id}`, t: SETTLED_T, from: i, to: Math.min(i + 1, IDS.length - 1), mix: 0 })),
   // Mid-transition states between neighbours: the stream's flow, the scatter's drop, the ring's arrival.
-  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `mix-stream-lattice-${mix}`, t: SETTLED_T, from: 1, to: 2, mix })),
-  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `mix-orbit-scatter-${mix}`, t: SETTLED_T, from: 3, to: 4, mix })),
-  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `mix-grid-ring-${mix}`, t: SETTLED_T, from: 5, to: 6, mix })),
+  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `mix-stream-lattice-${tag(mix)}`, t: SETTLED_T, from: 1, to: 2, mix })),
+  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `mix-orbit-scatter-${tag(mix)}`, t: SETTLED_T, from: 3, to: 4, mix })),
+  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `mix-grid-ring-${tag(mix)}`, t: SETTLED_T, from: 5, to: 6, mix })),
   // The hero hand-over band with the hero engine off: the monolith's own cubes morph into the stream.
-  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `handover-band-${mix}`, t: SETTLED_T, from: 0, to: 1, mix })),
+  ...[0.25, 0.5, 0.75].map((mix): Frame => ({ name: `handover-band-${tag(mix)}`, t: SETTLED_T, from: 0, to: 1, mix })),
   // The on-load assembly, from the seeded cloud into the monolith.
-  ...[0.5, 1.5, 3].map((t): Frame => ({ name: `intro-${t}s`, t, from: 0, to: 0, mix: 0 })),
+  ...[0.5, 1.5, 3].map((t): Frame => ({ name: `intro-${tag(t)}s`, t, from: 0, to: 0, mix: 0 })),
 ]
 
 interface Size {
@@ -201,8 +204,8 @@ function baseline(testInfo: TestInfo, name: string, actual: Buffer): Buffer | nu
   }
   if (existsSync(file)) return readFileSync(file)
   // No baseline: leave the capture where CI uploads it (test-results/), so it can be looked at and committed.
-  const out = testInfo.outputPath(name.replace(/\.[^.]+$/, '') + '-actual' + (name.match(/\.[^.]+$/)?.[0] ?? ''))
-  writeFileSync(out, actual)
+  // Named after the baseline path it was expected at: drop `-actual` and the file is the baseline.
+  writeFileSync(testInfo.outputPath(basename(file).replace(/(.[^.]+)$/, '-actual$1')), actual)
   return null
 }
 
