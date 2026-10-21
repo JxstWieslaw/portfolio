@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:visual": "playwright test -c playwright.visual.config.ts",
+    "test:cubes": "playwright test -c playwright.cubes.config.ts",
     "lint:content": "tsx scripts/lint-content.ts",
     "assets:ingest": "tsx scripts/assets/ingest.cli.ts",
     "assets:check": "tsx scripts/assets/check.cli.ts",

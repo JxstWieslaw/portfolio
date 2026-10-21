@@ -31,6 +31,7 @@ import { assemblyBuilder, createBundleCache } from '@/lib/assembly/bundle-cache'
 import { chapterFor, lerpChapter, lookPoint } from '@/lib/assembly/chapters'
 import { CAMERA_DAMP, cameraPosition, damp, lerpRig, rigFor, type CameraRig } from '@/lib/assembly/camera'
 import { ASSEMBLY_SECONDS, SETTLE_SECONDS, resolveAssembly } from '@/lib/assembly/cloud'
+import { emptyProbe, makeCubeFreeze, readCubeFreeze, type CubeFreeze, type CubeProbe } from '@/lib/assembly/cube-freeze'
 import { handoverFades } from '@/lib/assembly/handover'
 import { assemblyClock, resetAssemblyClock } from '@/lib/hero/clock'
 import { ENVIRONMENT_DOME, ENVIRONMENT_FACE_PX, ENVIRONMENT_INTENSITY, LIGHTFORMERS } from '@/lib/assembly/environment'
@@ -105,6 +106,12 @@ export interface AssemblyCanvasProps {
 /** The scroll-speed read for the e2e job; module-local so it folds away in production (see `test-seam.ts`). */
 const DEBUG_HOOK: boolean = process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_MODEL_TEST === '1'
 
+/**
+ * Under `?cubefreeze=` (the same switch) the camera, look-at and light bias land on their targets in one step: a
+ * damping step this long leaves `exp(-rate * dt)` at exactly 0, so the frame is a function of its inputs, not of history.
+ */
+const FREEZE_SNAP_DT = 1000
+
 /** Idle wobble — the 2D hero's values, verbatim. */
 const WOBBLE_RATE = 0.35
 const WOBBLE_AMPLITUDE = 0.05
@@ -137,6 +144,10 @@ interface PointerState {
 interface AssemblyStore {
   scroll: ScrollState
   pointer: PointerState
+  /** The frozen state of the test seam; `null` everywhere else, and always in a production build. */
+  freeze: CubeFreeze | null
+  /** What the last frozen frame drew; `null` unless the seam is on. */
+  probe: CubeProbe | null
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -429,6 +440,8 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
 
   // Idle ticker: breathing, flow, spins, calm — only while visible and not faded out.
   useEffect(() => {
+    // A frozen frame is drawn on request only, so nothing can move it.
+    if (DEBUG_HOOK && store.current.freeze) return undefined
     const id = window.setInterval(() => {
       if (document.hidden || store.current.scroll.opacity <= 0) return
       invalidate()
@@ -555,8 +568,9 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     if (!compiled.current) return
     if (scroll.opacity <= 0 && live.current) return
 
-    const t = state.clock.elapsedTime
-    const dt = Math.min(delta, 0.1)
+    const freeze = DEBUG_HOOK ? store.current.freeze : null
+    const t = freeze ? freeze.t : state.clock.elapsedTime
+    const dt = freeze ? FREEZE_SNAP_DT : Math.min(delta, 0.1)
     const { group, geometry, uniforms, slots, artefact, inverse } = rig
     const pointer = store.current.pointer
     const m = motion.current
@@ -564,7 +578,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     // The on-load assembly: cloud -> monolith on a clock from the first drawn
     // frame, then the scroll state settles in without a step (`resolveAssembly`).
     if (assemblyStart.current < 0) {
-      assemblyStart.current = t
+      assemblyStart.current = freeze ? 0 : t
       assemblyClock.t0 = performance.now()
     }
     const elapsed = t - assemblyStart.current
@@ -578,7 +592,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
       parallaxDeg: damp(m.rig.parallaxDeg, target.parallaxDeg, CAMERA_DAMP, dt),
       orbitRate: target.orbitRate,
     }
-    m.orbit += target.orbitRate * dt
+    m.orbit = freeze ? target.orbitRate * t : m.orbit + target.orbitRate * dt
     const [cx, cy, cz] = cameraPosition(m.rig.distance, m.rig.tiltDeg, m.orbit)
     // The chapter ledger's look-at offset and key/fill bias, damped at the same rate.
     // Neutral rows ([0,0,0], 1, 1) leave the camera and the lights exactly as they were.
@@ -606,7 +620,8 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     camera.updateMatrixWorld()
 
     // Formation change: write the slot that is not holding `from`, flip uSwap.
-    const plan = planSlots(slotState.current, from, to)
+    // A frozen frame forgets which slot held what: the slots are rewritten, so the frame is not a function of the frames before it.
+    const plan = planSlots(freeze ? EMPTY_SLOTS : slotState.current, from, to)
     for (const write of plan.writes) slots.write(write.slot, bundles.get(write.kind))
     slotState.current = plan.state
     uniforms.uSwap.value = plan.swap
@@ -622,7 +637,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     // The contact ring's calm (§ 3.7): starts once the visitor is at rest on the ring.
     const settled = settledFormation(from, to, mix)
     if (settled === 'ring') {
-      if (m.settledAt < 0) m.settledAt = t
+      if (m.settledAt < 0) m.settledAt = freeze ? 0 : t
     } else m.settledAt = -1
     const calm = calmAt(settled, m.settledAt < 0 ? 0 : t - m.settledAt)
 
@@ -674,7 +689,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     uniforms.uAttractPull.value = m.attract > 1e-3 ? ATTRACT_PULL_MODEL * sTo.unit : 0
 
     // The craft drop (§ 3.5): once per visit, when half the scatter is on screen from either side.
-    m.drop = dropTrigger(m.drop, from, to, mix, t)
+    m.drop = dropTrigger(freeze ? NO_DROP : m.drop, from, to, mix, freeze ? 0 : t)
     const shiver = m.drop.dropAt >= 0 ? shiverAt(t - m.drop.dropAt) : 0
     uniforms.uDropAt.value = m.drop.dropAt
     uniforms.uShiver.value.set(from === 'scatter' ? shiver : 0, to === 'scatter' ? shiver : 0)
@@ -690,7 +705,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     uniforms.uBias.value = lerp(biasFor(from), biasFor(to), mix)
     uniforms.uCalm.value = calm
     // Scroll speed: one damped scalar, one uniform. Cubes only: the models are separate meshes and never see it.
-    uniforms.uVelocity.value = m.velocity.step(window.scrollY, t, size.height)
+    uniforms.uVelocity.value = freeze ? 0 : m.velocity.step(window.scrollY, t, size.height)
     uniforms.uStaggerByT.value = to === 'ring' ? 1 : 0
     // The hand-over: the monolith side is size 0, so the stream grows out of the dispersing hero and never shows the
     // cubes' own monolith next to the engine's. Slot-based like `uUnitA/B`.
@@ -735,7 +750,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     // A loaded `artefact`-role model takes the artefact's place; scale 0, never `visible` (it holds a light).
     // A throw here must never break the page: the slot is killed and the procedural artefact carries on.
     try {
-      const modelFrame = models.current?.update({ from, to, mix, settled, dt, time: t, unitOf: (formation) => scalars(formation).unit })
+      const modelFrame = models.current?.update({ from, to, mix, settled, dt: freeze ? 1 / 60 : dt, time: t, unitOf: (formation) => scalars(formation).unit })
       if (modelFrame?.suppressArtefact) artefact.group.scale.setScalar(0)
     } catch (error) {
       console.warn('[assembly] the model slot failed and was turned off', error)
@@ -771,6 +786,16 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     }
 
     state.gl.render(scene, camera)
+    const probe = DEBUG_HOOK ? store.current.probe : null
+    if (probe) {
+      const { info } = state.gl
+      probe.frames += 1
+      probe.calls = info.render.calls
+      probe.triangles = info.render.triangles
+      probe.programs = info.programs?.length ?? 0
+      probe.geometries = info.memory.geometries
+      probe.textures = info.memory.textures
+    }
 
     // Keep stepping while the assembly, the camera, the repulsion, the
     // attractor, the drop or the parallax is still settling.
@@ -787,7 +812,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
       (calm > 0 && calm < 1) ||
       Math.abs(ny * parallax - m.parallaxX) > 1e-4 ||
       Math.abs(nx * parallax - m.parallaxY) > 1e-4
-    if (settling) invalidate()
+    if (settling && !freeze) invalidate()
   }, 1)
 
   return null
@@ -797,6 +822,8 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero, handover 
   const store = useRef<AssemblyStore>({
     scroll: { from: 'monolith', to: 'monolith', mix: 0, opacity: 1 },
     pointer: { x: 0, y: 0, active: false },
+    freeze: DEBUG_HOOK ? readCubeFreeze(window.location.search) : null,
+    probe: DEBUG_HOOK ? emptyProbe() : null,
   })
   const wrapper = useRef<HTMLDivElement>(null)
   const washFrom = useRef<HTMLDivElement>(null)
@@ -813,7 +840,9 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero, handover 
 
   // The washes carry each formation's radial accent (the 2D wash divs fade out
   // under `data-gl="live"`), cross-faded by the same mix the cubes use.
-  const apply = useCallback((state: ScrollState) => {
+  const apply = useCallback((reported: ScrollState) => {
+    // The test seam owns the scroll state while it is frozen: a real scroll or resize must not move it.
+    const state = DEBUG_HOOK && store.current.freeze ? store.current.freeze.scroll : reported
     store.current.scroll = state
     if (wrapper.current) wrapper.current.style.opacity = state.opacity.toFixed(3)
     if (washFrom.current && washes.current.from !== state.from) {
@@ -838,6 +867,24 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero, handover 
     invalidateRef.current()
   }, [washOf])
   useAssemblyScroll(apply)
+
+  // The freeze handle, for the cube parity spec. Present only where the seam is, and only with `?cubefreeze=`.
+  useEffect(() => {
+    const { freeze, probe } = store.current
+    if (!DEBUG_HOOK || !freeze || !probe) return undefined
+    window.__ASSEMBLY_FREEZE__ = {
+      probe,
+      set(t, from, to, mix) {
+        const next = makeCubeFreeze(t, from, to, mix)
+        if (!next) throw new RangeError('cubefreeze: not a representable state')
+        store.current.freeze = next
+        apply(next.scroll)
+      },
+    }
+    return () => {
+      delete window.__ASSEMBLY_FREEZE__
+    }
+  }, [apply])
 
   return (
     <div ref={wrapper} className="absolute inset-0">
