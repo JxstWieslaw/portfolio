@@ -152,7 +152,6 @@ interface State {
   readonly fade: unknown
   readonly calls: number
   readonly triangles: number
-  readonly programs: number
 }
 
 type FreezeWindow = {
@@ -187,7 +186,6 @@ async function draw(page: Page, frame: Frame): Promise<{ png: Buffer; state: Sta
       fade: w.__ASSEMBLY_FADE__ ?? null,
       calls: probe?.calls ?? 0,
       triangles: probe?.triangles ?? 0,
-      programs: probe?.programs ?? 0,
     }
   })
   return { png: await page.screenshot(), state }
@@ -196,7 +194,7 @@ async function draw(page: Page, frame: Frame): Promise<{ png: Buffer; state: Sta
 /** Reads a committed baseline, writes one under `--update-snapshots`, and otherwise reports a missing one with the actual attached. */
 function baseline(testInfo: TestInfo, name: string, actual: Buffer): Buffer | null {
   const file = testInfo.snapshotPath(name)
-  if (testInfo.config.updateSnapshots === 'all') {
+  if (testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed') {
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, actual)
     return actual
@@ -218,12 +216,15 @@ for (const size of SIZES) {
     // Only the cube layer: everything else on the page is hidden, the layout stays.
     await page.addStyleTag({ content: 'body *{visibility:hidden!important}[data-assembly],[data-assembly] *{visibility:visible!important}' })
 
+    const programs = (): Promise<number> => page.evaluate(() => (window as unknown as FreezeWindow).__ASSEMBLY_FREEZE__?.probe.programs ?? 0)
     const passA = new Map<string, { png: Buffer; state: State }>()
     for (const frame of FRAMES) passA.set(frame.name, await draw(page, frame))
+    const programsAfterA = await programs()
     const passB = new Map<string, { png: Buffer; state: State }>()
     for (const frame of FRAMES) passB.set(frame.name, await draw(page, frame))
 
-    const states: Record<string, State> = {}
+    const programsAfterB = await programs()
+    const states: Record<string, unknown> = {}
     const worst = { mean: 0, p99: 0, over8: 0 }
     const noise = { mean: 0, p99: 0, over8: 0 }
     const missing: string[] = []
@@ -276,7 +277,9 @@ for (const size of SIZES) {
       expect.soft(d.over8, `${frame.name}: share of pixels off by over 8/255`).toBeLessThanOrEqual(TOLERANCE.over8)
     }
 
-    // What every frame handed the GPU, exactly: the rig, the instance count, calls, triangles and programs.
+    // What every frame handed the GPU, exactly: the rig, the instance count, calls and triangles, and the programs linked after each pass.
+    // Programs are counted per pass, not per frame: a program links the first time a frame needs it, so the per-frame count depends on the order.
+    states.programs = { afterFirstPass: programsAfterA, afterSecondPass: programsAfterB }
     const stateText = JSON.stringify(states, null, 2) + '\n'
     const committed = baseline(testInfo, `state-${size.name}.json`, Buffer.from(stateText))
     if (!committed) missing.push('state')
