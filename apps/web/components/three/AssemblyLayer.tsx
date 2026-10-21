@@ -1,7 +1,7 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { Component, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Component, Suspense, lazy, useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react'
+import type { AssemblyCanvasProps } from './AssemblyCanvas'
 import { hasNoGlFlag, probeWebGL2, readSaveData, shouldMountWebGL } from '@/lib/assembly/capabilities'
 import { afterLcp } from '@/lib/assembly/lcp'
 import { instanceKeep, readCapabilities, resolveRung } from '@/lib/formations/fallback'
@@ -37,9 +37,10 @@ function GiveUp() {
  * initial bundle carries none of it and jsdom never has to load it. A rejected
  * import resolves to `GiveUp` instead of throwing out of React.lazy.
  */
-const AssemblyCanvas = dynamic(
-  () => import(/* webpackChunkName: "three" */ './AssemblyCanvas').catch(() => ({ default: GiveUp })),
-  { ssr: false },
+const AssemblyCanvas = lazy<ComponentType<AssemblyCanvasProps>>(() =>
+  import(/* webpackChunkName: "three" */ './AssemblyCanvas').catch(
+    () => ({ default: GiveUp }),
+  ),
 )
 
 /**
@@ -47,20 +48,18 @@ const AssemblyCanvas = dynamic(
  * with no three, so it never waits for the 267 kB core and fails on its own.
  * A rejected import hands control back instead of leaving the cubes hidden.
  */
-const HeroLayer = dynamic(
-  () =>
-    import(/* webpackChunkName: "hero" */ './hero/HeroLayer').catch((error: unknown) => ({
-      default: ({ onGiveUp }: { onGiveUp: () => void }) => {
-        useEffect(() => {
-          console.warn('[hero] gave up', 'import', error)
-          document.documentElement.setAttribute('data-hero-reason', 'import')
-          document.documentElement.setAttribute('data-hero', 'poster')
-          onGiveUp()
-        }, [onGiveUp])
-        return null
-      },
-    })),
-  { ssr: false },
+const HeroLayer = lazy<ComponentType<{ onGiveUp: () => void; onLive: (live: boolean) => void }>>(() =>
+  import(/* webpackChunkName: "hero" */ './hero/HeroLayer').catch((error: unknown) => ({
+    default: ({ onGiveUp }: { onGiveUp: () => void }) => {
+      useEffect(() => {
+        console.warn('[hero] gave up', 'import', error)
+        document.documentElement.setAttribute('data-hero-reason', 'import')
+        document.documentElement.setAttribute('data-hero', 'poster')
+        onGiveUp()
+      }, [onGiveUp])
+      return null
+    },
+  })),
 )
 
 interface BoundaryProps {
@@ -187,12 +186,16 @@ export function AssemblyLayer() {
     >
       {hero ? (
         <AssemblyBoundary onError={heroCaught}>
-          <HeroLayer onGiveUp={heroOff} onLive={heroReported} />
+          <Suspense fallback={null}>
+            <HeroLayer onGiveUp={heroOff} onLive={heroReported} />
+          </Suspense>
         </AssemblyBoundary>
       ) : null}
       {keep === null ? null : (
         <AssemblyBoundary onError={giveUp}>
-          <AssemblyCanvas keep={keep} hero={heroLive} handover={heroSeen} onLive={setLive} onGiveUp={giveUp} />
+          <Suspense fallback={null}>
+            <AssemblyCanvas keep={keep} hero={heroLive} handover={heroSeen} onLive={setLive} onGiveUp={giveUp} />
+          </Suspense>
         </AssemblyBoundary>
       )}
     </div>

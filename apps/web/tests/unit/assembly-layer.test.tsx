@@ -2,41 +2,32 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * `next/dynamic` is replaced by a stand-in that behaves like the real one —
- * it calls the loader on first render — so the test can see whether the
- * three-importing chunk was asked for. The chunk itself is replaced by a
- * module whose factory throws: the import rejects the way a ChunkLoadError
- * does after a deploy, which keeps three out of jsdom and exercises the
- * give-up path at the same time.
+ * The chunk modules are replaced by modules whose factory throws, after counting the request: the import rejects the
+ * way a ChunkLoadError does after a deploy, which keeps three out of jsdom and exercises the give-up path at the
+ * same time. `React.lazy` calls its loader on first render, so `requests` says whether a chunk was asked for. The
+ * layer is re-imported per test (`loadLayer`) because each `lazy` remembers its first answer.
  */
-const dynamicProbe = vi.hoisted(() => ({ loaders: 0, requests: 0 }))
-
-vi.mock('next/dynamic', async () => {
-  const React = await import('react')
-  return {
-    default: (loader: () => Promise<{ default: React.ComponentType<Record<string, unknown>> }>) => {
-      dynamicProbe.loaders += 1
-      return function DynamicStandIn(props: Record<string, unknown>) {
-        const [Loaded, setLoaded] = React.useState<React.ComponentType<Record<string, unknown>> | null>(null)
-        React.useEffect(() => {
-          dynamicProbe.requests += 1
-          void loader().then((module) => setLoaded(() => module.default))
-        }, [])
-        return Loaded ? <Loaded {...props} /> : null
-      }
-    },
-  }
-})
+const dynamicProbe = vi.hoisted(() => ({ requests: 0 }))
 
 vi.mock('@/components/three/AssemblyCanvas', () => {
+  dynamicProbe.requests += 1
   throw new Error('ChunkLoadError: Loading chunk three failed')
 })
 
 vi.mock('@/components/three/hero/HeroLayer', () => {
+  dynamicProbe.requests += 1
   throw new Error('ChunkLoadError: Loading chunk hero failed')
 })
 
-import { AssemblyLayer, resetAssemblyForTests } from '@/components/three/AssemblyLayer'
+type LayerModule = typeof import('@/components/three/AssemblyLayer')
+let AssemblyLayer: LayerModule['AssemblyLayer']
+
+async function loadLayer(): Promise<void> {
+  vi.resetModules()
+  const layer = await import('@/components/three/AssemblyLayer')
+  layer.resetAssemblyForTests()
+  AssemblyLayer = layer.AssemblyLayer
+}
 
 /** Past the idle macrotask fallback and the rejected import. */
 const AFTER_IDLE_MS = 60
@@ -105,9 +96,9 @@ async function settle(ms: number): Promise<void> {
   })
 }
 
-beforeEach(() => {
-  resetAssemblyForTests()
+beforeEach(async () => {
   dynamicProbe.requests = 0
+  await loadLayer()
   webgl2 = false
   stubContexts()
   Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 8 })
@@ -197,7 +188,4 @@ describe('AssemblyLayer', () => {
     expect(dynamicProbe.requests).toBe(0)
   })
 
-  it('registers exactly two dynamic chunks for the whole module: three, and the flagged hero engine', () => {
-    expect(dynamicProbe.loaders).toBe(2)
-  })
 })

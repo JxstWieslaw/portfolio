@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Eyebrow } from '@/components/ui/Eyebrow'
 import { GlassCard } from '@/components/ui/GlassCard'
 import { Reveal } from '@/components/ui/Reveal'
-import { CraftControls } from './CraftControls'
+import { CraftControlsLazy } from './CraftControlsLazy'
 import { MICRO_LINK, MOBILE_SCRIM, STATEMENT } from './craft-styles'
 
 /**
@@ -91,7 +91,7 @@ export function Craft({
 
           <p className="mb-8 text-[var(--fg-1)]">{body}</p>
 
-          <CraftControls labLink={<LabLink href={labHref} />} />
+          <CraftControlsLazy labLink={<LabLink href={labHref} />} />
         </GlassCard>
       </Reveal>
     </Section>

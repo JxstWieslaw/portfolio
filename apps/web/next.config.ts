@@ -13,6 +13,13 @@ const HERO_CHUNK =
   /[\\/](?:components[\\/]three[\\/]hero[\\/](?:HeroLayer\.tsx|HeroEngine\.ts|hero\.glsl\.ts)|lib[\\/]hero[\\/](?:geometry|progress|frame|governor|tiers)\.ts)$/
 
 /**
+ * Modules that belong to the lazy `late-ui` chunk: the contact form and the Craft controls, loaded through the
+ * client wrappers `ContactFormLazy` / `CraftControlsLazy`. Forced into one named file so its budget is one number.
+ */
+const LATE_UI_CHUNK =
+  /[\\/]components[\\/]sections[\\/](?:ContactForm|CraftControls|craft-styles)\.tsx?$/
+
+/**
  * The API origin for `connect-src`, or '' when the value is unusable. Only http(s) with a plain host is accepted, so a
  * value like `javascript:x` (origin "null"), `https://*.x.com` or one carrying `;` or `,` can never reach the header.
  * `URL.origin` drops userinfo, path, query and fragment.
@@ -155,6 +162,14 @@ const config: NextConfig = {
           enforce: true,
           priority: 60,
           test: HERO_CHUNK,
+        },
+        // The below-the-fold interactive islands (contact form, Craft controls): one file, one budget.
+        'late-ui': {
+          name: 'late-ui',
+          chunks: 'async',
+          enforce: true,
+          priority: 60,
+          test: LATE_UI_CHUNK,
         },
       }
     }

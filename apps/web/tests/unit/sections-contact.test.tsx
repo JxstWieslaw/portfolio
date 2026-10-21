@@ -10,6 +10,12 @@ import {
   SUBMIT_LABELS,
 } from '@/components/sections/ContactForm'
 
+// The lazy wrapper is its own unit (contact-late-hydration.test.tsx); here the form is the subject, rendered eagerly.
+vi.mock('@/components/sections/ContactFormLazy', async () => {
+  const { ContactForm } = await import('@/components/sections/ContactForm')
+  return { ContactFormLazy: ContactForm }
+})
+
 const EMAIL = 'wieslawsamushonga01@gmail.com'
 
 const CHANNELS: readonly ContactChannel[] = [

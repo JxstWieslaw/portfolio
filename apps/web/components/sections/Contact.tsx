@@ -2,7 +2,8 @@ import { Section } from '@/components/layout/Section'
 import { SectionBackdrop } from '@/components/three/SectionBackdrop'
 import { Eyebrow } from '@/components/ui/Eyebrow'
 import { HairlineCell, HairlineGrid } from '@/components/ui/HairlineGrid'
-import { ContactForm, CopyEmailButton } from '@/components/sections/ContactForm'
+import { ContactFormLazy } from '@/components/sections/ContactFormLazy'
+import { CopyEmailButton } from '@/components/sections/CopyEmailButton'
 
 export interface ContactChannel {
   readonly label: string
@@ -96,7 +97,7 @@ export function Contact({ email, emailPlaceholder = false, channels = [], onHand
         </HairlineGrid>
       </div>
 
-      <ContactForm email={email} onHandOff={onHandOff} />
+      <ContactFormLazy email={email} onHandOff={onHandOff} />
     </Section>
   )
 }
