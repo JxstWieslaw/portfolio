@@ -620,7 +620,8 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     camera.updateMatrixWorld()
 
     // Formation change: write the slot that is not holding `from`, flip uSwap.
-    const plan = planSlots(slotState.current, from, to)
+    // A frozen frame forgets which slot held what: the slots are rewritten, so the frame is not a function of the frames before it.
+    const plan = planSlots(freeze ? EMPTY_SLOTS : slotState.current, from, to)
     for (const write of plan.writes) slots.write(write.slot, bundles.get(write.kind))
     slotState.current = plan.state
     uniforms.uSwap.value = plan.swap
