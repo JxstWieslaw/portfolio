@@ -34,7 +34,7 @@
       "!.next/static/chunks/hero.*.js",
       "!.next/static/chunks/late-ui.*.js"
     ],
-    "limit": "275 kB",
+    "limit": "232 kB",
     "gzip": true
   },
   {
