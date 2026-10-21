@@ -118,15 +118,48 @@ test.describe('the poster as the hero (?hero=a without the engine)', () => {
   })
 
   test('is clipped to the hero: once the hero has scrolled away the next section looks the same as without the poster', async ({ page }) => {
+    // The two shots must differ only by the poster, so each one waits for the page below the hero to come to rest
+    // instead of sleeping a fixed time. Without that, a slow runner photographs the two pages at different points of
+    // processes that have nothing to do with the poster, and the mean drifts past the bar (CI saw 2.3 to 7.8):
+    //   - `html { scroll-behavior: smooth }` turns a plain scrollTo into an animated scroll, so the scroll is made
+    //     instant and the shot waits for scrollY to be the target;
+    //   - each section's FieldCanvas paints at idle once it is near the viewport, then cross-fades in from opacity 0;
+    //   - Reveal hides below-the-fold blocks and fades them in (560 ms + stagger) when the observer fires;
+    //   - the nav condenses on scroll with its own transitions.
+    // Scroll-driven animations (the section headings, the poster's floor stills) are a function of scrollY, so the
+    // same scroll position gives the same frame and they need no waiting.
     const shot = async (url: string): Promise<Buffer> => {
       await page.goto(url)
       await page.waitForLoadState('load')
-      const bottom = await page.evaluate(() => {
+      const target = await page.evaluate(() => {
         const r = document.querySelector('#hero')?.getBoundingClientRect()
-        return (r?.bottom ?? 0) + window.scrollY
+        const y = Math.round((r?.bottom ?? 0) + window.scrollY + 20)
+        window.scrollTo({ top: y, behavior: 'instant' })
+        return Math.min(y, document.documentElement.scrollHeight - window.innerHeight)
       })
-      await page.evaluate((y) => window.scrollTo(0, y + 20), bottom)
-      await page.waitForTimeout(800)
+      await page.waitForFunction(
+        (y) => {
+          if (Math.abs(window.scrollY - y) > 1) return false
+          const inView = (el: Element): boolean => {
+            const r = el.getBoundingClientRect()
+            return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight
+          }
+          // A section canvas in view has painted (its inline opacity is 1), unless its rung is the CSS wash.
+          const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('canvas[data-f]:not([data-f="monolith"])')).filter(inView)
+          if (!canvases.every((c) => c.dataset['rung'] === 'wash' || (c.dataset['rung'] !== undefined && c.style.opacity === '1'))) return false
+          // Every reveal target in view has been revealed (the observer, the poll or the 4 s deadline).
+          if (!Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]')).filter(inView).every((el) => el.dataset['revealed'] === 'true')) return false
+          // And nothing on screen is mid-transition: the canvas cross-fades, the reveals and the nav have all finished.
+          // (Off-screen ones, such as the deadline's reveals further down, cannot change the shot.)
+          return document.getAnimations().every((a) => {
+            if (!(a instanceof CSSTransition) || a.playState === 'finished') return true
+            const target = a.effect instanceof KeyframeEffect ? a.effect.target : null
+            return target !== null && !inView(target)
+          })
+        },
+        target,
+        { polling: 'raf', timeout: 15_000 },
+      )
       return page.screenshot()
     }
     const without = await shot('/?hero=off&nogl=1')
@@ -135,7 +168,9 @@ test.describe('the poster as the hero (?hero=a without the engine)', () => {
     const b = await sharp(withPoster).removeAlpha().greyscale().raw().toBuffer()
     let sum = 0
     for (let i = 0; i < a.length; i++) sum += Math.abs((a[i] ?? 0) - (b[i] ?? 0))
-    // A fixed poster that escaped its clip would fill this whole viewport with a mean difference of tens of levels.
+    // Settled, the two shots are pixel-identical (a mean of 0 in repeated runs on every project); a poster showing below
+    // the hero would cover this whole viewport and put the mean tens of levels up. This checks what a visitor sees: the
+    // sections after the hero paint over a fixed poster as well, so the clip-path alone being lost would not show here.
     expect(sum / a.length).toBeLessThan(2)
   })
 
