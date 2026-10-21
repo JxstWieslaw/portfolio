@@ -1,0 +1,380 @@
+{
+  "rest-monolith": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 1.891792733273901,
+      "light": 2
+    },
+    "cubes": 1241,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 17100
+  },
+  "rest-stream": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 720,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 10848
+  },
+  "rest-lattice": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 852,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 12432
+  },
+  "rest-orbit": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 2
+    },
+    "cubes": 900,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 6,
+    "triangles": 19008
+  },
+  "rest-scatter": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 900,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 6,
+    "triangles": 13388
+  },
+  "rest-grid": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 990,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 6,
+    "triangles": 14548
+  },
+  "rest-ring": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 990,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 14088
+  },
+  "mix-stream-lattice-0.25": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 720,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 10848
+  },
+  "mix-stream-lattice-0.5": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 720,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 10848
+  },
+  "mix-stream-lattice-0.75": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 720,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 10848
+  },
+  "mix-orbit-scatter-0.25": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 1
+    },
+    "cubes": 900,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 6,
+    "triangles": 19008
+  },
+  "mix-orbit-scatter-0.5": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 900,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 7,
+    "triangles": 19388
+  },
+  "mix-orbit-scatter-0.75": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 900,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 6,
+    "triangles": 13388
+  },
+  "mix-grid-ring-0.25": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 990,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 6,
+    "triangles": 14548
+  },
+  "mix-grid-ring-0.5": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 990,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 6,
+    "triangles": 14548
+  },
+  "mix-grid-ring-0.75": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 990,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 14088
+  },
+  "handover-band-0.25": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 1.4720512205787544,
+      "light": 1.5
+    },
+    "cubes": 1241,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 17100
+  },
+  "handover-band-0.5": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 1.0168385941347218,
+      "light": 1
+    },
+    "cubes": 1241,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 17100
+  },
+  "handover-band-0.75": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0.5261548539418037,
+      "light": 0.5
+    },
+    "cubes": 1241,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 17100
+  },
+  "intro-0.5s": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 0,
+      "light": 0
+    },
+    "cubes": 1241,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 17100
+  },
+  "intro-1.5s": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 1.891792733273901,
+      "light": 2
+    },
+    "cubes": 1241,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 17100
+  },
+  "intro-3s": {
+    "rig": {
+      "fadeA": 1,
+      "fadeB": 1,
+      "swap": 0,
+      "film": 0,
+      "shell": 1.891792733273901,
+      "light": 2
+    },
+    "cubes": 1241,
+    "fade": [
+      1,
+      1
+    ],
+    "calls": 5,
+    "triangles": 17100
+  },
+  "programs": {
+    "afterFirstPass": 5,
+    "afterSecondPass": 5
+  }
+}
