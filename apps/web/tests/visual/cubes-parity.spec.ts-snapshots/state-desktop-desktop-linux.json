@@ -118,7 +118,7 @@
     "calls": 5,
     "triangles": 14088
   },
-  "mix-stream-lattice-0.25": {
+  "mix-stream-lattice-0p25": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -135,7 +135,7 @@
     "calls": 5,
     "triangles": 10848
   },
-  "mix-stream-lattice-0.5": {
+  "mix-stream-lattice-0p5": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -152,7 +152,7 @@
     "calls": 5,
     "triangles": 10848
   },
-  "mix-stream-lattice-0.75": {
+  "mix-stream-lattice-0p75": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -169,7 +169,7 @@
     "calls": 5,
     "triangles": 10848
   },
-  "mix-orbit-scatter-0.25": {
+  "mix-orbit-scatter-0p25": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -186,7 +186,7 @@
     "calls": 6,
     "triangles": 19008
   },
-  "mix-orbit-scatter-0.5": {
+  "mix-orbit-scatter-0p5": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -203,7 +203,7 @@
     "calls": 7,
     "triangles": 19388
   },
-  "mix-orbit-scatter-0.75": {
+  "mix-orbit-scatter-0p75": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -220,7 +220,7 @@
     "calls": 6,
     "triangles": 13388
   },
-  "mix-grid-ring-0.25": {
+  "mix-grid-ring-0p25": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -237,7 +237,7 @@
     "calls": 6,
     "triangles": 14548
   },
-  "mix-grid-ring-0.5": {
+  "mix-grid-ring-0p5": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -254,7 +254,7 @@
     "calls": 6,
     "triangles": 14548
   },
-  "mix-grid-ring-0.75": {
+  "mix-grid-ring-0p75": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -271,7 +271,7 @@
     "calls": 5,
     "triangles": 14088
   },
-  "handover-band-0.25": {
+  "handover-band-0p25": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -288,7 +288,7 @@
     "calls": 5,
     "triangles": 17100
   },
-  "handover-band-0.5": {
+  "handover-band-0p5": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -305,7 +305,7 @@
     "calls": 5,
     "triangles": 17100
   },
-  "handover-band-0.75": {
+  "handover-band-0p75": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -322,7 +322,7 @@
     "calls": 5,
     "triangles": 17100
   },
-  "intro-0.5s": {
+  "intro-0p5s": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
@@ -339,7 +339,7 @@
     "calls": 5,
     "triangles": 17100
   },
-  "intro-1.5s": {
+  "intro-1p5s": {
     "rig": {
       "fadeA": 1,
       "fadeB": 1,
