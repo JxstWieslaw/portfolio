@@ -1,195 +1,159 @@
 'use client'
 
-import { createRoot, type ReconcilerRoot, type RenderProps, type RootState } from '@react-three/fiber'
-import {
-  Component,
-  StrictMode,
-  Suspense,
-  useCallback,
-  useEffect,
-  useInsertionEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from 'react'
-import useMeasure from 'react-use-measure'
-import { FrameErrorContext, type FrameErrorSink } from './frame-errors'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { StageContext, type StageRoot } from './context'
+import { createStage, type CameraOptions, type Dpr, type Frameloop, type GlOption, type RootState, type Stage } from './stage'
 
 /**
- * The stage: one persistent `<canvas>` hosting an R3F root, without R3F's `<Canvas>` component.
+ * The stage: one persistent `<canvas>` with a plain-three renderer, camera, scene, clock and frame loop behind it
+ * (`stage.ts`), and the `useThree`/`useFrame` hooks for the scene inside it. Plain-three migration spec § 7, slice S2: it
+ * replaces React Three Fiber, whose reconciler, event system and store the Assembly never used (the scene renders no
+ * R3F element; everything is imperative through `useThree` and `useFrame`).
  *
- * Why not `<Canvas>`: it runs `extend(THREE)`, which registers every `three` export as a JSX element and so pulls the
- * whole namespace (about 43 kB gz) into the lazy core. The scene renders no R3F element at all (everything is
- * imperative through `useThree` and `useFrame`), so it needs none of that catalogue. Plain-three migration spec § 7, S1.
+ * Lifecycle:
+ *   - The container is measured in a layout effect; the renderer is built on the first non-empty measurement (as R3F
+ *     built its root only once its box had a size), then `ResizeObserver` and window `resize` re-measure, debounced
+ *     by `resize.debounce` ms. A new size (or a new device pixel ratio) updates the camera aspect, the pixel ratio and
+ *     the drawing buffer, publishes the new `size`, and asks for a frame.
+ *   - The children mount once the renderer exists. After their layout effects (so after every `useFrame` has
+ *     subscribed), the loop opens and `onCreated` runs: R3F's order, so `onCreated`'s renderer settings are in place
+ *     before the children's passive effects (where the Assembly bakes and compiles) and before the first frame.
+ *   - The renderer is released (`dispose`, then `forceContextLoss`) on the real unmount only, after the children's
+ *     effect cleanups. StrictMode's effect replay in development (mount, cleanup, mount) keeps the same renderer, so
+ *     the scene never sees a lost context or a second renderer.
  *
- * This is R3F 9.8's `CanvasImpl` (`@react-three/fiber/dist/react-three-fiber.esm.js`) with four things left out, each
- * because nothing here uses it:
- *   - `extend(THREE)`: no JSX elements are rendered.
- *   - The pointer event manager (`events`): the scene reads `pointermove` on `window` itself; nothing is raycast.
- *   - `eventSource`, `eventPrefix`, `onPointerMissed`, the forwarded canvas ref: unused.
- *   - its-fine's context bridge: the scene reads no React context from above the canvas (it gets everything as props).
- *     The bridge also carried StrictMode into the R3F tree; the App Router turns StrictMode on in development only,
- *     and so does this file (`DEV_STRICT`), so the scene's effects still run mount, cleanup, mount in `next dev`.
- * Everything else is the same code path: `createRoot(canvas).configure(...)` builds the renderer, camera and scene
- * with R3F's own defaults (antialias, alpha, ACES Filmic tone mapping, sRGB output, colour management on, no
- * shadows), the size comes from `react-use-measure` with the same options, and the root is configured and rendered on
- * every commit exactly as `<Canvas>` did, so prop changes reach the scene in the same order.
- *
- * One thing is added: frame errors. A throw inside a `useFrame` callback happens in R3F's `requestAnimationFrame`
- * loop, outside React, so no error boundary sees it. The stage's `useFrame` catches it and reports it here: to
- * `onError` when given, otherwise it is rethrown from this component's render, where the nearest boundary catches it.
+ * Errors: a throw while building the renderer, or inside a frame when there is no `onError`, is rethrown from this
+ * component's render, where the nearest error boundary catches it. A render error in a child reaches that boundary on
+ * its own (the children are in this React tree). The stage adds no WebGL context listeners: context loss and restore
+ * belong to the scene.
  */
 
-/** The App Router's `reactStrictMode` default: on in development, off in a production build. */
-const DEV_STRICT = process.env.NODE_ENV !== 'production'
-
-/** The same `useLayoutEffect` R3F picks in a browser (this file never renders on the server: it is lazy, client only). */
-const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
-
-export interface StageProps
-  extends Pick<RenderProps<HTMLCanvasElement>, 'gl' | 'camera' | 'dpr' | 'frameloop' | 'shadows' | 'linear' | 'flat' | 'legacy' | 'scene'> {
+export interface StageProps {
   readonly children?: ReactNode
-  /** `react-use-measure` options; R3F's default is `{ scroll: true, debounce: { scroll: 50, resize: 0 } }`. */
-  readonly resize?: Parameters<typeof useMeasure>[0]
+  /** Renderer options over the stage's defaults (antialias, alpha, `powerPreference: 'high-performance'`), or a factory. */
+  readonly gl?: GlOption
+  /** The default `PerspectiveCamera` (fov 75, near 0.1, far 1000, at z 5), looking at the origin. */
+  readonly camera?: CameraOptions
+  /** Pixel ratio, or `[min, max]` around the device's. Default `[1, 2]`. */
+  readonly dpr?: Dpr
+  /** `'demand'`: draw only after `invalidate()`. `'always'`: every animation frame. Default `'always'`. */
+  readonly frameloop?: Frameloop
+  /** Trailing debounce, in ms, for re-measuring after a resize. Default 0 (immediately). */
+  readonly resize?: { readonly debounce?: number }
   /** Styles for the outer wrapper, merged over `position: relative; width/height: 100%; overflow: hidden`. */
   readonly style?: CSSProperties
-  /** Runs once the root exists, before the first frame: the place to change renderer settings. */
+  /** Runs once the scene has mounted, before the first frame: the place to change renderer settings. */
   readonly onCreated?: (state: RootState) => void
   /**
-   * A throw inside a frame callback. Without this prop the error is rethrown from the stage's render instead, so an
-   * error boundary above the stage handles it the same way as a render error. Called at most once per callback.
+   * A throw inside a frame. Without this prop the error is rethrown from the stage's render instead, so an error
+   * boundary above the stage handles it the same way as a render error. Called at most once per failing callback.
    */
   readonly onError?: (error: unknown) => void
-}
-
-interface BoundaryProps {
-  readonly set: (error: unknown) => void
-  readonly children: ReactNode
-}
-
-/** R3F's inner boundary: an error in the R3F tree is handed to the DOM side, which rethrows it from its own render. */
-class StageBoundary extends Component<BoundaryProps, { error: boolean }> {
-  override state = { error: false }
-
-  static getDerivedStateFromError(): { error: boolean } {
-    return { error: true }
-  }
-
-  override componentDidCatch(error: unknown): void {
-    this.props.set(error)
-  }
-
-  override render(): ReactNode {
-    return this.state.error ? null : this.props.children
-  }
-}
-
-/** R3F's `Block`: a suspended scene suspends the stage too, so the Suspense boundary above it shows its fallback. */
-function Block({ set }: { readonly set: (block: Promise<never> | false) => void }) {
-  useIsomorphicLayoutEffect(() => {
-    set(new Promise<never>(() => {}))
-    return () => set(false)
-  }, [set])
-  return null
 }
 
 /** `{ error }` so that a falsy thrown value still counts as an error. */
 type Failure = { readonly error: unknown } | null
 
-export function Canvas({ children, resize, style, gl, camera, dpr, frameloop, shadows, linear, flat, legacy, scene, onCreated, onError }: StageProps) {
-  const [containerRef, containerRect] = useMeasure({ scroll: true, debounce: { scroll: 50, resize: 0 }, ...resize })
+/** Opens the loop and runs `onCreated` after the children's layout effects: R3F's `Provider`. */
+function Provider({ root, onCreated, children }: { readonly root: StageRoot; readonly onCreated: (state: RootState) => void; readonly children: ReactNode }) {
+  const { stage } = root
+  useLayoutEffect(() => {
+    stage.activate()
+    onCreated(stage.state)
+  }, [stage, onCreated])
+  return <StageContext.Provider value={root}>{children}</StageContext.Provider>
+}
+
+export function Canvas({ children, gl, camera, dpr = [1, 2], frameloop = 'always', resize, style, onCreated, onError }: StageProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [block, setBlock] = useState<Promise<never> | false>(false)
+  const stage = useRef<Stage | null>(null)
+  const [root, setRoot] = useState<StageRoot | null>(null)
   const [failure, setFailure] = useState<Failure>(null)
-  const setError = useCallback((error: unknown) => setFailure({ error }), [])
-  // A renderer that is still being created (only an async `gl` factory does that) re-renders this once it lands.
-  const [, setSettled] = useState(0)
-  const root = useRef<ReconcilerRoot<HTMLCanvasElement> | null>(null)
+  const debounce = resize?.debounce ?? 0
 
-  // The latest callbacks, read at call time, so a new inline function never reconfigures the root.
-  const created = useRef(onCreated)
-  const errorProp = useRef(onError)
-  useIsomorphicLayoutEffect(() => {
-    created.current = onCreated
-    errorProp.current = onError
-  }, [onCreated, onError])
-
-  // Stable for the root's lifetime: the frame hooks capture it once.
-  const sink = useRef<FrameErrorSink>((error) => {
-    const report = errorProp.current
-    if (report) report(error)
-    else setError(error)
+  // The latest props, read at call time: the renderer is built once, and a new inline callback never rebuilds it.
+  const latest = useRef({ gl, camera, dpr, frameloop, onCreated, onError })
+  useLayoutEffect(() => {
+    latest.current = { gl, camera, dpr, frameloop, onCreated, onError }
   })
 
-  // Insertion effects survive StrictMode's effect replay: only the final removal releases the root (as in R3F).
-  useInsertionEffect(
-    () => () => {
-      const current = root.current
-      root.current = null
-      current?.unmount()
-    },
-    [],
-  )
+  // Stable for the stage's lifetime: the core captures it once.
+  const report = useCallback((error: unknown) => {
+    const handler = latest.current.onError
+    if (handler) handler(error)
+    else setFailure({ error })
+  }, [])
+  const created = useCallback((state: RootState) => latest.current.onCreated?.(state), [])
 
-  useIsomorphicLayoutEffect(() => {
+  useLayoutEffect(() => {
+    const container = containerRef.current
     const canvas = canvasRef.current
-    if (!(containerRect.width > 0 && containerRect.height > 0 && canvas)) return
-    if (!root.current) root.current = createRoot(canvas)
-    root.current
-      .configure({
-        gl,
-        scene,
-        shadows,
-        linear,
-        flat,
-        legacy,
-        frameloop,
-        dpr,
-        camera,
-        size: containerRect,
-        onCreated: (state) => created.current?.(state),
-      })
-      .catch(setError)
-
-    const ready = root.current.ready
-    if (ready.status === 'fulfilled') {
-      const tree = (
-        <FrameErrorContext.Provider value={sink.current}>
-          <StageBoundary set={setError}>
-            <Suspense fallback={<Block set={setBlock} />}>{children ?? null}</Suspense>
-          </StageBoundary>
-        </FrameErrorContext.Provider>
-      )
-      root.current.render(DEV_STRICT ? <StrictMode>{tree}</StrictMode> : tree)
-    } else if (ready.status === 'pending') {
-      ready.then(
-        () => setSettled((n) => n + 1),
-        () => {},
-      )
+    if (!container || !canvas) return undefined
+    let timer = 0
+    const measure = (): void => {
+      timer = 0
+      const { width, height, top, left } = container.getBoundingClientRect()
+      if (!(width > 0 && height > 0)) return
+      const options = latest.current
+      try {
+        const current = stage.current ?? (stage.current = createStage(canvas, { gl: options.gl, camera: options.camera, frameloop: options.frameloop, onError: report }))
+        current.resize({ width, height, top, left }, options.dpr)
+        const state = current.state
+        setRoot((previous) => (previous?.stage === current && previous.state === state ? previous : { stage: current, state }))
+      } catch (error) {
+        setFailure({ error })
+      }
     }
-  })
-
-  // Before React 19.2 a canvas that Suspense removed (rather than hid) skips the insertion cleanup; R3F covers it here.
-  useEffect(() => {
-    const canvas = canvasRef.current
+    const schedule = (): void => {
+      if (debounce <= 0) return measure()
+      window.clearTimeout(timer)
+      timer = window.setTimeout(measure, debounce)
+    }
+    measure()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null
+    observer?.observe(container)
+    window.addEventListener('resize', schedule)
     return () => {
-      if (canvas && !canvas.isConnected) root.current?.unmount()
+      window.clearTimeout(timer)
+      observer?.disconnect()
+      window.removeEventListener('resize', schedule)
+    }
+  }, [debounce, report])
+
+  // The renderer lives until the real unmount. A passive cleanup runs after the children's passive cleanups have been
+  // queued in the same flush, and the release waits one microtask more: by then the scene has removed and disposed
+  // everything it owns, and a StrictMode replay (cleanup, then mount again, synchronously) has re-claimed the stage.
+  const claimed = useRef(false)
+  useEffect(() => {
+    claimed.current = true
+    return () => {
+      claimed.current = false
+      queueMicrotask(() => {
+        if (claimed.current) return
+        const current = stage.current
+        stage.current = null
+        current?.dispose()
+      })
     }
   }, [])
 
-  // Suspend while the scene is suspended; rethrow anything the scene threw. A throwing render commits nothing, so
-  // this is the same as R3F's throws at the top of `CanvasImpl`; down here they keep the hook order unconditional.
-  if (block) throw block
+  // A throwing render commits nothing, so this is the same as throwing before the hooks; down here the hook order stays fixed.
   if (failure) throw failure.error
 
-  // The same three boxes as R3F's `<Canvas>`, so the canvas's CSS size, and with it `size`, are unchanged.
+  // The same three boxes as R3F's `<Canvas>`, so the canvas's CSS size, and with it `size`, are unchanged. The children
+  // render no DOM (the scene is imperative); they sit after the measured box so that anything they did render could not
+  // change it.
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'auto', ...style }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
         <canvas ref={canvasRef} style={{ display: 'block' }} />
       </div>
+      {root ? (
+        <Provider root={root} onCreated={created}>
+          {children}
+        </Provider>
+      ) : null}
     </div>
   )
 }
