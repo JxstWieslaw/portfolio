@@ -34,9 +34,9 @@ export interface StageProps {
   readonly gl?: GlOption
   /** The default `PerspectiveCamera` (fov 75, near 0.1, far 1000, at z 5), looking at the origin. */
   readonly camera?: CameraOptions
-  /** Pixel ratio, or `[min, max]` around the device's. Default `[1, 2]`. */
+  /** Pixel ratio, or `[min, max]` around the device's. Default `[1, 2]`. Re-read on every measurement (zoom, another display). */
   readonly dpr?: Dpr
-  /** `'demand'`: draw only after `invalidate()`. `'always'`: every animation frame. Default `'always'`. */
+  /** `'demand'`: draw only after `invalidate()`. `'always'`: every animation frame. Default `'always'`. Read once, like `gl` and `camera`. */
   readonly frameloop?: Frameloop
   /** Trailing debounce, in ms, for re-measuring after a resize. Default 0 (immediately). */
   readonly resize?: { readonly debounce?: number }
