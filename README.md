@@ -15,8 +15,10 @@ A single Next.js app in an npm + Turborepo workspace.
 | `packages/config` | Shared `tsconfig` and flat ESLint config |
 | `content/` | The site's content as JSON, validated at build |
 
-The animated backdrop is a **2D canvas** particle field, not a renderer — there is no `three`,
-no React Three Fiber and no physics engine installed. The WebGL layer arrives in M2.
+The backdrop is the Assembly: a WebGL scene drawn with plain `three` on a small stage of its own
+(`apps/web/components/three/stage`), plus a raw WebGL2 hero, both lazy and mounted after LCP. The
+2D canvas particle fields are its fallback where WebGL does not mount. React Three Fiber was removed
+in October 2026 ([`docs/superpowers/specs/2026-10-21-plain-three-migration.md`](docs/superpowers/specs/2026-10-21-plain-three-migration.md)).
 
 ## Verified state
 
@@ -64,6 +66,7 @@ Requires Node ≥ 22.11 and npm ≥ 10.
 |---|---|
 | [`docs/m0-status.md`](docs/m0-status.md) | M0 close-out: verified state, remaining placeholders, open gaps |
 | [`docs/m0-lcp-investigation.md`](docs/m0-lcp-investigation.md) | Why LCP misses its budget, and what was ruled out |
+| [`docs/bundle-budgets.md`](docs/bundle-budgets.md) | The JS budgets: what each one counts, measured against its limit, and the chunks no budget counts on purpose |
 | [`docs/superpowers/specs/2026-08-15-portfolio-website-design.md`](docs/superpowers/specs/2026-08-15-portfolio-website-design.md) | System architecture and design spec |
 | [`docs/superpowers/specs/2026-08-15-api-service-design.md`](docs/superpowers/specs/2026-08-15-api-service-design.md) | Backend service delivered in M1: [`docs/m1-status.md`](docs/m1-status.md) |
 | [`docs/next-16-upgrade-notes.md`](docs/next-16-upgrade-notes.md) | Toolchain breakages to expect when upgrading off Next 15 |

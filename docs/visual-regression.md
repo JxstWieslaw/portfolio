@@ -28,8 +28,10 @@ the local equivalent is
 ## Cube parity
 
 `apps/web/tests/visual/cubes-parity.spec.ts` is the pixel gate for the cubes (the Assembly canvas), which the home
-suite cannot see (it runs with `?nogl=1`). It exists so the plain-three migration (spec
-`2026-10-21-plain-three-migration.md`, slices S1 and S2) can prove it changed no pixel.
+suite cannot see (it runs with `?nogl=1`). It was built (PR #72) so the plain-three migration (spec
+`2026-10-21-plain-three-migration.md`) could prove it changed no pixel: the baselines were made under React Three
+Fiber, and slices S1 (#75) and S2 (#76) passed against them unchanged. It now guards the stage and the scene against
+any pixel change; a deliberate visual change re-baselines it as described below.
 
 - **Seam.** `?cubefreeze=<t>,<from>,<to>,<mix>` freezes a cube frame: `t` seconds on the scene clock (and the intro's
   elapsed time), `from` and `to` formation indices in the order monolith, stream, lattice, orbit, scatter, grid, ring,

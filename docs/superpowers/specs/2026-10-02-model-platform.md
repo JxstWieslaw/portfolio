@@ -31,6 +31,8 @@ What does not change for a visitor without WebGL, with reduced motion, on Save-D
 
 All sizes gzip -9. Loader code is measured with esbuild `--bundle --minify`, `three` external, because R3F's `import * as THREE` already puts the whole namespace (measured: 190.4 kB gz) in the core chunk. The loaders only add their own code.
 
+> **Amended 2026-10-22.** That premise no longer holds: React Three Fiber was removed (plain-three migration spec), so `three` is tree-shaken and the loaders' own `three` imports now cost bytes. Measured: about 13.5 kB of `three.core.js` in the core chunk is there only for the loader, on top of the 23.53 kB `models` chunk. Webpack cannot move it into `models` (one module, one chunk); see `docs/bundle-budgets.md`.
+
 | Piece | Raw | gz | Where it lives |
 |---|---|---|---|
 | `GLTFLoader` (+ `BufferGeometryUtils`) | 46.7 kB | **14.1 kB** | `models` chunk |
