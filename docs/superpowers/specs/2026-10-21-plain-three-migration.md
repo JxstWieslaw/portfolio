@@ -1,8 +1,36 @@
 # Plain three: scoping the migration off React Three Fiber, with measurements
 
-> Status: decision-ready spec, 2026-10-21. Base: `origin/develop` 95b20a2. Nothing is migrated by this document.
+> Status: **done, 2026-10-22.** All five slices merged or in review: S0 #72, S1 #75, S2 #76, S3 and S4 together in #77. The outcome, measured, is in the section "Outcome" below; the rest of this document is the decision-ready spec as written on 2026-10-21 (base `origin/develop` 95b20a2) and is kept as the record of why.
 > Read with `2026-10-01-assembly-journey.md` (the Assembly, section 6 tripwire, D3), `2026-10-06-hero-monolith.md` (section 9 "Plain three", S4 and S5) and `2026-10-02-model-platform.md` (the model slot).
 > Every number below was measured on 2026-10-21 in a clean worktree (`C:\tmp\p3a`): `npm ci`, `.next` wiped before each build, `next build`, `npm run size` (size-limit, gzip). Attribution inside a chunk comes from the production source maps (bytes per source module, scaled to the chunk's gzip size, so a per-module gz figure is good to about plus or minus 0.2 kB, a per-package figure to about plus or minus 2 kB). Scratch code and scripts are not in this PR (they lived in `C:\tmp\p3a-out`).
+
+---
+
+## Outcome (2026-10-22)
+
+| Slice | PR | What landed | Proof |
+|---|---|---|---|
+| S0 | #72 | The cube parity harness: `?cubefreeze`, `cubes-parity.spec.ts`, 22 frames per viewport with Linux baselines made under R3F, the `cubes` CI job | determinism self-check, seam guard |
+| S1 | #75 | `components/three/stage/` over R3F's `createRoot`, no `<Canvas>`, no `extend(THREE)` | parity job zero-diff against the S0 baselines |
+| S2 | #76 | The stage over plain three (`WebGLRenderer`, `PerspectiveCamera`, the R3F defaults and loop); R3F removed from `package.json` and the lockfile; frame errors to `onError` | parity job zero-diff, unchanged baselines; stage unit tests for every section 8 row |
+| S3 | #77 | Budgets re-measured and re-pinned; the App Router error boundaries (2.63 kB, loaded on every page) counted in the initial budget for the first time; `npm run size:coverage` in CI so no chunk escapes a budget; the models chunk's `three` measured and left where webpack must put it | `npm run size`, `npm run size:coverage` |
+| S4 | #77 | Comments and docs swept; `THREE.Clock` (deprecated since r183, warned on every page with WebGL) replaced by `Timer` in the stage | parity job unchanged, no re-baselining |
+
+**Budget picture, measured** (CI's Linux build, `npm run size`, gzip; a clean Windows build agrees to 0.05 kB; the living table is `docs/bundle-budgets.md`):
+
+| Entry | Before (section 1) | After | Limit |
+|---|---|---|---|
+| initial JS (non-3D) | 119.51 | 118.84 (about 116.2 plus the 2.63 kB of error boundaries the old globs missed; #73's cheap wins are why it is lower) | 120 (owner) |
+| route pages (now with not-found) | 2.97 | 3.27 | 3.5 (was 4) |
+| assembly core | **268.13** | **173.24** (minus 94.89, 35 percent) | 182 (was 275) |
+| late UI (new in #73) | n/a | 3.68 | 4 |
+| assembly models | 23.53 | 23.53 | 25 (was 26) |
+| hero engine | 13.93 | 13.93 | 14 (owner) |
+| lazy 3D total | 305.59 | **210.70** | |
+
+Against the prediction in section 11: core landed at 173.24, inside the expected 172 to 180 and 1.4 kB above the bare prototype (the full stage with context, error and StrictMode handling). The open question in section 14 about the GLTFLoader's extra `three` modules is answered: about 13.5 kB of `three.core.js` is there only for the loader, and it stays in the core chunk because webpack keeps one module in one chunk (measured by building without the loader: core 159.63; details in `docs/bundle-budgets.md`). The initial gate was not split (section 5 item 6 and section 15 question 2 are still the owner's), and the hero limit is unchanged (question 3).
+
+Still unmeasured, as section 14 says: real-device parse cost and real-GPU colour. They stay on the hero S4 device pass.
 
 ---
 

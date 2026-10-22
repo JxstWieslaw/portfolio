@@ -425,6 +425,8 @@ Baseline updates: `tests/visual/home.spec.ts` snapshots of the hero under `?nogl
 
 ## 9. Plain three: is it required for A, with numbers
 
+> **Amended 2026-10-22.** The answer below stood (A needed no three), and the migration was then done on its own merits as a separate track, not as S5 of this spec: [`2026-10-21-plain-three-migration.md`](2026-10-21-plain-three-migration.md), PRs #72, #75, #76 and #77. React Three Fiber is gone; what this spec calls "the R3F canvas" is now the Assembly's plain-three stage, with the same props, transparency and stacking. Measured: assembly core 173.24 kB (limit 182), down from 268.13; the hero engine is untouched at 13.93 kB of 14. The Moto G parse estimate in the next paragraphs was made against the old 267 kB core and is still unmeasured on a device.
+
 **No.** A in the recommended architecture contains no three.js. If instead A were built inside R3F it would add about 8 kB gzip to a core that has 7.0 kB left (267.4 of 275), i.e. over budget by about 0.4 kB before PR #56's +0.64 kB. Either route leaves plain-three as an independent decision.
 
 Numbers: R3F's `import * as THREE` is why the core is 267 kB rather than the spec's 200 kB; the M2 performance review estimated the plain-three migration at 115 to 135 kB saved (journey spec 6, estimate 125 to 145 kB core). On a Moto G-class phone, parsing and evaluating roughly 0.9 MB of raw JavaScript is an estimated 250 to 400 ms of main thread (assumed, unmeasured); this competes with the governor's first-frame samples only in the inside-R3F alternative. With the separate hero engine the hero is already on screen before that chunk is requested.
@@ -509,7 +511,7 @@ Rollback: thresholds are data; revert the PR.
 
 ### S5: optional
 
-Plain-three migration (if the tripwire fires), NASA asteroid shards as the dust mesh, an armillary as the rings. Each its own PR.
+~~Plain-three migration (if the tripwire fires)~~ done outside this spec (section 9 amendment), NASA asteroid shards as the dust mesh, an armillary as the rings. Each its own PR.
 
 ### PR #56 ("light the scene"), what to keep
 

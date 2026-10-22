@@ -5,6 +5,8 @@
       ".next/static/chunks/*.js",
       ".next/static/chunks/app/page-*.js",
       ".next/static/chunks/app/layout-*.js",
+      ".next/static/chunks/app/error-*.js",
+      ".next/static/chunks/app/global-error-*.js",
       "!.next/static/chunks/framework-*.js",
       "!.next/static/chunks/polyfills-*.js",
       "!.next/static/chunks/main-!(app)*.js",
@@ -14,14 +16,16 @@
     "gzip": true
   },
   {
-    "name": "route pages (about, resume, work, work/[slug])",
+    "name": "route pages (about, resume, work, work/[slug], not-found)",
     "path": [
       ".next/static/chunks/app/about/page-*.js",
       ".next/static/chunks/app/resume/page-*.js",
       ".next/static/chunks/app/work/page-*.js",
-      ".next/static/chunks/app/work/*/page-*.js"
+      ".next/static/chunks/app/work/*/page-*.js",
+      ".next/static/chunks/app/not-found-*.js",
+      ".next/static/chunks/app/_not-found/page-*.js"
     ],
-    "limit": "4 kB",
+    "limit": "3.5 kB",
     "gzip": true
   },
   {
@@ -50,7 +54,7 @@
     "path": [
       ".next/static/chunks/models.*.js"
     ],
-    "limit": "26 kB",
+    "limit": "25 kB",
     "gzip": true
   },
   {

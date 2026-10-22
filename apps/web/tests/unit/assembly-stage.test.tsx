@@ -267,6 +267,7 @@ describe('stage Canvas', () => {
   })
 
   it('the clock spans idle gaps: delta is the time since the previous frame, elapsedTime accumulates', async () => {
+    const warn = vi.spyOn(console, 'warn')
     const seen: Array<{ delta: number; elapsed: number }> = []
     render(
       <Canvas frameloop="demand">
@@ -283,6 +284,9 @@ describe('stage Canvas', () => {
     const before = seen[seen.length - 2] as { delta: number; elapsed: number }
     expect(last.delta).toBeGreaterThanOrEqual(0.14)
     expect(last.elapsed).toBeCloseTo(before.elapsed + last.delta, 6)
+    // Backed by three's Timer: the deprecated Clock warns on every stage it is built for.
+    expect(warn.mock.calls.flat().join(' ')).not.toMatch(/Clock/)
+    warn.mockRestore()
   })
 
   it('a resize is debounced, then updates the camera, the drawing buffer and size, and asks for a frame', async () => {

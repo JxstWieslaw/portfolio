@@ -1,17 +1,17 @@
 import {
   ACESFilmicToneMapping,
-  Clock,
   ColorManagement,
   PCFSoftShadowMap,
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
+  Timer,
   WebGLRenderer,
   type WebGLRendererParameters,
 } from 'three'
 
 /**
- * The stage's imperative core: one renderer, one camera, one scene, one clock and an on-demand frame loop, over plain
+ * The stage's imperative core: one renderer, one camera, one scene, one timer and an on-demand frame loop, over plain
  * three. No React here: `Canvas` and the hooks wrap it. Plain-three migration spec § 8, slice S2.
  *
  * Every default below is the one React Three Fiber 9.8 applied when it built the root (`createRoot().configure()`), so
@@ -37,12 +37,20 @@ export interface Size {
   readonly left: number
 }
 
+/**
+ * The scene clock: seconds since the stage was built, accumulated one executed frame at a time, so it spans idle gaps
+ * exactly like the frame `delta`. Backed by three's `Timer` (`Clock` is deprecated since r183 and warns when built).
+ */
+export interface StageClock {
+  readonly elapsedTime: number
+}
+
 /** What `useThree` returns and every frame callback receives. A new object whenever `size` changes. */
 export interface RootState {
   readonly gl: WebGLRenderer
   readonly scene: Scene
   readonly camera: PerspectiveCamera
-  readonly clock: Clock
+  readonly clock: StageClock
   readonly size: Size
   readonly frameloop: Frameloop
   /** Asks for one frame. Calls in the same frame coalesce; a call from inside a frame asks for the next one. */
@@ -119,8 +127,14 @@ export function createStage(canvas: HTMLCanvasElement, { gl: glOption, camera: c
   camera.lookAt(0, 0, 0)
 
   const scene = new Scene()
-  const clock = new Clock()
-  clock.start()
+  // Not `connect`ed to the document: a hidden tab runs no frames, and the first frame back gets the whole gap as its
+  // delta (which the Assembly clamps), as it did with `Clock`.
+  const timer = new Timer()
+  const clock: StageClock = {
+    get elapsedTime() {
+      return timer.getElapsed()
+    },
+  }
 
   ColorManagement.enabled = true
   if (gl.shadowMap) {
@@ -149,7 +163,7 @@ export function createStage(canvas: HTMLCanvasElement, { gl: glOption, camera: c
 
   /** One frame: every callback in priority order, then three's own render unless a callback owns the draw. */
   const update = (): number => {
-    const delta = clock.getDelta()
+    const delta = timer.update().getDelta()
     const current = state
     for (const { subscriber } of subscriptions) {
       if (subscriber.failed) continue

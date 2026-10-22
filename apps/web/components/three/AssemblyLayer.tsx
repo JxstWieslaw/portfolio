@@ -68,8 +68,10 @@ interface BoundaryProps {
 }
 
 /**
- * R3F's Canvas rethrows anything its tree throws; without this the whole home
- * page would become Next's error screen over a decorative layer.
+ * Catches what a lazy layer throws while rendering: the hero layer, the scene, and
+ * the stage's `Canvas` when building the renderer fails. Without this the whole home
+ * page would become Next's error screen over a decorative layer. A throw inside a
+ * frame never reaches React; the stage reports it through `onError` instead.
  */
 class AssemblyBoundary extends Component<BoundaryProps, { failed: boolean }> {
   override state = { failed: false }
