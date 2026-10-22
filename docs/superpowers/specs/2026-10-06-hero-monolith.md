@@ -425,7 +425,7 @@ Baseline updates: `tests/visual/home.spec.ts` snapshots of the hero under `?nogl
 
 ## 9. Plain three: is it required for A, with numbers
 
-> **Amended 2026-10-22.** The answer below stood (A needed no three), and the migration was then done on its own merits as a separate track, not as S5 of this spec: [`2026-10-21-plain-three-migration.md`](2026-10-21-plain-three-migration.md), PRs #72, #75, #76 and the S3/S4 PR. React Three Fiber is gone; what this spec calls "the R3F canvas" is now the Assembly's plain-three stage, with the same props, transparency and stacking. Measured: assembly core 173.24 kB (limit 182), down from 268.13; the hero engine is untouched at 13.93 kB of 14. The Moto G parse estimate in the next paragraphs was made against the old 267 kB core and is still unmeasured on a device.
+> **Amended 2026-10-22.** The answer below stood (A needed no three), and the migration was then done on its own merits as a separate track, not as S5 of this spec: [`2026-10-21-plain-three-migration.md`](2026-10-21-plain-three-migration.md), PRs #72, #75, #76 and #77. React Three Fiber is gone; what this spec calls "the R3F canvas" is now the Assembly's plain-three stage, with the same props, transparency and stacking. Measured: assembly core 173.24 kB (limit 182), down from 268.13; the hero engine is untouched at 13.93 kB of 14. The Moto G parse estimate in the next paragraphs was made against the old 267 kB core and is still unmeasured on a device.
 
 **No.** A in the recommended architecture contains no three.js. If instead A were built inside R3F it would add about 8 kB gzip to a core that has 7.0 kB left (267.4 of 275), i.e. over budget by about 0.4 kB before PR #56's +0.64 kB. Either route leaves plain-three as an independent decision.
 

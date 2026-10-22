@@ -19,7 +19,7 @@ and is not repeated here.
 | Assembly journey, slices 1 and 2 (GPU morph, artefact, set pieces, camera) and the scroll-velocity response | PRs #22, #37, #50 |
 | Model platform (build-time ingest, scanner, typed manifest and credits, runtime slot in the single canvas) and the first three models (own gyroscope, Kenney crystal cluster and gate, CC0), with footer credits | PRs #42 to #51; `docs/superpowers/specs/2026-10-02-model-platform.md`, `docs/lead/2026-10-02-model-platform.md`. Pulled forward from Phase 4: the build-time pipeline needs no cloud service |
 | **Released to production** | Release PR #53, merged to `main` by the owner on 2026-10-06 (`348ca6c`); CI, the Cloud Run API deploy and Vercel production all green; `/v1/ready` reports ready |
-| Plain-three migration: React Three Fiber removed, the Assembly runs on a small plain-three stage; assembly core 268.13 to 173.24 kB gz (limit 182) with no pixel changed; every client chunk now counted by one budget | On `develop`, not yet released: PRs #72, #75, #76 and the S3/S4 PR; `docs/superpowers/specs/2026-10-21-plain-three-migration.md`, `docs/bundle-budgets.md` |
+| Plain-three migration: React Three Fiber removed, the Assembly runs on a small plain-three stage; assembly core 268.13 to 173.24 kB gz (limit 182) with no pixel changed; every client chunk now counted by one budget | On `develop`, not yet released: PRs #72, #75, #76 and #77; `docs/superpowers/specs/2026-10-21-plain-three-migration.md`, `docs/bundle-budgets.md` |
 | Next | Security headers and a report-only CSP, a real-phone performance check, detect-gpu tiers (slice 3), then Phases 2a and 2b once the owner supplies content |
 
 What is still "Coming soon" in the live site: `/work/[slug]`, `/lab`, `/about`, `/resume`, the
