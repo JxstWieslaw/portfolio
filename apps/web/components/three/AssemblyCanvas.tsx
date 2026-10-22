@@ -1,6 +1,6 @@
 'use client'
 
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from './stage'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import {
   ACESFilmicToneMapping,
@@ -907,6 +907,9 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero, handover 
           gl.setClearColor(0x000000, 0)
         }}
         style={{ position: 'absolute', inset: 0 }}
+        // A throw inside the frame loop never reaches AssemblyBoundary (it happens in requestAnimationFrame, outside
+        // React): the stage catches it and the layer gives up for the session, leaving the 2D canvases.
+        onError={onGiveUp}
       >
         <Scene store={store} keep={keep} onLive={onLive} onGiveUp={onGiveUp} hero={hero} handover={handover} bindInvalidate={bindInvalidate} />
       </Canvas>
