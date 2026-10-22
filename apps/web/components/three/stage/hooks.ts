@@ -1,30 +1,33 @@
-import { useFrame as useR3FFrame, type RenderCallback } from '@react-three/fiber'
-import { useContext, useRef } from 'react'
-import { FrameErrorContext } from './frame-errors'
+import { useContext, useLayoutEffect, useRef } from 'react'
+import { StageContext, type StageRoot } from './context'
+import type { FrameSubscriber, RenderCallback, RootState } from './stage'
 
-export { useThree } from '@react-three/fiber'
+function useRoot(hook: string): StageRoot {
+  const root = useContext(StageContext)
+  if (!root) throw new Error(`${hook} can only be used inside the stage's <Canvas>`)
+  return root
+}
+
+/** The renderer, scene, camera, clock, measured size and `invalidate`. Re-renders the caller when the size changes. */
+export function useThree(): RootState {
+  return useRoot('useThree').state
+}
 
 /**
- * R3F's `useFrame`, same arguments and same scheduling, with the callback guarded.
+ * Runs `callback` on every frame the stage draws, lower priorities first, with R3F's semantics: a subscriber with
+ * `priority > 0` turns the stage's automatic render off, so the callback owns the draw (the Assembly's priority-1 frame
+ * ends in `gl.render`). The latest closure is used each frame, so a new function on every render is fine.
  *
- * A subscriber with `priority > 0` turns R3F's automatic render off: the callback owns the draw (the Assembly's
- * priority-1 frame ends in `gl.render`). The callback runs inside R3F's `requestAnimationFrame` loop, where a throw
- * reaches no React error boundary; here it is caught, the callback is switched off for good (a frame that threw once
- * would throw on every frame after it), and the error goes to the stage (`Canvas`'s `onError`, or a rethrow from
- * its render to the nearest boundary).
+ * The callback runs inside `requestAnimationFrame`, where a throw reaches no React error boundary. The stage catches it,
+ * switches this callback off for good, and reports the error to `Canvas`'s `onError` (or rethrows it from `Canvas`'s
+ * render to the nearest boundary when there is no `onError`).
  */
 export function useFrame(callback: RenderCallback, priority = 0): null {
-  const report = useContext(FrameErrorContext)
-  const failed = useRef(false)
-  // R3F keeps the latest closure in a ref of its own, so a new function each render is fine here too.
-  return useR3FFrame((state, delta, frame) => {
-    if (failed.current) return
-    try {
-      callback(state, delta, frame)
-    } catch (error) {
-      failed.current = true
-      console.warn('[stage] a frame callback threw and was switched off', error)
-      report(error)
-    }
-  }, priority)
+  const { stage } = useRoot('useFrame')
+  const subscriber = useRef<FrameSubscriber>({ callback, failed: false })
+  useLayoutEffect(() => {
+    subscriber.current.callback = callback
+  }, [callback])
+  useLayoutEffect(() => stage.subscribe(subscriber.current, priority), [stage, priority])
+  return null
 }

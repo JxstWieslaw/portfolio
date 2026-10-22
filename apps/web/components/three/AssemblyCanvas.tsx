@@ -560,7 +560,7 @@ function Scene({ store, keep, onLive, onGiveUp, hero: heroOwns = false, handover
     [camera, scratch, size.width, size.height],
   )
 
-  // Priority 1: R3F skips its own render when a subscriber has priority > 0,
+  // Priority 1: the stage skips its own render when a subscriber has priority > 0,
   // so nothing is drawn (and nothing links synchronously) until `compileAsync`
   // has resolved. Every frame that gets past the gates ends in `gl.render`.
   useFrame((state, delta) => {
@@ -892,9 +892,9 @@ export default function AssemblyCanvas({ keep, onLive, onGiveUp, hero, handover 
       <div ref={washTo} className="absolute inset-0" style={{ opacity: 0 }} />
       <Canvas
         frameloop="demand"
-        // R3F's default resize debounce is 0; a mobile URL-bar collapse mid-scroll
+        // The stage's default resize debounce is 0; a mobile URL-bar collapse mid-scroll
         // would otherwise re-run the camera effect every frame. 150 ms matches FieldCanvas.
-        resize={{ debounce: { scroll: 50, resize: 150 } }}
+        resize={{ debounce: 150 }}
         // 1.5 everywhere: flat-shaded cubes cannot show DPR 2, and a full-screen
         // MSAA canvas at DPR 2 on a 1440p desktop is ~15 megapixels per frame.
         dpr={[1, 1.5]}

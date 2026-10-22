@@ -25,7 +25,7 @@
     "gzip": true
   },
   {
-    "name": "assembly core (three + R3F + CSM + scene, lazy)",
+    "name": "assembly core (three + CSM + stage + scene, lazy)",
     "path": [
       ".next/static/chunks/*.*.js",
       "!.next/static/chunks/655.*.js",
@@ -34,7 +34,7 @@
       "!.next/static/chunks/hero.*.js",
       "!.next/static/chunks/late-ui.*.js"
     ],
-    "limit": "232 kB",
+    "limit": "182 kB",
     "gzip": true
   },
   {
