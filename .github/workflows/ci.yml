@@ -88,6 +88,10 @@ jobs:
         run: bash apps/web/scripts/check-no-model-seam.sh apps/web/.next/static
       - name: Enforce JS bundle budget
         run: npm run size -w @repo/web
+      # size-limit measures only what its globs find: this fails on a chunk no budget counts, a chunk two budgets
+      # count, or an exclusion (the pinned Pages Router ids 655 and 826) that no longer matches a real file.
+      - name: Every emitted chunk is counted by one budget
+        run: npm run size:coverage -w @repo/web
       - name: Enforce Lighthouse budgets
         run: npm run lighthouse -w @repo/web
 
