@@ -89,7 +89,7 @@ jobs:
       - name: Enforce JS bundle budget
         run: npm run size -w @repo/web
       # size-limit measures only what its globs find: this fails on a chunk no budget counts, a chunk two budgets
-      # count, or an exclusion (the pinned Pages Router ids 655 and 826) that no longer matches a real file.
+      # count, or an exclusion that matches no real file (docs/bundle-budgets.md).
       - name: Every emitted chunk is counted by one budget
         run: npm run size:coverage -w @repo/web
       - name: Enforce Lighthouse budgets

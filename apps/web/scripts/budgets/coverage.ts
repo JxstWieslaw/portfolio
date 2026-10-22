@@ -9,9 +9,13 @@
  *   - a chunk is counted by no entry and is not on the short list below of chunks a browser never downloads on this
  *     site (so a new chunk cannot slip past every budget);
  *   - a chunk is counted by two entries (one byte, one budget);
- *   - a `!` pattern in `.size-limit.json` matches no real file (the Pages Router chunk ids `655` and `826` are pinned
- *     there; if webpack renumbers them, the exclusion goes stale and those bytes join the core budget unnoticed);
+ *   - a `!` pattern in `.size-limit.json` matches no real file, so a dead exclusion cannot sit there looking useful;
  *   - a rule on the list below matches no chunk (the list stays true).
+ *
+ * One exception, by build host. A Windows build splits the Pages Router's `_app` and `_error` code into two async
+ * chunks with pinned ids, `655` and `826`; the Linux build CI runs keeps that code inside `main-*` and emits neither.
+ * Their exclusions and their rule are therefore checked only on Windows, where a renumbering would otherwise put
+ * those bytes into the core budget unnoticed.
  *
  * The measured values and the limits are in `docs/bundle-budgets.md`.
  */
@@ -26,12 +30,17 @@ export interface SizeLimitEntry {
   readonly path: string | readonly string[]
 }
 
+/** `!` patterns of `.size-limit.json` that only a Windows build can match (see above). */
+export const WINDOWS_ONLY_EXCLUSIONS: ReadonlySet<string> = new Set(['.next/static/chunks/655.*.js', '.next/static/chunks/826.*.js'])
+
+const PAGES_ROUTER_ASYNC = /^(?:655|826)\.[0-9a-f]+\.js$/
+
 /** Chunks with no budget on purpose: nothing on an App Router page requests them. Paths are relative to `.next/static/chunks`. */
 export const NOT_DOWNLOADED: readonly (readonly [pattern: RegExp, reason: string])[] = [
   [/^framework-[0-9a-f]+\.js$/, "the Pages Router's React DOM; App Router pages carry React DOM in the initial entry"],
   [/^main-[0-9a-f]+\.js$/, "the Pages Router runtime (`main-app-*` is the App Router's and is budgeted)"],
   [/^pages\//, 'the Pages Router `_app` and `_error` pages, used only by its own error fallback'],
-  [/^(?:655|826)\.[0-9a-f]+\.js$/, 'Pages Router `_app` and `_error` code, loaded only by `main-*`'],
+  [PAGES_ROUTER_ASYNC, 'Pages Router `_app` and `_error` code, loaded only by `main-*` (Windows builds only)'],
   [/^polyfills-[0-9a-f]+\.js$/, '`noModule`: a browser that runs modules never downloads it'],
   [/^app\/(?:.+\/)?route-[0-9a-f]+\.js$/, 'route handlers (OG images, robots, sitemap, manifest) have no client code; nothing requests the stub'],
 ]
@@ -66,19 +75,25 @@ async function findFiles(patterns: readonly string[], cwd: string): Promise<Set<
   return found
 }
 
+export interface StaleExclusion {
+  readonly entry: string
+  /** The pattern without its `!`. */
+  readonly pattern: string
+}
+
 /** Which entries count which files, and which `!` patterns matched nothing. */
 export async function expandEntries(
   entries: readonly SizeLimitEntry[],
   cwd: string,
-): Promise<{ readonly owners: ReadonlyMap<string, readonly string[]>; readonly staleExclusions: readonly string[] }> {
+): Promise<{ readonly owners: ReadonlyMap<string, readonly string[]>; readonly staleExclusions: readonly StaleExclusion[] }> {
   const owners = new Map<string, string[]>()
-  const staleExclusions: string[] = []
+  const staleExclusions: StaleExclusion[] = []
   for (const entry of entries) {
     const patterns = typeof entry.path === 'string' ? [entry.path] : entry.path
     const include = patterns.filter((pattern) => !pattern.startsWith('!'))
     const exclude = patterns.filter((pattern) => pattern.startsWith('!')).map((pattern) => pattern.slice(1))
     for (const pattern of exclude) {
-      if ((await findFiles([pattern], cwd)).size === 0) staleExclusions.push(`${entry.name}: !${pattern}`)
+      if ((await findFiles([pattern], cwd)).size === 0) staleExclusions.push({ entry: entry.name, pattern })
     }
     const excluded = await findFiles(exclude, cwd)
     for (const file of await findFiles(include, cwd)) {
@@ -88,8 +103,12 @@ export async function expandEntries(
   return { owners, staleExclusions }
 }
 
-/** The coverage of every chunk under `<webRoot>/.next/static/chunks` by the budgets in `<webRoot>/.size-limit.json`. */
-export async function checkCoverage(webRoot: string): Promise<CoverageReport> {
+/**
+ * The coverage of every chunk under `<webRoot>/.next/static/chunks` by the budgets in `<webRoot>/.size-limit.json`.
+ * `platform` is the build host's (the build and this check run on the same machine).
+ */
+export async function checkCoverage(webRoot: string, platform: NodeJS.Platform = process.platform): Promise<CoverageReport> {
+  const windows = platform === 'win32'
   const entries = JSON.parse(readFileSync(path.join(webRoot, '.size-limit.json'), 'utf8')) as SizeLimitEntry[]
   const chunks = [...(await findFiles([`${CHUNKS}**/*.js`], webRoot))].sort()
   // Fail closed, and with the one message that matters: with no build, every other check would fail as noise.
@@ -113,8 +132,11 @@ export async function checkCoverage(webRoot: string): Promise<CoverageReport> {
     if (row.budgets.length > 1) problems.push(`${row.file} is counted by ${row.budgets.length} budgets: ${row.budgets.join(', ')}`)
     if (row.budgets.length > 0 && row.excluded !== null) problems.push(`${row.file} is budgeted and also listed as never downloaded`)
   }
-  for (const stale of staleExclusions) problems.push(`exclusion matches no file (stale): ${stale}`)
+  for (const { entry, pattern } of staleExclusions) {
+    if (windows || !WINDOWS_ONLY_EXCLUSIONS.has(pattern)) problems.push(`exclusion matches no file (stale): ${entry}: !${pattern}`)
+  }
   for (const [pattern, reason] of NOT_DOWNLOADED) {
+    if (pattern === PAGES_ROUTER_ASYNC && !windows) continue
     if (!rows.some((row) => pattern.test(row.file))) problems.push(`never-downloaded rule ${pattern} matches no chunk (${reason})`)
   }
   return { rows, problems }

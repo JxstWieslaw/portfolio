@@ -16,12 +16,12 @@
 | S3 | #77 | Budgets re-measured and re-pinned; the App Router error boundaries (2.63 kB, loaded on every page) counted in the initial budget for the first time; `npm run size:coverage` in CI so no chunk escapes a budget; the models chunk's `three` measured and left where webpack must put it | `npm run size`, `npm run size:coverage` |
 | S4 | #77 | Comments and docs swept; `THREE.Clock` (deprecated since r183, warned on every page with WebGL) replaced by `Timer` in the stage | parity job unchanged, no re-baselining |
 
-**Budget picture, measured** (clean build, `npm run size`, gzip; the living table is `docs/bundle-budgets.md`):
+**Budget picture, measured** (CI's Linux build, `npm run size`, gzip; a clean Windows build agrees to 0.05 kB; the living table is `docs/bundle-budgets.md`):
 
 | Entry | Before (section 1) | After | Limit |
 |---|---|---|---|
-| initial JS (non-3D) | 119.51 | 118.89 (116.25 plus the 2.63 kB of error boundaries the old globs missed; #73's cheap wins are why it is lower) | 120 (owner) |
-| route pages (now with not-found) | 2.97 | 3.26 | 3.5 (was 4) |
+| initial JS (non-3D) | 119.51 | 118.84 (about 116.2 plus the 2.63 kB of error boundaries the old globs missed; #73's cheap wins are why it is lower) | 120 (owner) |
+| route pages (now with not-found) | 2.97 | 3.27 | 3.5 (was 4) |
 | assembly core | **268.13** | **173.24** (minus 94.89, 35 percent) | 182 (was 275) |
 | late UI (new in #73) | n/a | 3.68 | 4 |
 | assembly models | 23.53 | 23.53 | 25 (was 26) |

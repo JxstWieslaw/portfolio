@@ -6,12 +6,12 @@ import path from 'node:path'
 
 import { afterAll, describe, expect, it, vi } from 'vitest'
 
-import { checkCoverage, main, NOT_DOWNLOADED, type SizeLimitEntry } from '../../scripts/budgets/coverage'
+import { checkCoverage, main, NOT_DOWNLOADED, WINDOWS_ONLY_EXCLUSIONS, type SizeLimitEntry } from '../../scripts/budgets/coverage'
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'coverage-'))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
 
-/** The chunks a real build emits that no budget counts, one per `NOT_DOWNLOADED` rule. */
+/** The chunks a real Windows build emits that no budget counts, one per `NOT_DOWNLOADED` rule. */
 const NEVER_DOWNLOADED = [
   'framework-42c8ac84ce402d49.js',
   'main-63ead8bdb46983ac.js',
@@ -56,7 +56,7 @@ const BUDGETED = ['webpack-1a.js', 'main-app-2b.js', 'app/page-3c.js', '63d2ba32
 
 describe('checkCoverage', () => {
   it('passes a build where every chunk has one budget or is never downloaded, and says which', async () => {
-    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED]))
+    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED]), 'win32')
     expect(report.problems).toEqual([])
     const owner = Object.fromEntries(report.rows.map((row) => [row.file, row.budgets.join('+') || 'none']))
     expect(owner).toMatchObject({
@@ -73,24 +73,38 @@ describe('checkCoverage', () => {
   })
 
   it('fails on a chunk no budget counts, such as an App Router error boundary', async () => {
-    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED, 'app/error-7a.js']))
+    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED, 'app/error-7a.js']), 'win32')
     expect(report.problems).toEqual(['app/error-7a.js is counted by no budget'])
   })
 
   it('fails on a chunk two budgets count', async () => {
     const overlapping = [...BUDGETS, { name: 'everything lazy', path: '.next/static/chunks/*.*.js' }]
-    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED], overlapping))
+    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED], overlapping), 'win32')
     expect(report.problems).toContain('three.5e.js is counted by 2 budgets: core, everything lazy')
   })
 
-  it('fails when webpack renumbers the Pages Router chunks: the pinned exclusion is stale and the new id joins core', async () => {
+  it('on Windows, fails when webpack renumbers the Pages Router chunks: the pinned exclusion is stale and the new id joins core', async () => {
     const renumbered = NEVER_DOWNLOADED.filter((file) => !file.startsWith('826.'))
-    const report = await checkCoverage(webRoot([...BUDGETED, ...renumbered, '901.aa.js']))
-    expect(report.problems).toContain('exclusion matches no file (stale): core: !.next/static/chunks/826.*.js')
+    const report = await checkCoverage(webRoot([...BUDGETED, ...renumbered, '901.aa.js']), 'win32')
+    expect(report.problems).toEqual(['exclusion matches no file (stale): core: !.next/static/chunks/826.*.js'])
+  })
+
+  it('on Linux, where the Pages Router code stays in main-*, passes without the 655 and 826 chunks', async () => {
+    const linux = NEVER_DOWNLOADED.filter((file) => !/^(?:655|826)\./.test(file))
+    expect((await checkCoverage(webRoot([...BUDGETED, ...linux]), 'linux')).problems).toEqual([])
+    // Any other stale exclusion still fails there.
+    const noPolyfills = linux.filter((file) => !file.startsWith('polyfills-'))
+    expect((await checkCoverage(webRoot([...BUDGETED, ...noPolyfills]), 'linux')).problems).toContain(
+      'exclusion matches no file (stale): initial: !.next/static/chunks/polyfills-*.js',
+    )
+  })
+
+  it('names only the Pages Router ids as Windows-only', () => {
+    expect([...WINDOWS_ONLY_EXCLUSIONS]).toEqual(['.next/static/chunks/655.*.js', '.next/static/chunks/826.*.js'])
   })
 
   it('fails when a never-downloaded rule no longer matches anything', async () => {
-    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED.filter((file) => !file.startsWith('polyfills-'))]))
+    const report = await checkCoverage(webRoot([...BUDGETED, ...NEVER_DOWNLOADED.filter((file) => !file.startsWith('polyfills-'))]), 'win32')
     expect(report.problems).toEqual([
       'exclusion matches no file (stale): initial: !.next/static/chunks/polyfills-*.js',
       expect.stringMatching(/^never-downloaded rule .*polyfills.* matches no chunk/),
